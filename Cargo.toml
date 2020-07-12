@@ -1,0 +1,15 @@
+[package]
+name = "rhdl"
+version = "0.1.0"
+authors = ["Sameer Puri <purisame@spuri.io>"]
+edition = "2018"
+
+[dependencies]
+syn = { version = "1", features = ["parsing", "printing", "full", "extra-traits", "visit", "visit-mut"] }
+quote = "1"
+colored = "1"
+paste = "0"
+num-traits = "0"
+proc-macro2 = { version = "1.0", features = ["span-locations"] }
+log = "0"
+env_logger = "0"

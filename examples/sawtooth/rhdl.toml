@@ -1,0 +1,9 @@
+[synthesis]
+tool = "quartus"
+family = "CYCLONE 10 LP"
+device = "10CL016Y"
+grade = "C8G"
+package = "U256"
+
+[blaster]
+tool = "openocd"

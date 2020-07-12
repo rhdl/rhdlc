@@ -1,0 +1,32 @@
+mod sound;
+
+use sound::Sawtooth;
+
+struct Pins {
+    #[rhdl::pin(name = "E2", standard = "3.3-V LVTTL")]
+    clk: edge,
+    #[rhdl::pin(name = "E1", standard = "3.3-V LVTTL")]
+    reset: edge
+}
+
+struct Top {
+    sawtooth: Sawtooth<u24, f64>
+}
+
+impl Top {
+    /// The synthesis tool will derive a component map from the constructor
+    /// And determine how to instantiate various modules
+    #[rhdl::constructor]
+    fn new() -> Self {
+        Self {
+            sawtooth: Sawtooth::new(48000., 480., None)
+        }
+    }
+
+    /// The entry point pulls in the full logic tree of the design
+    /// 
+    #[rhdl::entry]
+    fn entry(&self, pins: Pins) {
+        sawtooth.run(pins.clk, pins.reset);
+    }
+}

@@ -1,0 +1,68 @@
+/// Num means N can be any numeric type.
+/// Real means R can be any kind of Real value: a floating point number, fixed precision, arbitrary precision, etc.
+/// The first three members are parameters.
+/// This is inferred, because they are never written to.
+/// the fourth is a register with the same width as the Num type
+pub struct Sawtooth<N: Num + Bounded, R: Real> {
+    sample_rate: R,
+    wave_rate: R,
+    initial_level: N,
+    level: N,
+}
+
+/// tighter type bounds are needed for casting and other calculations
+/// N must be bounded (not an arbitrary width integer) for this calculation to work
+impl<N: Integer + Bounded, R: Real> Sawtooth<N, R>
+{
+    /// A function relying only on parameters is equivalent to a localparam
+    /// We want to calculate (N_max - N_min) / (f_wave / f_sample).
+    /// To avoid overflows, calculate as `N_max / f_wave * f_sample - N_min / f_wave * f_sample`.
+    /// This will work just fine even if `N_min < 0`.
+    /// Also implicitly assumes sample rate > wave rate, by [Nyquist–Shannon sampling theorem](https://en.wikipedia.org/wiki/Nyquist%E2%80%93Shannon_sampling_theorem)
+    fn calculate_increment(&self) -> N {
+        let max_steps: R = (N::MAX as R / self.sample_rate) * self.wave_rate;
+        let min_steps: R = (N::MIN as R / self.sample_rate) * self.wave_rate;
+        max_steps as N - min_steps as N
+    }
+
+    /// Constructing the module with option for optional params
+    pub fn new(sample_rate: R, wave_rate: R, initial_level: Option<N>) -> Self {
+        let initial_level = initial_level.unwrap_or(0);
+        let level = initial_level;
+        Self {
+            sample_rate,
+            wave_rate,
+            initial_level,
+            level,
+        }
+    }
+
+    /// a function that mutates self is an "action"
+    /// if an action occurs in a clocked context, always_ff is inferred.
+    /// otherwise, always_comb is inferred instead
+    /// a variable can only be changed by one action per clock (i.e. cannot reset & increment in the same clock)
+    fn reset(&mut self) {
+        self.level = self.initial_level;
+    }
+
+    /// because calculate_increment() was defined for all types of Integers, it can be transparently used here
+    fn increment(&mut self) {
+        self.level += self.calculate_increment();
+    }
+
+    /// wire out for the current level
+    pub fn level(&self) -> N {
+        self.level
+    }
+
+    /// `always_ff(@posedge clock or posedge reset)` exposed to users of Sawtooth
+    pub fn run(&mut self, clock: edge, reset: edge) {
+        if clock.rising() || reset.rising() {
+            if reset {
+                self.reset();
+            } else {
+                self.increment();
+            }
+        }
+    }
+}
