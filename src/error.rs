@@ -5,6 +5,7 @@ use std::fmt::Display;
 use std::path::{Path, PathBuf};
 
 use colored::Colorize;
+use log::debug;
 
 macro_rules! error {
     ($name: ident { $($err: ident => $path: ty,)* }) => {
@@ -32,6 +33,10 @@ macro_rules! error {
                 }
             }
         }
+
+        impl From<$name> for Vec<$name> {
+            fn from(other: $name) -> Self{ vec![other] }
+        }
     };
 }
 
@@ -51,8 +56,27 @@ impl Display for PreciseSynParseError {
 impl PreciseSynParseError {
     const MOD_FILENAME: &'static str = "mod.rhdl";
 
-    fn render_fallback(formatter: &mut fmt::Formatter, err: &syn::Error) -> fmt::Result {
-        write!(formatter, "Unable to parse file: {}", err)
+    fn render_fallback(
+        formatter: &mut fmt::Formatter,
+        cause: &syn::Error,
+        filepath: &str,
+    ) -> fmt::Result {
+        debug!("falling back");
+        write!(
+            formatter,
+            "\n\
+             {error}{header}\n\
+             {indent}{arrow} {filepath}\n\
+             {indent} {pipe} {message}\n\
+             ",
+            error = "error".red().bold(),
+            header = format!(": {}", cause).bold(),
+            indent = " ",
+            arrow = "-->".blue().bold(),
+            filepath = filepath,
+            pipe = "|".blue().bold(),
+            message = cause.to_string().red().bold(),
+        )
     }
 
     /// Based off of https://github.com/dtolnay/syn/blob/master/examples/dump-syntax/src/main.rs#L94
@@ -63,20 +87,6 @@ impl PreciseSynParseError {
         path: &Path,
         code: &str,
     ) -> fmt::Result {
-        let start = cause.span().start();
-        let mut end = cause.span().end();
-        if start.line == end.line && start.column == end.column {
-            return Self::render_fallback(formatter, cause);
-        }
-        let code_line = match code.lines().nth(start.line - 1) {
-            Some(line) => line,
-            None => return Self::render_fallback(formatter, cause),
-        };
-        if end.line > start.line {
-            end.line = start.line;
-            end.column = code_line.len();
-        }
-
         let filename = path
             .file_name()
             .map(OsStr::to_string_lossy)
@@ -92,20 +102,35 @@ impl PreciseSynParseError {
         } else {
             filename
         };
+
+        let start = cause.span().start();
+        let mut end = cause.span().end();
+        if start.line == end.line && start.column == end.column {
+            return Self::render_fallback(formatter, cause, &filepath);
+        }
+        let code_line = match code.lines().nth(start.line - 1) {
+            Some(line) => line,
+            None => return Self::render_fallback(formatter, cause, &filepath),
+        };
+        if end.line > start.line {
+            end.line = start.line;
+            end.column = code_line.len();
+        }
+
         write!(
             formatter,
             "\n\
              {error}{header}\n\
-             {indent}{arrow} {filename}:{linenum}:{colnum}\n\
+             {indent}{arrow} {filepath}:{linenum}:{colnum}\n\
              {indent} {pipe}\n\
              {label} {pipe} {code}\n\
              {indent} {pipe} {offset}{underline} {message}\n\
              ",
             error = "error".red().bold(),
-            header = ": rhdlc unable to parse file".bold(),
+            header = format!(": {}", cause).bold(),
             indent = " ".repeat(start.line.to_string().len()),
             arrow = "-->".blue().bold(),
-            filename = filepath,
+            filepath = filepath,
             linenum = start.line,
             colnum = start.column,
             pipe = "|".blue().bold(),
@@ -113,7 +138,7 @@ impl PreciseSynParseError {
             code = code_line.trim_end(),
             offset = " ".repeat(start.column),
             underline = "^".repeat(end.column - start.column).red().bold(),
-            message = cause.to_string().red(),
+            message = cause.to_string().red().bold(),
         )
     }
 }

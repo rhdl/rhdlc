@@ -3,18 +3,38 @@ use std::io::Read;
 use std::path::Path;
 use std::path::PathBuf;
 
-use syn::visit_mut::{self, VisitMut};
+use syn::visit_mut::VisitMut;
 use syn::{parse_quote, ItemMod};
 
-use log::info;
+use crate::error::{PreciseSynParseError, ResolveError};
 
-use crate::error::{ResolveError, PreciseSynParseError};
+pub fn resolve_source_tree(path: &Path) -> Result<syn::File, Vec<ResolveError>> {
+    let mut file = File::open(&path).map_err(ResolveError::from)?;
+
+    let mut src = String::new();
+    file.read_to_string(&mut src).map_err(ResolveError::from)?;
+
+    let mut tree = syn::parse_file(&src).map_err(|err| {
+        ResolveError::from(PreciseSynParseError {
+            cause: err,
+            code: src,
+            path: path.to_owned(),
+        })
+    })?;
+    let mut resolver = ModResolver::new(path.parent().unwrap());
+    resolver.visit_file_mut(&mut tree);
+    if resolver.errors.len() > 0 {
+        Err(resolver.errors)
+    } else {
+        Ok(tree)
+    }
+}
 
 /// Resolves source code for modules from their files recursively
 /// Errors are related to file-reading issues or missing content
-pub struct ModResolver<'a> {
-    pub cwd: &'a Path,
-    pub errors: Vec<ResolveError>,
+struct ModResolver<'a> {
+    cwd: &'a Path,
+    errors: Vec<ResolveError>,
 }
 
 impl<'a> VisitMut for ModResolver<'a> {
@@ -58,7 +78,7 @@ impl<'a> VisitMut for ModResolver<'a> {
 }
 
 impl<'a> ModResolver<'a> {
-    pub fn new(cwd: &'a Path) -> Self {
+    fn new(cwd: &'a Path) -> Self {
         Self {
             cwd,
             errors: vec![],
@@ -69,12 +89,10 @@ impl<'a> ModResolver<'a> {
         let mut file = File::open(&path)?;
         let mut content = String::new();
         file.read_to_string(&mut content)?;
-        let tree = syn::parse_file(&content).map_err(|err| {
-            PreciseSynParseError {
-                cause: err,
-                code: content,
-                path: path.to_owned()
-            }
+        let tree = syn::parse_file(&content).map_err(|err| PreciseSynParseError {
+            cause: err,
+            code: content,
+            path: path.to_owned(),
         })?;
         Ok(tree)
     }
