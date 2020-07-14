@@ -9,14 +9,15 @@ struct Pins {
     reset: edge
 }
 
+#[rhdl::top]
 struct Top {
     sawtooth: Sawtooth<u24, f64>
 }
 
 impl Top {
-    /// The synthesis tool will derive a component map from the constructor
-    /// And determine how to instantiate various modules
-    #[rhdl::constructor]
+    /// The synthesis tool will derive a component map diagram from the constructor
+    /// and determine how to instantiate various modules
+    #[rhdl::top::constructor]
     fn new() -> Self {
         Self {
             sawtooth: Sawtooth::new(48000., 480., None)
@@ -25,7 +26,7 @@ impl Top {
 
     /// The entry point pulls in the full logic tree of the design
     /// 
-    #[rhdl::entry]
+    #[rhdl::top::entry]
     fn entry(&self, pins: Pins) {
         sawtooth.run(pins.clk, pins.reset);
     }
