@@ -71,7 +71,9 @@ impl<'a> VisitMut for ModResolver<'a> {
                     pull_folder.visit_file_mut(&mut tree);
                     self.errors.append(&mut pull_folder.errors);
                 }
-                *item_mod = parse_quote!(mod #ident { #tree });
+                let path_as_string = path.to_string_lossy();
+                *item_mod =
+                    parse_quote!(#[rhdl::rhdlc::path = #path_as_string] mod #ident { #tree });
             }
         }
     }

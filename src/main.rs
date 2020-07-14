@@ -1,12 +1,12 @@
 #![forbid(unsafe_code)]
 
-use std::path::PathBuf;
 use std::env;
+use std::path::PathBuf;
 use std::process;
 
-mod resolve;
 mod error;
-
+mod resolve;
+mod scope;
 
 fn main() {
     env_logger::init();
