@@ -14,7 +14,7 @@ fn main() {
     let filepath = match env::args().skip(1).next() {
         Some(filename) => PathBuf::from(filename),
         _ => {
-            eprintln!("Usage: dump-syntax path/to/filename.rs");
+            eprintln!("Usage: rhdlc path/to/filename.rs");
             process::exit(1);
         }
     };
