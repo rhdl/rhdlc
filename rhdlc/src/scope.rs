@@ -23,16 +23,18 @@
 ///         * smart guess by type (fn, struct, var, mod, etc.)
 ///     * fall back all the way to "not found" if nothing is similar
 
-use petgraph::{Graph, Directed};
+use petgraph::{Graph, Directed, graph::NodeIndex};
 use syn::Item;
 use syn::visit_mut::VisitMut;
 
 type ScopeGraph = Graph<Item, (), Directed, usize>;
 
 /// Find all nodes in the scope graph
+/// Will also build the default set of scope edges
 #[derive(Default, Debug)]
 struct NodeScoper {
-    graph: ScopeGraph
+    graph: ScopeGraph,
+    enclosing: Option<NodeIndex<usize>>
 }
 
 #[derive(Debug)]
