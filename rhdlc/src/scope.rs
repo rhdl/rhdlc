@@ -9,19 +9,28 @@
 ///     * struct effectively acts as a node containing field nodes & conditional edges to them
 /// * pub fn in mod visible in the parent scope
 ///     * if parent scope is fully visible to another scope, it is 
+/// * special pub types (pub(crate), etc.)
+/// * type aliases
+/// * `use super::ABC as XYZ;`
 ///
-/// Possible out of scope violations, in order of precedence:
-/// * Publicity
-///     * if it's owned by the user, offer that they need to pub it
-///     * crates are not owned by user, but any source in the local tree is
-/// * Out of scope: exists but can't use
-///     * fix by adding a use
-///         * might not work if out of scope is private
-/// * Not Found
-///     * look for similar names and offer a "did you mean"
-///         * use [strsim](https://docs.rs/strsim/0.10.0/strsim/) for Ident similarity
-///         * smart guess by type (fn, struct, var, mod, etc.)
-///     * fall back all the way to "not found" if nothing is similar
+/// Possible scope violations, in order of precedence:
+/// * In scope, but not allowed to be
+///     * Not public
+///         * if it's owned by the user, suggest that they should pub it
+///         * crates are not owned by user, but any source in the local tree is
+///     * Name conflict
+///         * can't have two structs in scope with the same name
+/// * Out of scope
+///     * Exists, but not in scope
+///         * fix by adding a use
+///             * find disconnected nodes with the same name (expensive?)
+///             * see if it's possible to create an edge (reachable)
+///                 * don't offer this if it isn't. if it's owned by user it's private and you can could pub it.
+///     * Not Found
+///         * look for similarly named disconnected nodes and offer a "did you mean"
+///             * use [strsim](https://docs.rs/strsim/0.10.0/strsim/) for Ident similarity
+///             * heuristic guess by type (fn, struct, var, mod, etc.)
+///         * fall back all the way to "not found" if nothing is similar
 
 use petgraph::{Graph, Directed, graph::NodeIndex};
 use syn::Item;
