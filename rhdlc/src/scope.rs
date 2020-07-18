@@ -48,6 +48,7 @@ enum Name<'ast> {
 }
 
 impl<'ast> Name<'ast> {
+    /// The names in a name class must be unique
     fn in_same_name_class(&self, other: &Name<'ast>) -> bool {
         use Name::*;
         match self {
@@ -70,6 +71,7 @@ impl<'ast> Name<'ast> {
         }
     }
 
+    /// Check ident
     fn has_same_ident(&self, other: &Name<'ast>) -> bool {
         use Name::*;
         match self {
@@ -84,12 +86,13 @@ impl<'ast> Name<'ast> {
                 _ => false,
             },
             Other => match other {
-                Other => true,
+                Other => false,
                 _ => false,
             },
         }
     }
 
+    /// Two names in the same name class with the same identifier are conflicting
     fn conflicts_with(&self, other: &Name<'ast>) -> bool {
         self.in_same_name_class(other) && self.has_same_ident(other)
     }
@@ -139,20 +142,41 @@ impl<'ast> From<&'ast Item> for Name<'ast> {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct ScopeBuilder<'ast> {
-    pub graph: Graph<Node<'ast>, String>,
-    ancestry: Vec<NodeIndex<DefaultIx>>,
+    pub file_graph: &'ast Graph<File, ItemMod>,
+    pub scope_graph: Graph<Node<'ast>, String>,
+    scope_ancestry: Vec<NodeIndex<DefaultIx>>,
+}
+
+impl<'ast> From<&'ast Graph<File, ItemMod>> for ScopeBuilder<'ast> {
+    fn from(file_graph: &'ast Graph<File, ItemMod>) -> Self {
+        Self {
+            file_graph,
+            scope_graph: Graph::default(),
+            scope_ancestry: vec![],
+        }
+    }
 }
 
 impl<'ast> ScopeBuilder<'ast> {
     /// Find all names given a source forest
     /// Externals are paths to standalone source code: a top + lib.rs of each crate
     /// Check for declaration name conflicts and skip those that violate this
-    pub fn stage_one(&mut self, file_graph: &'ast Graph<File, ItemMod>) {
-        for f in file_graph.externals(Direction::Incoming) {
-            self.ancestry.clear();
-            file_graph[f].items.iter().for_each(|i| self.add_item(i));
+    pub fn stage_one(&mut self) {
+        for f in self.file_graph.externals(Direction::Incoming) {
+            if self.scope_ancestry.len() > 0 {
+                warn!("scope_ancestry was not empty: {:?}", self.scope_ancestry);
+                self.scope_ancestry.clear();
+            }
+            eprintln!("{:?}", self.file_graph[f]);
+            let idx = self.scope_graph.add_node(Node::Root());
+            self.scope_ancestry.push(idx);
+            self.file_graph[f]
+                .items
+                .iter()
+                .for_each(|i| self.add_item(i));
+            self.scope_ancestry.pop();
         }
     }
 
@@ -170,16 +194,26 @@ impl<'ast> ScopeBuilder<'ast> {
                 );
                 return;
             }
-            let mod_idx = self.graph.add_node(Node { item, ident: ident });
-            if let Some(parent) = self.ancestry.last() {
-                self.graph
-                    .add_edge(*parent, mod_idx, "mod -> mod".to_string());
+            let mod_idx = self.scope_graph.add_node(Node::Item { item, ident: ident });
+            if let Some(parent) = self.scope_ancestry.last() {
+                match self.scope_graph[*parent] {
+                    Node::Root() => {
+                        self.scope_graph
+                            .add_edge(*parent, mod_idx, "root > mod".to_string());
+                    }
+                    Node::Item { .. } => {
+                        self.scope_graph
+                            .add_edge(*parent, mod_idx, "mod > mod".to_string());
+                    }
+                }
             }
 
             if let Some((_, items)) = content {
-                self.ancestry.push(mod_idx);
+                self.scope_ancestry.push(mod_idx);
                 items.iter().for_each(|i| self.add_item(i));
-                self.ancestry.pop();
+                self.scope_ancestry.pop();
+            } else {
+                todo!("Expected mod to have content, need to walk the file graph");
             }
         }
     }
@@ -204,10 +238,18 @@ impl<'ast> ScopeBuilder<'ast> {
                     );
                     return;
                 }
-                let item_idx = self.graph.add_node(Node { item, ident });
-                if let Some(parent) = self.ancestry.last() {
-                    self.graph
-                        .add_edge(*parent, item_idx, "mod -> item".to_string());
+                let item_idx = self.scope_graph.add_node(Node::Item { item, ident });
+                if let Some(parent) = self.scope_ancestry.last() {
+                    match self.scope_graph[*parent] {
+                        Node::Root() => {
+                            self.scope_graph
+                                .add_edge(*parent, item_idx, "root > item".to_string());
+                        }
+                        Node::Item { .. } => {
+                            self.scope_graph
+                                .add_edge(*parent, item_idx, "mod > item".to_string());
+                        }
+                    }
                 }
             }
             Other => {}
@@ -215,44 +257,47 @@ impl<'ast> ScopeBuilder<'ast> {
     }
 
     fn others_declared_with_same_name_in_scope(&self, name: Name<'ast>) -> Vec<&'ast Item> {
-        if let Some(parent) = self.ancestry.last() {
+        if let Some(parent) = self.scope_ancestry.last() {
             // Check parent neighbors
             return self
-                .graph
+                .scope_graph
                 .neighbors(*parent)
                 .filter_map(|neighbor| {
-                    let item = self.graph[neighbor].item;
-                    if name.conflicts_with(&item.into()) {
-                        Some(item)
+                    if let Node::Item { item, .. } = self.scope_graph[neighbor] {
+                        if name.conflicts_with(&item.into()) {
+                            Some(item)
+                        } else {
+                            None
+                        }
                     } else {
                         None
                     }
                 })
                 .collect::<Vec<&'ast Item>>();
         }
-        // Check top level neighbors
-        self.graph
-            .externals(Direction::Incoming)
-            .filter_map(|neighbor| {
-                let item = self.graph[neighbor].item;
-                if name.conflicts_with(&item.into()) {
-                    Some(item)
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<&'ast Item>>()
+        warn!(
+            "All nodes should have neighbors, thus this should never happen: {:?}",
+            name
+        );
+        vec![]
     }
 }
 
 #[derive(Debug)]
-pub struct Node<'ast> {
-    item: &'ast Item,
-    ident: &'ast Ident,
+pub enum Node<'ast> {
+    /// A dummy node for the start of a forest
+    Root(),
+    Item {
+        item: &'ast Item,
+        ident: &'ast Ident,
+    },
 }
 
 impl<'ast> Display for Node<'ast> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
-        write!(f, "{}", self.ident)
+        match self {
+            Self::Root() => write!(f, "root"),
+            Self::Item { ident, .. } => write!(f, "{}", ident),
+        }
     }
 }

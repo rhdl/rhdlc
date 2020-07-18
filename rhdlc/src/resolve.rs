@@ -20,19 +20,15 @@ use crate::error::{
 #[derive(Default)]
 pub struct Resolver {
     cwd: PathBuf,
-    file_graph: Graph<syn::File, syn::ItemMod>,
-    errors: Vec<ResolveError>,
+    pub file_graph: Graph<syn::File, syn::ItemMod>,
+    pub errors: Vec<ResolveError>,
     ancestry: Vec<NodeIndex<DefaultIx>>,
 }
 
 impl Resolver {
     /// List of paths to resolve
     /// A top level entry point + crate entry points `lib.rs`
-    pub fn resolve_forest(
-        paths: &Vec<&Path>,
-    ) -> Result<Graph<syn::File, syn::ItemMod>, Vec<ResolveError>> {
-        let mut resolver = Self::default();
-
+    pub fn resolve_forest(&mut self, paths: &Vec<&Path>) {
         paths
             .iter()
             .map(|path| {
@@ -49,45 +45,21 @@ impl Resolver {
                 }
             })
             .for_each(|path| match path {
-                Ok(path) => resolver.resolve_path(path),
-                Err(err) => resolver.errors.push(err),
+                Ok(path) => self.resolve_path(path),
+                Err(err) => self.errors.push(err),
             });
-
-        if resolver.errors.len() > 0 {
-            Err(resolver.errors)
-        } else {
-            Ok(resolver.file_graph)
-        }
     }
 
     fn resolve_path(&mut self, path: &Path) {
-        if path.is_dir() {
-            // Allows iterating over neighbors of mod.rhdl
-            match std::fs::read_dir(path) {
-                Ok(it) => it
-                    .map(|readdir| readdir.map(|r| r.path()))
-                    .for_each(|path| match path {
-                        Ok(path) => {
-                            if !path
-                                .file_name()
-                                .map(|osstr| osstr == "mod.rhdl")
-                                .unwrap_or(false)
-                            {
-                                self.resolve_path(&path)
-                            }
-                        }
-                        Err(err) => self.errors.push(err.into()),
-                    }),
-                Err(err) => self.errors.push(err.into()),
-            }
-        } else if path.is_file() {
+        if path.is_file() {
             match Self::resolve_file(path) {
                 Ok(file) => {
                     let idx = self.file_graph.add_node(file);
                     self.ancestry.push(idx);
                     self.cwd = path.to_owned();
                     self.cwd.pop();
-                    let mods: Vec<syn::ItemMod> = self.file_graph[idx]
+
+                    let mods: Vec<ItemMod> = self.file_graph[idx]
                         .items
                         .iter()
                         .filter_map(|item| match item {
@@ -110,20 +82,20 @@ impl Resolver {
     /// If the code is in a mod.rhdl file, there could be more modules that need to be recursively resolved.
     fn resolve_mod(&mut self, item_mod: ItemMod) {
         if let Some(content) = item_mod.content {
-            self.cwd.push(item_mod.ident.to_string());
             for item in content.1 {
                 match item {
                     syn::Item::Mod(m) => {
-                        // A mod in a file can have declared sub-mods in files in ./mod/sub-mod.rs
-                        todo!(
+                        if let None = m.content {
+                            // A mod in a file can have declared sub-mods in files in ./mod/sub-mod.rs
+                            todo!(
                             "Current implementation can't support this, and it's a rare edge-case"
                         );
-                        self.resolve_mod(m);
+                            self.resolve_mod(m);
+                        }
                     }
                     _ => {}
                 }
             }
-            self.cwd.pop();
             return;
         }
 
@@ -165,16 +137,27 @@ impl Resolver {
                 return;
             }
             Ok(file) => {
+                let mods: Vec<ItemMod> = file
+                    .items
+                    .iter()
+                    .filter_map(|item| match item {
+                        syn::Item::Mod(m) => Some(m.clone()),
+                        _ => None,
+                    })
+                    .collect();
                 let idx = self.file_graph.add_node(file);
                 if let Some(parent) = self.ancestry.last() {
                     // Ok to use the clone because it'll just be `mod abc;`
                     self.file_graph.add_edge(*parent, idx, item_mod);
                 }
-                if in_folder {
-                    self.ancestry.push(idx);
-                    self.resolve_path(&path.parent().unwrap());
-                    self.ancestry.pop();
+
+                self.ancestry.push(idx);
+                self.cwd = path.parent().unwrap().to_owned();
+                for m in mods {
+                    self.resolve_mod(m);
                 }
+                self.cwd.pop();
+                self.ancestry.pop();
             }
         }
     }

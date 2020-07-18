@@ -21,18 +21,14 @@ fn main() {
         }
     };
 
-    let forest = resolve::Resolver::resolve_forest(&vec![&filepath]);
-    if let Err(errs) = forest {
-        eprintln!("{:?}", errs);
-        errs.iter().for_each(|err| eprintln!("{}", err));
+    let mut resolver = resolve::Resolver::default();
+    resolver.resolve_forest(&vec![&filepath]);
+    if resolver.errors.len() > 0 {
+        resolver.errors.iter().for_each(|err| eprintln!("{}", err));
         process::exit(1)
     }
-    let forest = forest.unwrap();
 
-    let mut item_scoper = scope::ScopeBuilder::default();
-    // item_scoper.stage_one(&tree);
-    // println!(
-    //     "{}",
-    //     Dot::new(&item_scoper.graph)
-    // );
+    let mut item_scoper = scope::ScopeBuilder::from(&resolver.file_graph);
+    item_scoper.stage_one();
+    println!("{}", Dot::new(&item_scoper.scope_graph));
 }
