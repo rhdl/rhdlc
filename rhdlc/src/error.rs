@@ -143,8 +143,100 @@ impl PreciseSynParseError {
     }
 }
 
+#[derive(Debug)]
+pub struct DuplicateError {
+    pub ident: syn::Ident,
+    pub file: PathBuf,
+    pub folder: PathBuf,
+}
+
+impl Display for DuplicateError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        write!(
+            f,
+            "\n\
+             {error}{header}\n\
+             {indent}{arrow} {file}\n\
+             {indent}{arrow} {folder}\n\
+            ",
+            error = "error".red().bold(),
+            header = format!(": duplicate instances of `{}` were found", self.ident).bold(),
+            arrow = "-->".blue().bold(),
+            indent = " ",
+            file = self.file.to_string_lossy(),
+            folder = self.folder.to_string_lossy()
+        )
+    }
+}
+
+#[derive(Debug)]
+pub struct UnexpectedModError(pub PathBuf);
+impl Display for UnexpectedModError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        write!(
+            f,
+            "\n\
+             {error}{header}\n\
+             {indent}{arrow} {file}\n\
+            ",
+            error = "error".red().bold(),
+            arrow = "-->".blue().bold(),
+            indent = " ",
+            file = self.0.to_string_lossy(),
+            header = ": a file cannot be named mod.rhdl unless it is a module".bold(),
+        )
+    }
+}
+
+#[derive(Debug)]
+pub struct DirectoryError(pub PathBuf);
+impl Display for DirectoryError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        write!(
+            f,
+            "\n\
+             {error}{header}\n\
+             {indent}{arrow} {file}\n\
+            ",
+            error = "error".red().bold(),
+            arrow = "-->".blue().bold(),
+            header = format!(": {}", "cannot compile a directory").bold(),
+            indent = " ",
+            file = self.0.to_string_lossy(),
+        )
+    }
+}
+
+#[derive(Debug)]
+pub struct NotFoundError {
+    pub ident: syn::Ident,
+    pub file: PathBuf,
+    pub folder: PathBuf,
+}
+impl Display for NotFoundError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        write!(
+            f,
+            "\n\
+             {error}{header}\n\
+             {indent}{arrow} {file}\n\
+             {indent}{arrow} {folder}\n\
+            ",
+            error = "error".red().bold(),
+            header = format!(": could not find a file for `{}` at either of", self.ident).bold(),
+            arrow = "-->".blue().bold(),
+            indent = " ",
+            file = self.file.to_string_lossy(),
+            folder = self.folder.to_string_lossy()
+        )
+    }
+}
+
 error!(ResolveError {
     IoError => std::io::Error,
     ParseError => PreciseSynParseError,
-    NotFoundError => syn::Ident,
+    NotFoundError => NotFoundError,
+    DuplicateError => DuplicateError,
+    UnexpectedModError => UnexpectedModError,
+    DirectoryError => DirectoryError,
 });

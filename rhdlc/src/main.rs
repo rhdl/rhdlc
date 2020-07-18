@@ -1,5 +1,7 @@
 #![forbid(unsafe_code)]
 
+use petgraph::dot::Dot;
+
 use std::env;
 use std::path::PathBuf;
 use std::process;
@@ -19,9 +21,18 @@ fn main() {
         }
     };
 
-    let tree = resolve::resolve_source_tree(&filepath);
-    if let Err(errs) = tree {
+    let forest = resolve::Resolver::resolve_forest(&vec![&filepath]);
+    if let Err(errs) = forest {
+        eprintln!("{:?}", errs);
         errs.iter().for_each(|err| eprintln!("{}", err));
         process::exit(1)
     }
+    let forest = forest.unwrap();
+
+    let mut item_scoper = scope::ScopeBuilder::default();
+    // item_scoper.stage_one(&tree);
+    // println!(
+    //     "{}",
+    //     Dot::new(&item_scoper.graph)
+    // );
 }
