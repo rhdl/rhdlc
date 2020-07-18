@@ -28,7 +28,9 @@ fn main() {
         process::exit(1)
     }
 
-    let mut item_scoper = scope::ScopeBuilder::from(&resolver.file_graph);
-    item_scoper.stage_one();
-    println!("{}", Dot::new(&item_scoper.scope_graph));
+    let mut scope_builder = scope::ScopeBuilder::from(&resolver.file_graph);
+    scope_builder.stage_one();
+    scope_builder.stage_two();
+    scope_builder.stage_three();
+    println!("{}", Dot::new(&scope_builder.scope_graph));
 }

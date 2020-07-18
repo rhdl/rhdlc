@@ -32,9 +32,9 @@ use log::{debug, error, warn};
 ///             * use [strsim](https://docs.rs/strsim/0.10.0/strsim/) for Ident similarity
 ///             * heuristic guess by type (fn, struct, var, mod, etc.)
 ///         * fall back all the way to "not found" if nothing is similar
-use petgraph::{graph::DefaultIx, graph::NodeIndex, Direction, Graph, visit::EdgeRef};
+use petgraph::{graph::DefaultIx, graph::NodeIndex, visit::EdgeRef, Direction, Graph};
 use std::fmt::Display;
-use syn::{File, Ident, Item, ItemMod};
+use syn::{File, Ident, ImplItem, Item, ItemImpl, ItemMod};
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 enum Name<'ast> {
@@ -52,16 +52,12 @@ impl<'ast> Name<'ast> {
     fn in_same_name_class(&self, other: &Name<'ast>) -> bool {
         use Name::*;
         match self {
-            Function(_) | Variable(_) => match other {
-                Function(_) | Variable(_) => true,
+            Function(_) | Variable(_) | Type(_) | Mod(_) | Crate(_) => match other {
+                Function(_) | Variable(_) | Type(_) | Mod(_) | Crate(_) => true,
                 _ => false,
             },
             Macro(_) => match other {
                 Macro(_) => true,
-                _ => false,
-            },
-            Type(_) | Mod(_) | Crate(_) => match other {
-                Type(_) | Mod(_) | Crate(_) => true,
                 _ => false,
             },
             Other => match other {
@@ -131,11 +127,12 @@ impl<'ast> From<&'ast Item> for Name<'ast> {
                 Other
             }
             Use(_) => {
-                debug!("Skipping use",);
+                debug!("Skipping use");
                 Other
             }
             unknown => {
-                warn!("Not handling {:?}", unknown);
+                // syn is implemented so that any additions to the items in Rust syntax will fall into this arm
+                error!("Not handling {:?}", unknown);
                 Other
             }
         }
@@ -168,80 +165,118 @@ impl<'ast> ScopeBuilder<'ast> {
     pub fn stage_one(&mut self) {
         for f in self.file_graph.externals(Direction::Incoming) {
             if self.scope_ancestry.len() > 0 {
-                warn!("scope_ancestry was not empty: {:?}", self.scope_ancestry);
+                warn!(
+                    "scope_ancestry was not empty, clearing: {:?}",
+                    self.scope_ancestry
+                );
                 self.scope_ancestry.clear();
             }
-            eprintln!("{:?}", self.file_graph[f]);
             let idx = self.scope_graph.add_node(Node::Root());
             self.scope_ancestry.push(idx);
             self.file_ancestry.push(f);
             self.file_graph[f]
                 .items
                 .iter()
-                .for_each(|i| self.add_item(i));
+                .for_each(|i| self.add_mod(i));
             self.file_ancestry.pop();
             self.scope_ancestry.pop();
         }
     }
 
-    fn add_mod(&mut self, item: &'ast Item) {
-        if let Item::Mod(syn::ItemMod { ident, content, .. }) = &item {
-            let others = self.others_declared_with_same_name_in_scope(item.into());
-            if others.len() > 0 {
-                // TODO: create name conflict errors for this
+    pub fn stage_two(&mut self) {
+        for f in self.file_graph.externals(Direction::Incoming) {
+            if self.scope_ancestry.len() > 0 {
                 warn!(
-                    "duplicate mod names! {:?}",
-                    others
-                        .iter()
-                        .map(|i| Name::from(*i))
-                        .collect::<Vec<Name<'ast>>>()
+                    "scope_ancestry was not empty, clearing: {:?}",
+                    self.scope_ancestry
                 );
-                return;
+                self.scope_ancestry.clear();
             }
-            let mod_idx = self.scope_graph.add_node(Node::Item { item, ident: ident });
-            if let Some(parent) = self.scope_ancestry.last() {
-                match self.scope_graph[*parent] {
-                    Node::Root() => {
-                        self.scope_graph
-                            .add_edge(*parent, mod_idx, "mod".to_string());
-                    }
-                    Node::Item { .. } => {
-                        self.scope_graph
-                            .add_edge(*parent, mod_idx, "sub-mod".to_string());
-                    }
-                }
-            }
-
-            if let Some((_, items)) = content {
-                self.scope_ancestry.push(mod_idx);
-                items.iter().for_each(|i| self.add_item(i));
-                self.scope_ancestry.pop();
-            } else {
-                if let Some(edge) = self.file_ancestry.last().and_then(|parent| {
-                    self.file_graph
-                        .edges(*parent)
-                        .find(|edge| edge.weight().ident == *ident)
-                }) {
-                    self.scope_ancestry.push(mod_idx);
-                    self.file_ancestry.push(edge.target());
-                    self.file_graph[edge.target()].items.iter().for_each(|item| {
-                        self.add_item(item);
-                    });
-                    self.file_ancestry.pop();
-                    self.scope_ancestry.pop();
-                } else {
-                    error!("Could not find a file for {}", ident);
-                }
-            }
+            let idx = self.scope_graph.add_node(Node::Root());
+            self.scope_ancestry.push(idx);
+            self.file_ancestry.push(f);
+            self.file_graph[f]
+                .items
+                .iter()
+                .for_each(|i| self.add_impl(i));
+            self.file_ancestry.pop();
+            self.scope_ancestry.pop();
         }
     }
 
-    fn add_item(&mut self, item: &'ast Item) {
+    fn add_use(&mut self, item: &'ast Item) {}
+
+    /// Find all path-based names in the source forest
+    /// These include items declared in an impl, type aliases, etc.
+    pub fn stage_three(&mut self) {}
+    /// Stage three
+    fn add_impl(&mut self, item: &'ast Item) {
+        if let Item::Impl(ItemImpl { items, self_ty, .. }) = item {
+            dbg!(&self_ty);
+            // match self_ty {
+
+            // }
+        }
+    }
+
+    /// Stage one
+    fn add_mod(&mut self, item: &'ast Item) {
         use Name::*;
         let name = Name::from(item);
         match name {
             Mod(_) => {
-                self.add_mod(item);
+                if let Item::Mod(ItemMod { ident, content, .. }) = item {
+                    let others = self.others_declared_with_same_name_in_scope(item.into());
+                    if others.len() > 0 {
+                        // TODO: create name conflict errors for this
+                        warn!(
+                            "duplicate mod names! {:?}",
+                            others
+                                .iter()
+                                .map(|i| Name::from(*i))
+                                .collect::<Vec<Name<'ast>>>()
+                        );
+                        return;
+                    }
+                    let mod_idx = self.scope_graph.add_node(Node::Item { item, ident: ident });
+                    if let Some(parent) = self.scope_ancestry.last() {
+                        match self.scope_graph[*parent] {
+                            Node::Root() => {
+                                self.scope_graph
+                                    .add_edge(*parent, mod_idx, "mod".to_string());
+                            }
+                            Node::Item { .. } => {
+                                self.scope_graph
+                                    .add_edge(*parent, mod_idx, "sub-mod".to_string());
+                            }
+                        }
+                    }
+
+                    if let Some((_, items)) = content {
+                        self.scope_ancestry.push(mod_idx);
+                        items.iter().for_each(|i| self.add_mod(i));
+                        self.scope_ancestry.pop();
+                    } else {
+                        if let Some(edge) = self.file_ancestry.last().and_then(|parent| {
+                            self.file_graph
+                                .edges(*parent)
+                                .find(|edge| edge.weight().ident == *ident)
+                        }) {
+                            self.scope_ancestry.push(mod_idx);
+                            self.file_ancestry.push(edge.target());
+                            self.file_graph[edge.target()]
+                                .items
+                                .iter()
+                                .for_each(|item| {
+                                    self.add_mod(item);
+                                });
+                            self.file_ancestry.pop();
+                            self.scope_ancestry.pop();
+                        } else {
+                            error!("Could not find a file for {}", ident);
+                        }
+                    }
+                }
             }
             Crate(ident) | Type(ident) | Variable(ident) | Macro(ident) | Function(ident) => {
                 let others = self.others_declared_with_same_name_in_scope(name);
