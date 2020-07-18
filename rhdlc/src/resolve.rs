@@ -103,9 +103,9 @@ impl Resolver {
         let mod_file_path = self.cwd.join(format!("{}.rhdl", ident));
         let mod_folder_file_path = self.cwd.join(format!("{}/mod.rhdl", ident));
 
-        let (path, in_folder) = match (mod_file_path.is_file(), mod_folder_file_path.is_file()) {
-            (true, false) => (mod_file_path, true),
-            (false, true) => (mod_folder_file_path, true),
+        let path = match (mod_file_path.is_file(), mod_folder_file_path.is_file()) {
+            (true, false) => mod_file_path,
+            (false, true) => mod_folder_file_path,
             (true, true) => {
                 self.errors.push(
                     DuplicateError {

@@ -32,7 +32,7 @@ use log::{debug, error, warn};
 ///             * use [strsim](https://docs.rs/strsim/0.10.0/strsim/) for Ident similarity
 ///             * heuristic guess by type (fn, struct, var, mod, etc.)
 ///         * fall back all the way to "not found" if nothing is similar
-use petgraph::{graph::DefaultIx, graph::NodeIndex, Direction, Graph};
+use petgraph::{graph::DefaultIx, graph::NodeIndex, Direction, Graph, visit::EdgeRef};
 use std::fmt::Display;
 use syn::{File, Ident, Item, ItemMod};
 
@@ -147,6 +147,7 @@ pub struct ScopeBuilder<'ast> {
     pub file_graph: &'ast Graph<File, ItemMod>,
     pub scope_graph: Graph<Node<'ast>, String>,
     scope_ancestry: Vec<NodeIndex<DefaultIx>>,
+    file_ancestry: Vec<NodeIndex<DefaultIx>>,
 }
 
 impl<'ast> From<&'ast Graph<File, ItemMod>> for ScopeBuilder<'ast> {
@@ -155,6 +156,7 @@ impl<'ast> From<&'ast Graph<File, ItemMod>> for ScopeBuilder<'ast> {
             file_graph,
             scope_graph: Graph::default(),
             scope_ancestry: vec![],
+            file_ancestry: vec![],
         }
     }
 }
@@ -172,10 +174,12 @@ impl<'ast> ScopeBuilder<'ast> {
             eprintln!("{:?}", self.file_graph[f]);
             let idx = self.scope_graph.add_node(Node::Root());
             self.scope_ancestry.push(idx);
+            self.file_ancestry.push(f);
             self.file_graph[f]
                 .items
                 .iter()
                 .for_each(|i| self.add_item(i));
+            self.file_ancestry.pop();
             self.scope_ancestry.pop();
         }
     }
@@ -199,11 +203,11 @@ impl<'ast> ScopeBuilder<'ast> {
                 match self.scope_graph[*parent] {
                     Node::Root() => {
                         self.scope_graph
-                            .add_edge(*parent, mod_idx, "root > mod".to_string());
+                            .add_edge(*parent, mod_idx, "mod".to_string());
                     }
                     Node::Item { .. } => {
                         self.scope_graph
-                            .add_edge(*parent, mod_idx, "mod > mod".to_string());
+                            .add_edge(*parent, mod_idx, "sub-mod".to_string());
                     }
                 }
             }
@@ -213,7 +217,21 @@ impl<'ast> ScopeBuilder<'ast> {
                 items.iter().for_each(|i| self.add_item(i));
                 self.scope_ancestry.pop();
             } else {
-                todo!("Expected mod to have content, need to walk the file graph");
+                if let Some(edge) = self.file_ancestry.last().and_then(|parent| {
+                    self.file_graph
+                        .edges(*parent)
+                        .find(|edge| edge.weight().ident == *ident)
+                }) {
+                    self.scope_ancestry.push(mod_idx);
+                    self.file_ancestry.push(edge.target());
+                    self.file_graph[edge.target()].items.iter().for_each(|item| {
+                        self.add_item(item);
+                    });
+                    self.file_ancestry.pop();
+                    self.scope_ancestry.pop();
+                } else {
+                    error!("Could not find a file for {}", ident);
+                }
             }
         }
     }
@@ -243,11 +261,11 @@ impl<'ast> ScopeBuilder<'ast> {
                     match self.scope_graph[*parent] {
                         Node::Root() => {
                             self.scope_graph
-                                .add_edge(*parent, item_idx, "root > item".to_string());
+                                .add_edge(*parent, item_idx, "item".to_string());
                         }
                         Node::Item { .. } => {
                             self.scope_graph
-                                .add_edge(*parent, item_idx, "mod > item".to_string());
+                                .add_edge(*parent, item_idx, "item".to_string());
                         }
                     }
                 }
