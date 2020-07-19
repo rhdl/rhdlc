@@ -1,13 +1,10 @@
-use std::borrow::Cow;
-use std::ffi::OsStr;
 use std::fmt;
 use std::fmt::Display;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use proc_macro2::Span;
 
 use colored::Colorize;
-use log::debug;
 
 mod render;
 use render::*;

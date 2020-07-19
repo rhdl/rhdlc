@@ -76,7 +76,7 @@ impl Resolver {
                 Err(err) => self.errors.push(err),
             }
         } else {
-            todo!("Could be a broken symlink or something");
+            todo!("Could be a broken symlink or file doesn't exist");
         }
     }
 
