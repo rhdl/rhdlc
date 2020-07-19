@@ -22,15 +22,14 @@ fn main() {
     };
 
     let mut resolver = resolve::Resolver::default();
-    resolver.resolve_forest(&vec![&filepath]);
+    resolver.resolve_forest(vec![filepath]);
     if resolver.errors.len() > 0 {
         resolver.errors.iter().for_each(|err| eprintln!("{}", err));
         process::exit(1)
     }
 
     let mut scope_builder = scope::ScopeBuilder::from(&resolver.file_graph);
-    scope_builder.stage_one();
-    scope_builder.stage_two();
-    scope_builder.stage_three();
+    scope_builder.build_graph();
+    // scope_builder.check_graph();
     println!("{}", Dot::new(&scope_builder.scope_graph));
 }

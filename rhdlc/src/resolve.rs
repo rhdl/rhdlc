@@ -1,12 +1,8 @@
-use std::fs::File;
+use std::fs;
 use std::io::Read;
-use std::path::Path;
 use std::path::PathBuf;
 
-use petgraph::{
-    graph::{DefaultIx, NodeIndex},
-    Graph,
-};
+use petgraph::{graph::NodeIndex, Graph};
 use syn::ItemMod;
 
 use crate::error::{
@@ -14,45 +10,49 @@ use crate::error::{
     UnexpectedModError,
 };
 
+#[derive(Debug)]
+pub struct File {
+    pub content: String,
+    pub syn: syn::File,
+    pub path: PathBuf,
+}
+
+pub type FileGraph = Graph<File, ItemMod>;
+
 /// Resolves source code for modules from their files recursively
 /// Errors are related to file-reading issues, missing content, or duplicate files
 /// Does not care about naming conflicts, as those are delegated to `ScopeBuilder`.
 #[derive(Default)]
 pub struct Resolver {
     cwd: PathBuf,
-    pub file_graph: Graph<syn::File, syn::ItemMod>,
+    pub file_graph: FileGraph,
     pub errors: Vec<ResolveError>,
-    ancestry: Vec<NodeIndex<DefaultIx>>,
+    ancestry: Vec<NodeIndex>,
 }
 
 impl Resolver {
     /// List of paths to resolve
     /// A top level entry point + crate entry points `lib.rs`
-    pub fn resolve_forest(&mut self, paths: &Vec<&Path>) {
-        paths
-            .iter()
-            .map(|path| {
-                if path.is_dir() {
-                    Err(DirectoryError(path.to_path_buf()).into())
-                } else if path
-                    .file_name()
-                    .map(|osstr| osstr == "mod.rhdl")
-                    .unwrap_or(false)
-                {
-                    Err(UnexpectedModError(path.to_path_buf()).into())
-                } else {
-                    Ok(path)
-                }
-            })
-            .for_each(|path| match path {
-                Ok(path) => self.resolve_path(path),
-                Err(err) => self.errors.push(err),
-            });
+    pub fn resolve_forest(&mut self, paths: Vec<PathBuf>) {
+        for path in paths {
+            if path.is_dir() {
+                self.errors.push(DirectoryError(path.to_path_buf()).into());
+            } else if path
+                .file_name()
+                .map(|osstr| osstr == "mod.rhdl")
+                .unwrap_or(false)
+            {
+                self.errors
+                    .push(UnexpectedModError(path.to_path_buf()).into());
+            } else {
+                self.resolve_path(path);
+            }
+        }
     }
 
-    fn resolve_path(&mut self, path: &Path) {
+    fn resolve_path(&mut self, path: PathBuf) {
         if path.is_file() {
-            match Self::resolve_file(path) {
+            match Self::resolve_file(path.clone()) {
                 Ok(file) => {
                     let idx = self.file_graph.add_node(file);
                     self.ancestry.push(idx);
@@ -60,6 +60,7 @@ impl Resolver {
                     self.cwd.pop();
 
                     let mods: Vec<ItemMod> = self.file_graph[idx]
+                        .syn
                         .items
                         .iter()
                         .filter_map(|item| match item {
@@ -130,7 +131,7 @@ impl Resolver {
             }
         };
 
-        let file = Self::resolve_file(&path);
+        let file = Self::resolve_file(path.clone());
         match file {
             Err(err) => {
                 self.errors.push(err);
@@ -138,6 +139,7 @@ impl Resolver {
             }
             Ok(file) => {
                 let mods: Vec<ItemMod> = file
+                    .syn
                     .items
                     .iter()
                     .filter_map(|item| match item {
@@ -162,15 +164,18 @@ impl Resolver {
         }
     }
 
-    fn resolve_file(path: &Path) -> Result<syn::File, ResolveError> {
-        let mut file = File::open(&path)?;
+    fn resolve_file(path: PathBuf) -> Result<File, ResolveError> {
+        let mut file = fs::File::open(&path)?;
         let mut content = String::new();
         file.read_to_string(&mut content)?;
-        let tree = syn::parse_file(&content).map_err(|err| PreciseSynParseError {
-            cause: err,
-            code: content,
-            path: path.to_owned(),
-        })?;
-        Ok(tree)
+        match syn::parse_file(&content) {
+            Err(err) => Err(PreciseSynParseError {
+                cause: err,
+                code: content,
+                path: path.to_owned(),
+            }
+            .into()),
+            Ok(syn) => Ok(File { path, content, syn }),
+        }
     }
 }
