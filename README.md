@@ -6,6 +6,11 @@ An experiment in using Rust syntax to describe hardware.
 
 Advance the current state of the art for writing code targeting programmable hardware with:
 
+* Batteries included
+   * Formatting with [rustfmt](https://github.com/rust-lang/rustfmt)
+   * Documentation with [doc comments](https://doc.rust-lang.org/stable/rust-by-example/meta/doc.html)
+   * Libraries with [crates](https://doc.rust-lang.org/book/ch07-01-packages-and-crates.html)
+   * Community crates with [crates.io](https://crates.io/)
 * Additional compile time functionality
     * [Macros](https://doc.rust-lang.org/rust-by-example/macros.html) for reduced repetition
         * i.e. `include_bytes!("FTDI_245.rom")` lets you include a ROM from a file in the same directory
@@ -13,10 +18,10 @@ Advance the current state of the art for writing code targeting programmable har
     * [SMT](https://en.wikipedia.org/wiki/Satisfiability_modulo_theories) prover for finding desired logic
         * i.e. in a [gray code](https://en.wikipedia.org/wiki/Gray_code), the encoding for each adjacent number differs by a single bit
             * instead of finding a gray code, mathematically define what you want and let the prover do the work
-* Formal verification
+* Verification
     * Use SMT provers to prove linear temporal logic statements about a system
-        * Can verify the system will never enter an unsafe state for safety-critical applications
-        * No need for test vectors
+         * Can verify the system will never enter an unsafe state for safety-critical applications
+         * No need for test vectors
     * Fuzzing with [AFL](https://github.com/rust-fuzz/afl.rs)
 * Simulation as a first-class citizen
     * Compile to rust code for simulation that runs circles around [ModelSim](https://en.wikipedia.org/wiki/ModelSim) and others
@@ -34,7 +39,6 @@ Put an end to:
     * Paid contracts/plans for support (what is this, 2005?)
     * "Premium" features
 * Multi-hour (or even multi-day) simulations for large designs
-
 
 ## rhdlc
 
