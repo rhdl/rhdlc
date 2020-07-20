@@ -17,9 +17,9 @@ Advance the current state of the art for writing code targeting programmable har
         * Eliminates need for auxiliary scripting languages like Tcl, Perl or Python
     * [SMT](https://en.wikipedia.org/wiki/Satisfiability_modulo_theories) prover for finding desired logic
         * i.e. in a [gray code](https://en.wikipedia.org/wiki/Gray_code), the encoding for each adjacent number differs by a single bit
-            * instead of finding a gray code, mathematically define what you want and let the prover do the work
+            * instead of finding a gray code, mathematically define what you want and let the prover find an instance satisfying the requirements
 * Verification
-    * Use SMT provers to prove linear temporal logic statements about a system
+    * Use SMT provers to verify linear temporal logic statements about a system
          * Can verify the system will never enter an unsafe state for safety-critical applications
          * No need for test vectors
     * Fuzzing with [AFL](https://github.com/rust-fuzz/afl.rs)
