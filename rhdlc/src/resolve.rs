@@ -30,6 +30,8 @@ pub struct Resolver {
     ancestry: Vec<NodeIndex>,
 }
 
+const RHDL_EXTENSION: &'static str = "rhdl";
+
 impl Resolver {
     /// List of paths to resolve
     /// A top level entry point + crate entry points `lib.rs`
@@ -38,8 +40,8 @@ impl Resolver {
             if path.is_dir() {
                 self.errors.push(DirectoryError(path.to_path_buf()).into());
             } else if path
-                .file_name()
-                .map(|osstr| osstr == "mod.rhdl")
+                .file_stem()
+                .map(|osstr| osstr == "mod")
                 .unwrap_or(false)
             {
                 self.errors
@@ -56,8 +58,7 @@ impl Resolver {
                 Ok(file) => {
                     let idx = self.file_graph.add_node(file);
                     self.ancestry.push(idx);
-                    self.cwd = path.to_owned();
-                    self.cwd.pop();
+                    self.cwd = path.parent().unwrap().to_owned();
 
                     let mods: Vec<ItemMod> = self.file_graph[idx]
                         .syn
@@ -69,7 +70,13 @@ impl Resolver {
                         })
                         .collect();
                     for m in mods {
-                        self.resolve_mod(m);
+                        self.resolve_mod(
+                            m,
+                            &path
+                                .extension()
+                                .map(|e| e.to_string_lossy())
+                                .unwrap_or(RHDL_EXTENSION.into()),
+                        );
                     }
                     self.ancestry.pop();
                 }
@@ -80,8 +87,8 @@ impl Resolver {
         }
     }
 
-    /// If the code is in a mod.rhdl file, there could be more modules that need to be recursively resolved.
-    fn resolve_mod(&mut self, item_mod: ItemMod) {
+    /// If the code is in a mod file, there could be more modules that need to be recursively resolved.
+    fn resolve_mod(&mut self, item_mod: ItemMod, extension: &str) {
         if let Some(content) = item_mod.content {
             for item in content.1 {
                 match item {
@@ -91,7 +98,7 @@ impl Resolver {
                             todo!(
                             "Current implementation can't support this, and it's a rare edge-case"
                         );
-                            self.resolve_mod(m);
+                            self.resolve_mod(m, extension);
                         }
                     }
                     _ => {}
@@ -101,12 +108,14 @@ impl Resolver {
         }
 
         let ident = &item_mod.ident;
-        let mod_file_path = self.cwd.join(format!("{}.rhdl", ident));
-        let mod_folder_file_path = self.cwd.join(format!("{}/mod.rhdl", ident));
+        dbg!(&self.cwd);
+        let mod_file_path = self.cwd.join(format!("{}.{}", ident, extension));
+        let mod_folder_file_path = self.cwd.join(format!("{}/mod.{}", ident, extension));
+        dbg!(&mod_file_path, &mod_folder_file_path);
 
-        let path = match (mod_file_path.is_file(), mod_folder_file_path.is_file()) {
-            (true, false) => mod_file_path,
-            (false, true) => mod_folder_file_path,
+        let (path, is_folder) = match (mod_file_path.is_file(), mod_folder_file_path.is_file()) {
+            (true, false) => (mod_file_path, false),
+            (false, true) => (mod_folder_file_path, true),
             (true, true) => {
                 self.errors.push(
                     DuplicateError {
@@ -155,10 +164,13 @@ impl Resolver {
 
                 self.ancestry.push(idx);
                 self.cwd = path.parent().unwrap().to_owned();
+                dbg!(&self.cwd);
                 for m in mods {
-                    self.resolve_mod(m);
+                    self.resolve_mod(m, extension);
                 }
-                self.cwd.pop();
+                if is_folder {
+                    self.cwd.pop();
+                }
                 self.ancestry.pop();
             }
         }
