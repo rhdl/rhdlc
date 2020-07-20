@@ -6,7 +6,7 @@ use std::path::Path;
 use colored::Colorize;
 use proc_macro2::Span;
 
-const MOD_FILENAME: &'static str = "mod.rhdl";
+const MOD_FILE_STEM: &'static str = "mod";
 const UNKNOWN_FILE: &'static str = "???.rhdl";
 const UNKNOWN_DIRECTORY: &'static str = "???";
 
@@ -31,9 +31,14 @@ where
         .map(OsStr::to_string_lossy)
         .unwrap_or(UNKNOWN_FILE.into());
 
-    let filepath = if filename == MOD_FILENAME {
+    let filepath = if path
+        .file_stem()
+        .map(OsStr::to_string_lossy)
+        .map(|stem| stem == MOD_FILE_STEM)
+        .unwrap_or(false)
+    {
         path.parent()
-            .and_then(Path::file_name)
+            .and_then(Path::file_stem)
             .map(OsStr::to_string_lossy)
             .unwrap_or(UNKNOWN_DIRECTORY.into())
             + "/"
@@ -141,7 +146,7 @@ where
             label = start.line.to_string().blue().bold(),
             code = code_line.trim_end(),
             offset = " ".repeat(start.column),
-            underline = "^".repeat(end.column - start.column).red().bold(),
+            underline = underline,
             msg = msg,
         )?;
     }
