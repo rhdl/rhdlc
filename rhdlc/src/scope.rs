@@ -203,7 +203,9 @@ impl<'ast> ScopeBuilder<'ast> {
         }
 
         // Stage two: apply visibility
-        self.apply_visibility();
+        for node in self.scope_graph.node_indices() {
+            self.apply_visibility(node);
+        }
 
         // Stage three: delete use nodes
 
@@ -225,116 +227,116 @@ impl<'ast> ScopeBuilder<'ast> {
         // }
     }
 
-    /// Stage two
-    fn apply_visibility(&mut self) {
+    /// If a node sets its visibility, apply it
+    fn apply_visibility(&mut self, node: NodeIndex) {
         use syn::Item::*;
         use syn::*;
-        for node in self.scope_graph.node_indices() {
-            let vis = match self.scope_graph[node] {
-                Node::Item { item, .. } => match item {
-                    ExternCrate(ItemExternCrate { ident, vis, .. })
-                    | Type(ItemType { ident, vis, .. })
-                    | Static(ItemStatic { ident, vis, .. })
-                    | Const(ItemConst { ident, vis, .. })
-                    | Fn(ItemFn {
-                        sig: Signature { ident, .. },
-                        vis,
-                        ..
-                    })
-                    | Macro2(ItemMacro2 { ident, vis, .. })
-                    | Struct(ItemStruct { ident, vis, .. })
-                    | Enum(ItemEnum { ident, vis, .. })
-                    | Trait(ItemTrait { ident, vis, .. })
-                    | TraitAlias(ItemTraitAlias { ident, vis, .. })
-                    | Mod(ItemMod { ident, vis, .. })
-                    | Union(ItemUnion { ident, vis, .. }) => Some(vis),
-                    _ => None,
-                },
-                Node::File {
-                    item: ItemMod { vis, .. },
+        let vis = match self.scope_graph[node] {
+            Node::Item { item, .. } => match item {
+                ExternCrate(ItemExternCrate { ident, vis, .. })
+                | Type(ItemType { ident, vis, .. })
+                | Static(ItemStatic { ident, vis, .. })
+                | Const(ItemConst { ident, vis, .. })
+                | Fn(ItemFn {
+                    sig: Signature { ident, .. },
+                    vis,
                     ..
-                } => Some(vis),
-                Node::Use {
-                    item: ItemUse { vis, .. },
-                    ..
-                } => Some(vis),
+                })
+                | Macro2(ItemMacro2 { ident, vis, .. })
+                | Struct(ItemStruct { ident, vis, .. })
+                | Enum(ItemEnum { ident, vis, .. })
+                | Trait(ItemTrait { ident, vis, .. })
+                | TraitAlias(ItemTraitAlias { ident, vis, .. })
+                | Mod(ItemMod { ident, vis, .. })
+                | Union(ItemUnion { ident, vis, .. }) => Some(vis),
                 _ => None,
-            };
+            },
+            Node::File {
+                item: ItemMod { vis, .. },
+                ..
+            } => Some(vis),
+            Node::Use {
+                item: ItemUse { vis, .. },
+                ..
+            } => Some(vis),
+            _ => None,
+        };
 
-            if let Some(vis) = vis {
-                use Visibility::*;
-                match vis {
-                    Public(_) => {
-                        // add grandparent connections
-                        let grandparents: Vec<NodeIndex> = self
-                            .scope_graph
-                            .edges_directed(node, Direction::Incoming)
-                            .map(|edge| edge.source())
-                            .map(|parent| {
-                                self.scope_graph
-                                    .edges_directed(parent, Direction::Incoming)
-                                    .map(|edge| edge.source())
-                            })
-                            .flatten()
-                            .collect();
-                        for grandparent in grandparents {
-                            self.scope_graph
-                                .add_edge(grandparent, node, "pub".to_string());
+        if let Some(vis) = vis {
+            use Visibility::*;
+            match vis {
+                Public(_) => self.apply_visibility_pub(node),
+                Crate(_) => self.apply_visibility_crate(node),
+                Restricted(r) => {
+                    if let Some(_in) = r.in_token {
+                        todo!("restricted visibility in paths is not implemented yet");
+                    // Edition Differences: Starting with the 2018 edition, paths for pub(in path) must start with crate, self, or super. The 2015 edition may also use paths starting with :: or modules from the crate root.
+                    } else {
+                        match r
+                            .path
+                            .get_ident()
+                            .map(|ident| ident.to_string())
+                            .expect("error if the path is not an ident")
+                            .as_str()
+                        {
+                            // No-op
+                            "self" => {}
+                            // Same as crate pub
+                            "crate" => self.apply_visibility_crate(node),
+                            // Same as pub
+                            "super" => self.apply_visibility_pub(node),
+                            _ => todo!("error if none of the above"),
                         }
                     }
-                    Crate(_) => {
-                        // https://github.com/rust-lang/rust/issues/53120
-                        // TODO: check validity of a crate-level pub if this isn't a crate
-                        // Reverse BFS
-                        let mut roots: Vec<NodeIndex> = vec![];
-                        let mut level: Vec<NodeIndex> = vec![];
-                        let mut next: Vec<NodeIndex> = vec![node];
-                        while next.len() > 0 {
-                            level.append(&mut next);
-                            next.clear();
-                            while let Some(n) = level.pop() {
-                                if let Node::Root { .. } = self.scope_graph[n] {
-                                    roots.push(n);
-                                } else {
-                                    next.extend(
-                                        self.scope_graph
-                                            .edges_directed(n, Direction::Incoming)
-                                            .map(|x| x.source()),
-                                    );
-                                }
-                            }
-                        }
-                        for root in roots {
-                            self.scope_graph.add_edge(root, node, "crate".to_string());
-                        }
-                    }
-                    Restricted(r) => {
-                        if let Some(_in) = r.in_token {
-                            todo!("restricted visibility in paths is not implemented yet");
-                            // Edition Differences: Starting with the 2018 edition, paths for pub(in path) must start with crate, self, or super. The 2015 edition may also use paths starting with :: or modules from the crate root.
-                        } else {
-                            match r
-                                .path
-                                .get_ident()
-                                .map(|ident| ident.to_string())
-                                .expect("error if the path is not an ident")
-                                .as_str()
-                            {
-                                // No-op
-                                "self" => {}
-                                // Same as crate pub
-                                "crate" => {}
-                                // Same as pub
-                                "super" => {}
-                                _ => {
-                                    todo!("error if none of the above");
-                                }
-                            }
-                        }
-                    }
-                    Inherited => {}
+                }
+                Inherited => {}
+            }
+        }
+    }
+
+    fn apply_visibility_pub(&mut self, node: NodeIndex) {
+        // add grandparent connections
+        let grandparents: Vec<NodeIndex> = self
+            .scope_graph
+            .edges_directed(node, Direction::Incoming)
+            .map(|edge| edge.source())
+            .map(|parent| {
+                self.scope_graph
+                    .edges_directed(parent, Direction::Incoming)
+                    .map(|edge| edge.source())
+            })
+            .flatten()
+            .collect();
+        for grandparent in grandparents {
+            self.scope_graph
+                .add_edge(grandparent, node, "pub".to_string());
+        }
+    }
+
+    /// https://github.com/rust-lang/rust/issues/53120
+    /// TODO: check validity of a crate-level pub if this isn't a crate
+    /// Bottom-up BFS
+    fn apply_visibility_crate(&mut self, node: NodeIndex) {
+        let mut roots: Vec<NodeIndex> = vec![];
+        let mut level: Vec<NodeIndex> = vec![];
+        let mut next: Vec<NodeIndex> = vec![node];
+        while next.len() > 0 {
+            level.append(&mut next);
+            next.clear();
+            while let Some(n) = level.pop() {
+                if let Node::Root { .. } = self.scope_graph[n] {
+                    roots.push(n);
+                } else {
+                    next.extend(
+                        self.scope_graph
+                            .edges_directed(n, Direction::Incoming)
+                            .map(|x| x.source()),
+                    );
                 }
             }
+        }
+        for root in roots {
+            self.scope_graph.add_edge(root, node, "crate".to_string());
         }
     }
 
