@@ -22,7 +22,7 @@ Advance the current state of the art for writing code targeting programmable har
     * Use SMT provers to verify linear temporal logic statements about a system
          * Can verify the system will never enter an unsafe state for safety-critical applications
          * No need for test vectors
-    * Fuzzing with [AFL](https://github.com/rust-fuzz/afl.rs)
+    * Test vector fuzzing with [AFL](https://github.com/rust-fuzz/afl.rs)
 * Simulation as a first-class citizen
     * Compile to rust code for simulation that runs circles around [ModelSim](https://en.wikipedia.org/wiki/ModelSim) and others
     * [Modelica](https://en.wikipedia.org/wiki/Modelica) for transistor-level simulation in different environmental conditions
