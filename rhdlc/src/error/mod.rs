@@ -54,7 +54,7 @@ impl Display for PreciseSynParseError {
         render_location(
             f,
             "could not parse file",
-            (Routine::Error(), &self.cause.to_string(), self.cause.span()),
+            (Routine::Error, &self.cause.to_string(), self.cause.span()),
             vec![],
             &self.path,
             &self.code,
@@ -174,7 +174,7 @@ impl Display for MultipleDefinitionError {
             render_location(
                 f,
                 format!("the name `{}` is defined multiple times", self.name),
-                (Routine::Error(), "", self.original),
+                (Routine::Error, "", self.original),
                 vec![("", *duplicate)],
                 &self.file.path,
                 &self.file.content,

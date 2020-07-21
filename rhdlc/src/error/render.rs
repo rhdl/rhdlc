@@ -11,8 +11,8 @@ const UNKNOWN_FILE: &'static str = "???.rhdl";
 const UNKNOWN_DIRECTORY: &'static str = "???";
 
 pub enum Routine {
-    Error(),
-    Warning(),
+    Error,
+    Warning,
 }
 
 pub fn render_location<'a, C>(
@@ -49,12 +49,12 @@ where
 
     use Routine::*;
     let msg = match routine.0 {
-        Error() => {
+        Error => {
             writeln!(f)?;
             write!(f, "{}", "error".red().bold())?;
             routine.1.red().bold()
         }
-        Warning() => {
+        Warning => {
             writeln!(f)?;
             write!(f, "{}", "warning".yellow().bold())?;
             routine.1.yellow().bold()
@@ -96,29 +96,7 @@ where
     references.sort_by(|a, b| a.1.start().cmp(&b.1.start()));
 
     for r in references.iter().filter(|r| r.1.start() < start) {
-        let (start, mut end) = (r.1.start(), r.1.end());
-        let code_line = match code.lines().nth(start.line - 1) {
-            Some(line) => line,
-            None => return Err(fmt::Error),
-        };
-        if end.line > start.line {
-            end.line = start.line;
-            end.column = code_line.len();
-        }
-        write!(
-            f,
-            "\n\
-             {label} {pipe} {code}\n\
-             {indent} {pipe} {offset}{underline} {msg}\n\
-             ",
-            indent = " ".repeat(start.line.to_string().len()),
-            pipe = "|".blue().bold(),
-            label = start.line.to_string().blue().bold(),
-            code = code_line.trim_end(),
-            offset = " ".repeat(start.column),
-            underline = "-".repeat(end.column - start.column).blue().bold(),
-            msg = r.0.to_string().blue().bold(),
-        )?;
+        write_ref(f, r, code)?;
     }
 
     {
@@ -132,15 +110,14 @@ where
         }
         let underline = "^".repeat(end.column - start.column);
         let underline = match routine.0 {
-            Error() => underline.red().bold(),
-            Warning() => underline.yellow().bold(),
+            Error => underline.red().bold(),
+            Warning => underline.yellow().bold(),
         };
-        write!(
+        writeln!(
             f,
             "\n\
          {label} {pipe} {code}\n\
-         {indent} {pipe} {offset}{underline} {msg}\n\
-         ",
+         {indent} {pipe} {offset}{underline} {msg}",
             indent = " ".repeat(start.line.to_string().len()),
             pipe = "|".blue().bold(),
             label = start.line.to_string().blue().bold(),
@@ -152,33 +129,37 @@ where
     }
 
     for r in references.iter().filter(|r| r.1.start() > start) {
-        let (start, mut end) = (r.1.start(), r.1.end());
-        let code_line = match code.lines().nth(start.line - 1) {
-            Some(line) => line,
-            None => return Err(fmt::Error),
-        };
-        if end.line > start.line {
-            end.line = start.line;
-            end.column = code_line.len();
-        }
-        write!(
-            f,
-            "\n\
-             {label} {pipe} {code}\n\
-             {indent} {pipe} {offset}{underline} {message}\n\
-             ",
-            indent = " ".repeat(start.line.to_string().len()),
-            pipe = "|".blue().bold(),
-            label = start.line.to_string().blue().bold(),
-            code = code_line.trim_end(),
-            offset = " ".repeat(start.column),
-            underline = "-".repeat(end.column - start.column).blue().bold(),
-            message = r.0.to_string().blue().bold(),
-        )?;
+        write_ref(f, r, code)?;
     }
 
-    for r in references.iter().filter(|r| r.1.start() > start) {
-        // refs
-    }
     Ok(())
+}
+
+fn write_ref(f: &mut fmt::Formatter, r: &(&str, Span), code: &str) -> fmt::Result {
+    let (start, mut end) = (r.1.start(), r.1.end());
+    let code_line = match code.lines().nth(start.line - 1) {
+        Some(line) => line,
+        None => return Err(fmt::Error),
+    };
+    if end.line > start.line {
+        end.line = start.line;
+        end.column = code_line.len();
+    }
+    let pipe = "|".blue().bold();
+    writeln!(
+        f,
+        "{label} {pipe} {code}",
+        label = start.line.to_string().blue().bold(),
+        pipe = pipe,
+        code = code_line.trim_end()
+    )?;
+    writeln!(
+        f,
+        "{indent} {pipe} {offset}{underline} {msg}",
+        indent = " ".repeat(start.line.to_string().len()),
+        pipe = pipe,
+        offset = " ".repeat(start.column),
+        underline = "-".repeat(end.column - start.column).blue().bold(),
+        msg = r.0.to_string().blue().bold()
+    )
 }
