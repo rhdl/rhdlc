@@ -24,10 +24,10 @@ fn main() {
     let mut resolver = resolve::Resolver::default();
     match arg.as_str() {
         "-" => {
-            resolver.resolve_tree(resolve::ResolutionType::Stdin);
+            resolver.resolve_tree(resolve::ResolutionSource::Stdin);
         }
         path => {
-            resolver.resolve_tree(resolve::ResolutionType::File(path.into()));
+            resolver.resolve_tree(resolve::ResolutionSource::File(path.into()));
         }
     }
 

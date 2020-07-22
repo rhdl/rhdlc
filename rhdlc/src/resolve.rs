@@ -15,7 +15,7 @@ use crate::error::{
 pub struct File {
     pub content: String,
     pub syn: syn::File,
-    pub path: PathBuf,
+    pub source: ResolutionSource,
 }
 
 pub type FileGraph = Graph<File, Vec<Ident>>;
@@ -34,16 +34,17 @@ pub struct Resolver {
     extension: String,
 }
 
-pub enum ResolutionType {
+#[derive(Debug)]
+pub enum ResolutionSource {
     File(PathBuf),
     Stdin,
 }
 
 impl Resolver {
     /// A top level entry point
-    pub fn resolve_tree(&mut self, res: ResolutionType) {
+    pub fn resolve_tree(&mut self, res: ResolutionSource) {
         let path = match &res {
-            ResolutionType::File(path) => Some(path.clone()),
+            ResolutionSource::File(path) => Some(path.clone()),
             _ => None,
         };
         match Self::resolve(res) {
@@ -143,7 +144,7 @@ impl Resolver {
             }
         };
 
-        let file = Self::resolve(ResolutionType::File(path.clone()));
+        let file = Self::resolve(ResolutionSource::File(path.clone()));
         match file {
             Err(err) => {
                 self.errors.push(err);
@@ -199,9 +200,9 @@ impl Resolver {
         }
     }
 
-    fn resolve(res: ResolutionType) -> Result<File, ResolveError> {
-        match res {
-            ResolutionType::File(path) => {
+    fn resolve(res: ResolutionSource) -> Result<File, ResolveError> {
+        let content = match &res {
+            ResolutionSource::File(path) => {
                 if path.is_dir() {
                     return Err(DirectoryError(path.to_path_buf()).into());
                 }
@@ -216,19 +217,32 @@ impl Resolver {
                         path: path.clone(),
                         cause,
                     })?;
-                match syn::parse_file(&content) {
-                    Err(err) => Err(PreciseSynParseError {
-                        cause: err,
-                        code: content,
-                        path: path,
-                    }
-                    .into()),
-                    Ok(syn) => Ok(File { path, content, syn }),
-                }
+                content
             }
-            ResolutionType::Stdin => {
-                todo!("stdin not supported yet");
+            ResolutionSource::Stdin => {
+                let mut stdin = std::io::stdin();
+                let mut content = String::new();
+                stdin
+                    .read_to_string(&mut content)
+                    .map_err(|cause| WrappedIoError {
+                        path: "/dev/fd/0".into(),
+                        cause,
+                    })?;
+                content
             }
+        };
+        match syn::parse_file(&content) {
+            Err(err) => Err(PreciseSynParseError {
+                cause: err,
+                code: content,
+                res,
+            }
+            .into()),
+            Ok(syn) => Ok(File {
+                source: res,
+                content,
+                syn,
+            }),
         }
     }
 }

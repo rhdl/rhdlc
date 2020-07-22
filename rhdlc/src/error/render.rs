@@ -6,6 +6,8 @@ use std::path::Path;
 use colored::Colorize;
 use proc_macro2::Span;
 
+use crate::resolve::ResolutionSource;
+
 const MOD_FILE_STEM: &'static str = "mod";
 const UNKNOWN_FILE: &'static str = "???.rhdl";
 const UNKNOWN_DIRECTORY: &'static str = "???";
@@ -24,31 +26,36 @@ pub fn render_location<'a, C>(
     cause: C,
     main_reference: (Reference, &'a str, Span),
     mut references: Vec<(Reference, &'a str, Span)>,
-    path: &Path,
+    source: &ResolutionSource,
     code: &str,
 ) -> fmt::Result
 where
     C: Display,
 {
-    let filename = path
-        .file_name()
-        .map(OsStr::to_string_lossy)
-        .unwrap_or(UNKNOWN_FILE.into());
+    let filepath = match source {
+        ResolutionSource::File(path) => {
+            let filename = path
+                .file_name()
+                .map(OsStr::to_string_lossy)
+                .unwrap_or(UNKNOWN_FILE.into());
 
-    let filepath = if path
-        .file_stem()
-        .map(OsStr::to_string_lossy)
-        .map(|stem| stem == MOD_FILE_STEM)
-        .unwrap_or(false)
-    {
-        path.parent()
-            .and_then(Path::file_stem)
-            .map(OsStr::to_string_lossy)
-            .unwrap_or(UNKNOWN_DIRECTORY.into())
-            + "/"
-            + filename
-    } else {
-        filename
+            if path
+                .file_stem()
+                .map(OsStr::to_string_lossy)
+                .map(|stem| stem == MOD_FILE_STEM)
+                .unwrap_or(false)
+            {
+                path.parent()
+                    .and_then(Path::file_stem)
+                    .map(OsStr::to_string_lossy)
+                    .unwrap_or(UNKNOWN_DIRECTORY.into())
+                    + "/"
+                    + filename
+            } else {
+                filename
+            }
+        }
+        ResolutionSource::Stdin => "<stdin>".into(),
     };
 
     let main_max_line = main_reference.2.start().max(main_reference.2.end());
@@ -88,13 +95,15 @@ where
 
     let start = main_reference.2.start();
     let end = main_reference.2.end();
+    // Fallback render
     if start.line == end.line && start.column == end.column {
-        // Fallback render
+        // Need an extra line here
+        writeln!(f);
         writeln!(
             f,
             "{indent} {pipe} {msg}",
             indent = indent,
-            pipe = PIPE,
+            pipe = PIPE.blue().bold(),
             msg = msg
         )?;
         return Ok(());

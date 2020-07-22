@@ -2,9 +2,10 @@ use std::fmt;
 use std::fmt::Display;
 use std::path::PathBuf;
 
+use colored::Colorize;
 use proc_macro2::Span;
 
-use colored::Colorize;
+use crate::resolve::ResolutionSource;
 
 mod render;
 use render::*;
@@ -45,18 +46,22 @@ macro_rules! error {
 #[derive(Debug)]
 pub struct PreciseSynParseError {
     pub cause: syn::Error,
-    pub path: PathBuf,
+    pub res: ResolutionSource,
     pub code: String,
 }
 
 impl Display for PreciseSynParseError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let msg = match &self.res {
+            ResolutionSource::File(path) => "could not parse file",
+            ResolutionSource::Stdin => "could not parse stdin",
+        };
         render_location(
             f,
-            "could not parse file",
+            msg,
             (Reference::Error, &self.cause.to_string(), self.cause.span()),
             vec![],
-            &self.path,
+            &self.res,
             &self.code,
         )
     }
@@ -193,7 +198,7 @@ impl Display for MultipleDefinitionError {
                 format!("the name `{}` is defined multiple times", self.name),
                 (Reference::Error, "", self.original),
                 vec![(Reference::Info, "", *duplicate)],
-                &self.file.path,
+                &self.file.source,
                 &self.file.content,
             )?;
         }
