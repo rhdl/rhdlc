@@ -151,8 +151,29 @@ impl Display for NotFoundError {
     }
 }
 
+#[derive(Debug)]
+pub struct WrappedIoError {
+    pub cause: std::io::Error,
+    pub path: PathBuf,
+}
+impl Display for WrappedIoError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        writeln!(
+            f,
+            "{error}{header}",
+            error = "error".red().bold(),
+            header = format!(
+                ": couldn't read {}: {}",
+                self.path.to_string_lossy(),
+                self.cause
+            )
+            .bold(),
+        )
+    }
+}
+
 error!(ResolveError {
-    IoError => std::io::Error,
+    IoError => WrappedIoError,
     ParseError => PreciseSynParseError,
     NotFoundError => NotFoundError,
     DuplicateError => DuplicateError,

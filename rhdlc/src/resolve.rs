@@ -7,7 +7,7 @@ use syn::ItemMod;
 
 use crate::error::{
     DirectoryError, DuplicateError, NotFoundError, PreciseSynParseError, ResolveError,
-    UnexpectedModError,
+    UnexpectedModError, WrappedIoError,
 };
 
 #[derive(Debug)]
@@ -53,37 +53,33 @@ impl Resolver {
     }
 
     fn resolve_path(&mut self, path: PathBuf) {
-        if path.is_file() {
-            match Self::resolve_file(path.clone()) {
-                Ok(file) => {
-                    let idx = self.file_graph.add_node(file);
-                    self.ancestry.push(idx);
-                    self.cwd = path.parent().unwrap().to_owned();
+        match Self::resolve_file(path.clone()) {
+            Ok(file) => {
+                let idx = self.file_graph.add_node(file);
+                self.ancestry.push(idx);
+                self.cwd = path.parent().unwrap().to_owned();
 
-                    let mods: Vec<ItemMod> = self.file_graph[idx]
-                        .syn
-                        .items
-                        .iter()
-                        .filter_map(|item| match item {
-                            syn::Item::Mod(m) => Some(m.clone()),
-                            _ => None,
-                        })
-                        .collect();
-                    for m in mods {
-                        self.resolve_mod(
-                            m,
-                            &path
-                                .extension()
-                                .map(|e| e.to_string_lossy())
-                                .unwrap_or(RHDL_EXTENSION.into()),
-                        );
-                    }
-                    self.ancestry.pop();
+                let mods: Vec<ItemMod> = self.file_graph[idx]
+                    .syn
+                    .items
+                    .iter()
+                    .filter_map(|item| match item {
+                        syn::Item::Mod(m) => Some(m.clone()),
+                        _ => None,
+                    })
+                    .collect();
+                for m in mods {
+                    self.resolve_mod(
+                        m,
+                        &path
+                            .extension()
+                            .map(|e| e.to_string_lossy())
+                            .unwrap_or(RHDL_EXTENSION.into()),
+                    );
                 }
-                Err(err) => self.errors.push(err),
+                self.ancestry.pop();
             }
-        } else {
-            todo!("Could be a broken symlink or file doesn't exist");
+            Err(err) => self.errors.push(err),
         }
     }
 
@@ -177,14 +173,21 @@ impl Resolver {
     }
 
     fn resolve_file(path: PathBuf) -> Result<File, ResolveError> {
-        let mut file = fs::File::open(&path)?;
+        let mut file = fs::File::open(&path).map_err(|cause| WrappedIoError {
+            path: path.clone(),
+            cause,
+        })?;
         let mut content = String::new();
-        file.read_to_string(&mut content)?;
+        file.read_to_string(&mut content)
+            .map_err(|cause| WrappedIoError {
+                path: path.clone(),
+                cause,
+            })?;
         match syn::parse_file(&content) {
             Err(err) => Err(PreciseSynParseError {
                 cause: err,
                 code: content,
-                path: path.to_owned(),
+                path: path,
             }
             .into()),
             Ok(syn) => Ok(File { path, content, syn }),
