@@ -371,16 +371,19 @@ impl<'ast> ScopeBuilder<'ast> {
                         .scope_ancestry
                         .iter()
                         .filter_map(|scope_ancestor| match self.scope_graph[*scope_ancestor] {
-                            Node::File { ident, .. } | Node::Item { ident, .. } => Some(ident.clone()),
+                            Node::File { ident, .. } | Node::Item { ident, .. } => {
+                                Some(ident.clone())
+                            }
                             _ => None,
                         })
                         .collect();
                     full_ident_path.push(m.ident.clone());
 
                     let edge = self.file_ancestry.last().and_then(|parent| {
-                        self.file_graph.edges(*parent).filter(|edge| {
-                            full_ident_path.ends_with(edge.weight())
-                        }).max_by_key(|edge| edge.weight().len())
+                        self.file_graph
+                            .edges(*parent)
+                            .filter(|edge| full_ident_path.ends_with(edge.weight()))
+                            .max_by_key(|edge| edge.weight().len())
                     });
 
                     if let Some(edge) = edge {
@@ -403,35 +406,36 @@ impl<'ast> ScopeBuilder<'ast> {
                         self.file_ancestry.pop();
                         self.scope_ancestry.pop();
                     } else {
-                        error!("Could not find a file for {}", ident);
+                        error!(
+                            "Could not find a file for {}, this should not be possible",
+                            ident
+                        );
                     }
                 }
             }
             Macro(ItemMacro {
                 ident: Some(ident), ..
-            }) => {}
-            ExternCrate(ItemExternCrate { ident, vis, .. })
-            | Type(ItemType { ident, vis, .. })
-            | Static(ItemStatic { ident, vis, .. })
-            | Const(ItemConst { ident, vis, .. })
+            })
+            | ExternCrate(ItemExternCrate { ident, .. })
+            | Type(ItemType { ident, .. })
+            | Static(ItemStatic { ident, .. })
+            | Const(ItemConst { ident, .. })
             | Fn(ItemFn {
                 sig: Signature { ident, .. },
-                vis,
                 ..
             })
-            | Macro2(ItemMacro2 { ident, vis, .. })
-            | Struct(ItemStruct { ident, vis, .. })
-            | Enum(ItemEnum { ident, vis, .. })
-            | Trait(ItemTrait { ident, vis, .. })
-            | TraitAlias(ItemTraitAlias { ident, vis, .. })
-            | Union(ItemUnion { ident, vis, .. }) => {
+            | Macro2(ItemMacro2 { ident, .. })
+            | Struct(ItemStruct { ident, .. })
+            | Enum(ItemEnum { ident, .. })
+            | Trait(ItemTrait { ident, .. })
+            | TraitAlias(ItemTraitAlias { ident, .. })
+            | Union(ItemUnion { ident, .. }) => {
                 let item_idx = self.scope_graph.add_node(Node::Item { item, ident });
                 let parent = self.scope_ancestry.last().unwrap();
                 self.scope_graph
                     .add_edge(*parent, item_idx, "item".to_string());
             }
             Use(u) => {
-                let vis = &u.vis;
                 let use_idx = self.scope_graph.add_node(Node::Use { item: u });
                 self.scope_graph.add_edge(
                     *self.scope_ancestry.last().unwrap(),

@@ -20,6 +20,8 @@ pub struct File {
 
 pub type FileGraph = Graph<File, Vec<Ident>>;
 
+const STDIN_FALLBACK_EXTENSION: &str = "rhdl";
+
 /// Resolves source code for modules from their files recursively
 /// Errors are related to file-reading issues, missing content, or duplicate files
 /// Does not care about naming conflicts, as those are delegated to `ScopeBuilder`.
@@ -32,43 +34,72 @@ pub struct Resolver {
     extension: String,
 }
 
+pub enum ResolutionType {
+    File(PathBuf),
+    Stdin,
+}
+
 impl Resolver {
     /// A top level entry point
-    pub fn resolve(&mut self, path: PathBuf) {
-        if path.is_dir() {
-            self.errors.push(DirectoryError(path.to_path_buf()).into());
-        } else {
-            match Self::resolve_file(path.clone()) {
-                Ok(file) => {
-                    let idx = self.file_graph.add_node(file.into());
-                    self.ancestry.push(idx);
-                    self.cwd = path.parent().unwrap().to_owned();
-                    let mods: Vec<ItemMod> = self.file_graph[idx]
-                        .syn
-                        .items
-                        .iter()
-                        .filter_map(|item| match item {
-                            Item::Mod(m) => Some(m),
-                            _ => None,
-                        })
-                        .map(|m| m.clone())
-                        .collect();
-                    self.extension = path
-                        .extension()
-                        .map(OsStr::to_string_lossy)
-                        .unwrap_or_default()
-                        .to_string();
-                    for m in mods {
-                        if let None = m.content {
-                            self.resolve_mod(m, vec![]);
-                        } else {
-                            self.resolve_mod_with_content(m, vec![]);
+    pub fn resolve_tree(&mut self, res: ResolutionType) {
+        let path = match &res {
+            ResolutionType::File(path) => Some(path.clone()),
+            _ => None,
+        };
+        match Self::resolve(res) {
+            Ok(file) => {
+                let idx = self.file_graph.add_node(file.into());
+                self.ancestry.push(idx);
+                let mods: Vec<ItemMod> = self.file_graph[idx]
+                    .syn
+                    .items
+                    .iter()
+                    .filter_map(|item| match item {
+                        Item::Mod(m) => Some(m),
+                        _ => None,
+                    })
+                    .map(|m| m.clone())
+                    .collect();
+
+                if let Some(cwd) = path
+                    .as_ref()
+                    .and_then(|p| p.parent().map(|parent| parent.to_owned()))
+                {
+                    self.cwd = cwd;
+                } else {
+                    match std::env::current_dir() {
+                        Ok(cwd) => self.cwd = cwd,
+                        Err(cause) => {
+                            self.errors.push(
+                                WrappedIoError {
+                                    cause,
+                                    path: ".".into(),
+                                }
+                                .into(),
+                            );
+                            return;
                         }
                     }
-                    self.ancestry.pop();
                 }
-                Err(err) => self.errors.push(err),
+
+                self.extension = path
+                    .and_then(|p| {
+                        p.extension()
+                            .map(OsStr::to_string_lossy)
+                            .map(|cow| cow.to_string())
+                    })
+                    .unwrap_or(STDIN_FALLBACK_EXTENSION.to_owned());
+
+                for m in mods {
+                    if let None = m.content {
+                        self.resolve_mod(m, vec![]);
+                    } else {
+                        self.resolve_mod_with_content(m, vec![]);
+                    }
+                }
+                self.ancestry.pop();
             }
+            Err(err) => self.errors.push(err),
         }
     }
 
@@ -112,7 +143,7 @@ impl Resolver {
             }
         };
 
-        let file = Self::resolve_file(path.clone());
+        let file = Self::resolve(ResolutionType::File(path.clone()));
         match file {
             Err(err) => {
                 self.errors.push(err);
@@ -168,25 +199,36 @@ impl Resolver {
         }
     }
 
-    fn resolve_file(path: PathBuf) -> Result<File, ResolveError> {
-        let mut file = fs::File::open(&path).map_err(|cause| WrappedIoError {
-            path: path.clone(),
-            cause,
-        })?;
-        let mut content = String::new();
-        file.read_to_string(&mut content)
-            .map_err(|cause| WrappedIoError {
-                path: path.clone(),
-                cause,
-            })?;
-        match syn::parse_file(&content) {
-            Err(err) => Err(PreciseSynParseError {
-                cause: err,
-                code: content,
-                path: path,
+    fn resolve(res: ResolutionType) -> Result<File, ResolveError> {
+        match res {
+            ResolutionType::File(path) => {
+                if path.is_dir() {
+                    return Err(DirectoryError(path.to_path_buf()).into());
+                }
+
+                let mut file = fs::File::open(&path).map_err(|cause| WrappedIoError {
+                    path: path.clone(),
+                    cause,
+                })?;
+                let mut content = String::new();
+                file.read_to_string(&mut content)
+                    .map_err(|cause| WrappedIoError {
+                        path: path.clone(),
+                        cause,
+                    })?;
+                match syn::parse_file(&content) {
+                    Err(err) => Err(PreciseSynParseError {
+                        cause: err,
+                        code: content,
+                        path: path,
+                    }
+                    .into()),
+                    Ok(syn) => Ok(File { path, content, syn }),
+                }
             }
-            .into()),
-            Ok(syn) => Ok(File { path, content, syn }),
+            ResolutionType::Stdin => {
+                todo!("stdin not supported yet");
+            }
         }
     }
 }

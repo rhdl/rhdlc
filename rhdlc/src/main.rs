@@ -13,8 +13,8 @@ mod scope;
 fn main() {
     env_logger::init();
 
-    let filepath = match env::args().skip(1).next() {
-        Some(filename) => PathBuf::from(filename),
+    let arg = match env::args().skip(1).next() {
+        Some(arg) => arg,
         _ => {
             eprintln!("Usage: rhdlc path/to/filename.rs");
             process::exit(1);
@@ -22,7 +22,15 @@ fn main() {
     };
 
     let mut resolver = resolve::Resolver::default();
-    resolver.resolve(filepath);
+    match arg.as_str() {
+        "-" => {
+            resolver.resolve_tree(resolve::ResolutionType::Stdin);
+        }
+        path => {
+            resolver.resolve_tree(resolve::ResolutionType::File(path.into()));
+        }
+    }
+
     if resolver.errors.len() > 0 {
         resolver.errors.iter().for_each(|err| eprintln!("{}", err));
         process::exit(1)
