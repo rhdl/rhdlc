@@ -30,8 +30,6 @@ pub struct Resolver {
     ancestry: Vec<NodeIndex>,
 }
 
-const RHDL_EXTENSION: &'static str = "rhdl";
-
 impl Resolver {
     /// List of paths to resolve
     /// A top level entry point + crate entry points `lib.rs`
@@ -67,7 +65,7 @@ impl Resolver {
                         &path
                             .extension()
                             .map(|e| e.to_string_lossy())
-                            .unwrap_or(RHDL_EXTENSION.into()),
+                            .unwrap_or_default(),
                     );
                 }
                 self.ancestry.pop();
@@ -97,10 +95,8 @@ impl Resolver {
         }
 
         let ident = &item_mod.ident;
-        dbg!(&self.cwd);
-        let mod_file_path = self.cwd.join(format!("{}.{}", ident, extension));
-        let mod_folder_file_path = self.cwd.join(format!("{}/mod.{}", ident, extension));
-        dbg!(&mod_file_path, &mod_folder_file_path);
+        let mod_file_path = self.cwd.join(ident.to_string()).with_extension(extension);
+        let mod_folder_file_path = self.cwd.join(ident.to_string()).with_extension(extension);
 
         let (path, is_folder) = match (mod_file_path.is_file(), mod_folder_file_path.is_file()) {
             (true, false) => (mod_file_path, false),
