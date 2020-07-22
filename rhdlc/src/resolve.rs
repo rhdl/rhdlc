@@ -7,7 +7,7 @@ use syn::ItemMod;
 
 use crate::error::{
     DirectoryError, DuplicateError, NotFoundError, PreciseSynParseError, ResolveError,
-    UnexpectedModError, WrappedIoError,
+    WrappedIoError,
 };
 
 #[derive(Debug)]
@@ -39,13 +39,6 @@ impl Resolver {
         for path in paths {
             if path.is_dir() {
                 self.errors.push(DirectoryError(path.to_path_buf()).into());
-            } else if path
-                .file_stem()
-                .map(|osstr| osstr == "mod")
-                .unwrap_or(false)
-            {
-                self.errors
-                    .push(UnexpectedModError(path.to_path_buf()).into());
             } else {
                 self.resolve_path(path);
             }
