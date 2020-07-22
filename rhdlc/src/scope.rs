@@ -367,11 +367,23 @@ impl<'ast> ScopeBuilder<'ast> {
                     items.iter().for_each(|i| self.add_mod(i));
                     self.scope_ancestry.pop();
                 } else {
-                    if let Some(edge) = self.file_ancestry.last().and_then(|parent| {
-                        self.file_graph
-                            .edges(*parent)
-                            .find(|edge| edge.weight() == m)
-                    }) {
+                    let mut full_ident_path: Vec<Ident> = self
+                        .scope_ancestry
+                        .iter()
+                        .filter_map(|scope_ancestor| match self.scope_graph[*scope_ancestor] {
+                            Node::File { ident, .. } | Node::Item { ident, .. } => Some(ident.clone()),
+                            _ => None,
+                        })
+                        .collect();
+                    full_ident_path.push(m.ident.clone());
+
+                    let edge = self.file_ancestry.last().and_then(|parent| {
+                        self.file_graph.edges(*parent).filter(|edge| {
+                            full_ident_path.ends_with(edge.weight())
+                        }).max_by_key(|edge| edge.weight().len())
+                    });
+
+                    if let Some(edge) = edge {
                         let mod_idx = self.scope_graph.add_node(Node::File {
                             item: m,
                             ident,

@@ -64,7 +64,7 @@ impl Display for PreciseSynParseError {
 
 #[derive(Debug)]
 pub struct DuplicateError {
-    pub ident: syn::Ident,
+    pub ident_path: Vec<syn::Ident>,
     pub file: PathBuf,
     pub folder: PathBuf,
 }
@@ -79,7 +79,15 @@ impl Display for DuplicateError {
              {indent}{arrow} {folder}\n\
             ",
             error = "error".red().bold(),
-            header = format!(": duplicate instances of `{}` were found", self.ident).bold(),
+            header = format!(
+                ": duplicate instances of `{}` were found",
+                self.ident_path
+                    .iter()
+                    .map(|ident| ident.to_string())
+                    .collect::<Vec<String>>()
+                    .join("::")
+            )
+            .bold(),
             arrow = "-->".blue().bold(),
             indent = " ",
             file = self.file.to_string_lossy(),
@@ -109,7 +117,7 @@ impl Display for DirectoryError {
 
 #[derive(Debug)]
 pub struct NotFoundError {
-    pub ident: syn::Ident,
+    pub ident_path: Vec<syn::Ident>,
     pub file: PathBuf,
     pub folder: PathBuf,
 }
@@ -123,7 +131,15 @@ impl Display for NotFoundError {
              {indent}{arrow} {folder}\n\
             ",
             error = "error".red().bold(),
-            header = format!(": could not find a file for `{}` at either of", self.ident).bold(),
+            header = format!(
+                ": could not find a file for `{}` at either of",
+                self.ident_path
+                    .iter()
+                    .map(|ident| ident.to_string())
+                    .collect::<Vec<String>>()
+                    .join("::")
+            )
+            .bold(),
             arrow = "-->".blue().bold(),
             indent = " ",
             file = self.file.to_string_lossy(),

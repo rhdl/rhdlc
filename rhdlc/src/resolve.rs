@@ -1,9 +1,10 @@
+use std::ffi::OsStr;
 use std::fs;
 use std::io::Read;
 use std::path::PathBuf;
 
 use petgraph::{graph::NodeIndex, Graph};
-use syn::ItemMod;
+use syn::{Ident, Item, ItemMod};
 
 use crate::error::{
     DirectoryError, DuplicateError, NotFoundError, PreciseSynParseError, ResolveError,
@@ -17,7 +18,7 @@ pub struct File {
     pub path: PathBuf,
 }
 
-pub type FileGraph = Graph<File, ItemMod>;
+pub type FileGraph = Graph<File, Vec<Ident>>;
 
 /// Resolves source code for modules from their files recursively
 /// Errors are related to file-reading issues, missing content, or duplicate files
@@ -28,75 +29,61 @@ pub struct Resolver {
     pub file_graph: FileGraph,
     pub errors: Vec<ResolveError>,
     ancestry: Vec<NodeIndex>,
+    extension: String,
 }
 
 impl Resolver {
-    /// List of paths to resolve
-    /// A top level entry point + crate entry points `lib.rs`
-    pub fn resolve_forest(&mut self, paths: Vec<PathBuf>) {
-        for path in paths {
-            if path.is_dir() {
-                self.errors.push(DirectoryError(path.to_path_buf()).into());
-            } else {
-                self.resolve_path(path);
-            }
-        }
-    }
-
-    fn resolve_path(&mut self, path: PathBuf) {
-        match Self::resolve_file(path.clone()) {
-            Ok(file) => {
-                let idx = self.file_graph.add_node(file);
-                self.ancestry.push(idx);
-                self.cwd = path.parent().unwrap().to_owned();
-
-                let mods: Vec<ItemMod> = self.file_graph[idx]
-                    .syn
-                    .items
-                    .iter()
-                    .filter_map(|item| match item {
-                        syn::Item::Mod(m) => Some(m.clone()),
-                        _ => None,
-                    })
-                    .collect();
-                for m in mods {
-                    self.resolve_mod(
-                        m,
-                        &path
-                            .extension()
-                            .map(|e| e.to_string_lossy())
-                            .unwrap_or_default(),
-                    );
+    /// A top level entry point
+    pub fn resolve(&mut self, path: PathBuf) {
+        if path.is_dir() {
+            self.errors.push(DirectoryError(path.to_path_buf()).into());
+        } else {
+            match Self::resolve_file(path.clone()) {
+                Ok(file) => {
+                    let idx = self.file_graph.add_node(file.into());
+                    self.ancestry.push(idx);
+                    self.cwd = path.parent().unwrap().to_owned();
+                    let mods: Vec<ItemMod> = self.file_graph[idx]
+                        .syn
+                        .items
+                        .iter()
+                        .filter_map(|item| match item {
+                            Item::Mod(m) => Some(m),
+                            _ => None,
+                        })
+                        .map(|m| m.clone())
+                        .collect();
+                    self.extension = path
+                        .extension()
+                        .map(OsStr::to_string_lossy)
+                        .unwrap_or_default()
+                        .to_string();
+                    for m in mods {
+                        if let None = m.content {
+                            self.resolve_mod(m, vec![]);
+                        } else {
+                            self.resolve_mod_with_content(m, vec![]);
+                        }
+                    }
+                    self.ancestry.pop();
                 }
-                self.ancestry.pop();
+                Err(err) => self.errors.push(err),
             }
-            Err(err) => self.errors.push(err),
         }
     }
 
     /// If the code is in a mod file, there could be more modules that need to be recursively resolved.
-    fn resolve_mod(&mut self, item_mod: ItemMod, extension: &str) {
-        if let Some(content) = item_mod.content {
-            for item in content.1 {
-                match item {
-                    syn::Item::Mod(m) => {
-                        if let None = m.content {
-                            // A mod in a file can have declared sub-mods in files in ./mod/sub-mod.rs
-                            todo!(
-                            "Current implementation can't support this, and it's a rare edge-case"
-                        );
-                            self.resolve_mod(m, extension);
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            return;
-        }
-
-        let ident = &item_mod.ident;
-        let mod_file_path = self.cwd.join(ident.to_string()).with_extension(extension);
-        let mod_folder_file_path = self.cwd.join(ident.to_string()).with_extension(extension);
+    fn resolve_mod(&mut self, item_mod: ItemMod, mut ident_path: Vec<Ident>) {
+        ident_path.push(item_mod.ident.clone());
+        let mut mod_file_path = self.cwd.clone();
+        ident_path
+            .iter()
+            .for_each(|ident| mod_file_path.push(ident.to_string()));
+        let mod_folder_file_path = mod_file_path
+            .clone()
+            .join("mod")
+            .with_extension(&self.extension);
+        let mod_file_path = mod_file_path.with_extension(&self.extension);
 
         let (path, is_folder) = match (mod_file_path.is_file(), mod_folder_file_path.is_file()) {
             (true, false) => (mod_file_path, false),
@@ -104,7 +91,7 @@ impl Resolver {
             (true, true) => {
                 self.errors.push(
                     DuplicateError {
-                        ident: ident.clone(),
+                        ident_path,
                         file: mod_file_path,
                         folder: mod_folder_file_path,
                     }
@@ -117,7 +104,7 @@ impl Resolver {
                     NotFoundError {
                         file: mod_file_path,
                         folder: mod_folder_file_path,
-                        ident: ident.clone(),
+                        ident_path,
                     }
                     .into(),
                 );
@@ -137,27 +124,47 @@ impl Resolver {
                     .items
                     .iter()
                     .filter_map(|item| match item {
-                        syn::Item::Mod(m) => Some(m.clone()),
+                        Item::Mod(m) => Some(m),
                         _ => None,
                     })
+                    .map(|m| m.clone())
                     .collect();
-                let idx = self.file_graph.add_node(file);
+                let idx = self.file_graph.add_node(file.into());
                 if let Some(parent) = self.ancestry.last() {
                     // Ok to use the clone because it'll just be `mod abc;`
-                    self.file_graph.add_edge(*parent, idx, item_mod);
+                    self.file_graph.add_edge(*parent, idx, vec![item_mod.ident]);
                 }
 
                 self.ancestry.push(idx);
-                self.cwd = path.parent().unwrap().to_owned();
-                dbg!(&self.cwd);
                 for m in mods {
-                    self.resolve_mod(m, extension);
-                }
-                if is_folder {
-                    self.cwd.pop();
+                    if let None = m.content {
+                        self.resolve_mod(m, ident_path.clone());
+                    } else {
+                        self.resolve_mod_with_content(m, ident_path.clone());
+                    }
                 }
                 self.ancestry.pop();
             }
+        }
+    }
+
+    fn resolve_mod_with_content(&mut self, item_mod: ItemMod, mut ident_path: Vec<Ident>) {
+        if let Some(content) = item_mod.content {
+            ident_path.push(item_mod.ident);
+            for item in content.1 {
+                match item {
+                    Item::Mod(m) => {
+                        if let None = m.content {
+                            // A mod in a file can have declared sub-mods in files in ./mod/sub-mod.rs
+                            self.resolve_mod(m, ident_path.clone());
+                        } else {
+                            self.resolve_mod_with_content(m, ident_path.clone());
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            return;
         }
     }
 

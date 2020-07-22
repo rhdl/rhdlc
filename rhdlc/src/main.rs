@@ -22,7 +22,7 @@ fn main() {
     };
 
     let mut resolver = resolve::Resolver::default();
-    resolver.resolve_forest(vec![filepath]);
+    resolver.resolve(filepath);
     if resolver.errors.len() > 0 {
         resolver.errors.iter().for_each(|err| eprintln!("{}", err));
         process::exit(1)
