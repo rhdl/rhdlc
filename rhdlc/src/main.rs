@@ -3,7 +3,6 @@
 use petgraph::dot::Dot;
 
 use std::env;
-use std::path::PathBuf;
 use std::process;
 
 mod error;

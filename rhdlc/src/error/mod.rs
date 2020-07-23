@@ -102,25 +102,6 @@ impl Display for DuplicateError {
 }
 
 #[derive(Debug)]
-pub struct DirectoryError(pub PathBuf);
-impl Display for DirectoryError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
-        write!(
-            f,
-            "\n\
-             {error}{header}\n\
-             {indent}{arrow} {file}\n\
-            ",
-            error = "error".red().bold(),
-            arrow = "-->".blue().bold(),
-            header = format!(": {}", "cannot compile a directory").bold(),
-            indent = " ",
-            file = self.0.to_string_lossy(),
-        )
-    }
-}
-
-#[derive(Debug)]
 pub struct NotFoundError {
     pub ident_path: Vec<syn::Ident>,
     pub file: PathBuf,
@@ -179,7 +160,6 @@ error!(ResolveError {
     ParseError => PreciseSynParseError,
     NotFoundError => NotFoundError,
     DuplicateError => DuplicateError,
-    DirectoryError => DirectoryError,
 });
 
 #[derive(Debug)]

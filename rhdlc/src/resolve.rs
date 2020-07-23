@@ -7,8 +7,7 @@ use petgraph::{graph::NodeIndex, Graph};
 use syn::{Ident, Item, ItemMod};
 
 use crate::error::{
-    DirectoryError, DuplicateError, NotFoundError, PreciseSynParseError, ResolveError,
-    WrappedIoError,
+    DuplicateError, NotFoundError, PreciseSynParseError, ResolveError, WrappedIoError,
 };
 
 #[derive(Debug)]
@@ -203,10 +202,6 @@ impl Resolver {
     fn resolve(res: ResolutionSource) -> Result<File, ResolveError> {
         let content = match &res {
             ResolutionSource::File(path) => {
-                if path.is_dir() {
-                    return Err(DirectoryError(path.to_path_buf()).into());
-                }
-
                 let mut file = fs::File::open(&path).map_err(|cause| WrappedIoError {
                     path: path.clone(),
                     cause,
