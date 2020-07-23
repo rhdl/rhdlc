@@ -143,7 +143,7 @@ impl Resolver {
             }
         };
 
-        let file = Self::resolve(ResolutionSource::File(path.clone()));
+        let file = Self::resolve(ResolutionSource::File(path));
         match file {
             Err(err) => {
                 self.errors.push(err);
@@ -162,8 +162,8 @@ impl Resolver {
                     .collect();
                 let idx = self.file_graph.add_node(file.into());
                 if let Some(parent) = self.ancestry.last() {
-                    // Ok to use the clone because it'll just be `mod abc;`
-                    self.file_graph.add_edge(*parent, idx, vec![item_mod.ident]);
+                    // Ok to use the cloned ident
+                    self.file_graph.add_edge(*parent, idx, ident_path.clone());
                 }
 
                 self.ancestry.push(idx);
@@ -179,6 +179,7 @@ impl Resolver {
         }
     }
 
+    /// A mod in a file can have declared sub-mods in files in ./mod/sub-mod.rs
     fn resolve_mod_with_content(&mut self, item_mod: ItemMod, mut ident_path: Vec<Ident>) {
         if let Some(content) = item_mod.content {
             ident_path.push(item_mod.ident);
@@ -186,7 +187,6 @@ impl Resolver {
                 match item {
                     Item::Mod(m) => {
                         if let None = m.content {
-                            // A mod in a file can have declared sub-mods in files in ./mod/sub-mod.rs
                             self.resolve_mod(m, ident_path.clone());
                         } else {
                             self.resolve_mod_with_content(m, ident_path.clone());
@@ -195,7 +195,6 @@ impl Resolver {
                     _ => {}
                 }
             }
-            return;
         }
     }
 
