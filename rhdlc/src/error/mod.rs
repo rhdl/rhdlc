@@ -1,6 +1,7 @@
 use std::fmt;
 use std::fmt::Display;
 use std::path::PathBuf;
+use std::rc::Rc;
 
 use colored::Colorize;
 use proc_macro2::Span;
@@ -53,7 +54,7 @@ pub struct PreciseSynParseError {
 impl Display for PreciseSynParseError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let msg = match &self.res {
-            ResolutionSource::File(path) => "could not parse file",
+            ResolutionSource::File(_) => "could not parse file",
             ResolutionSource::Stdin => "could not parse stdin",
         };
         render_location(
@@ -67,69 +68,50 @@ impl Display for PreciseSynParseError {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct SpanSource {
+    pub file: Rc<crate::resolve::File>,
+    pub span: Span,
+    pub ident_path: Vec<syn::Ident>,
+}
+
 #[derive(Debug)]
 pub struct DuplicateError {
-    pub ident_path: Vec<syn::Ident>,
-    pub file: PathBuf,
-    pub folder: PathBuf,
+    pub file_path: PathBuf,
+    pub folder_path: PathBuf,
+    pub span: SpanSource,
 }
 
 impl Display for DuplicateError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
-        write!(
+        let ident = self.span.ident_path.last().unwrap();
+        render_location(
             f,
-            "\n\
-             {error}{header}\n\
-             {indent}{arrow} {file}\n\
-             {indent}{arrow} {folder}\n\
-            ",
-            error = "error".red().bold(),
-            header = format!(
-                ": duplicate instances of `{}` were found",
-                self.ident_path
-                    .iter()
-                    .map(|ident| ident.to_string())
-                    .collect::<Vec<String>>()
-                    .join("::")
-            )
-            .bold(),
-            arrow = "-->".blue().bold(),
-            indent = " ",
-            file = self.file.to_string_lossy(),
-            folder = self.folder.to_string_lossy()
+            format!("duplicates of module `{}` were found at {} and {}", ident, self.file_path.to_string_lossy(), self.folder_path.to_string_lossy()),
+            (Reference::Error, "", self.span.span),
+            vec![],
+            &self.span.file.source,
+            &self.span.file.content,
         )
     }
 }
 
 #[derive(Debug)]
-pub struct NotFoundError {
-    pub ident_path: Vec<syn::Ident>,
-    pub file: PathBuf,
-    pub folder: PathBuf,
+pub struct WorkingDirectoryError {
+    pub cause: std::io::Error,
 }
-impl Display for NotFoundError {
+
+impl Display for WorkingDirectoryError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
         write!(
             f,
-            "\n\
-             {error}{header}\n\
-             {indent}{arrow} {file}\n\
-             {indent}{arrow} {folder}\n\
-            ",
+            "{error}{header}",
             error = "error".red().bold(),
             header = format!(
-                ": could not find a file for `{}` at either of",
-                self.ident_path
-                    .iter()
-                    .map(|ident| ident.to_string())
-                    .collect::<Vec<String>>()
-                    .join("::")
+                ": couldn't get the current working directory {}",
+                self.cause
             )
-            .bold(),
-            arrow = "-->".blue().bold(),
-            indent = " ",
-            file = self.file.to_string_lossy(),
-            folder = self.folder.to_string_lossy()
+            .bold()
         )
     }
 }
@@ -137,34 +119,60 @@ impl Display for NotFoundError {
 #[derive(Debug)]
 pub struct WrappedIoError {
     pub cause: std::io::Error,
-    pub path: PathBuf,
+    pub res: ResolutionSource,
+    pub span: Option<SpanSource>,
 }
 impl Display for WrappedIoError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
-        writeln!(
-            f,
-            "{error}{header}",
-            error = "error".red().bold(),
-            header = format!(
-                ": couldn't read {}: {}",
-                self.path.to_string_lossy(),
-                self.cause
-            )
-            .bold(),
-        )
+        match &self.span {
+            Some(span) => {
+                let ident = span.ident_path.last().unwrap();
+
+                let source = match &self.res {
+                    ResolutionSource::Stdin => "<stdin>".to_string().into(),
+                    ResolutionSource::File(path) => path.to_string_lossy(),
+                };
+                render_location(
+                    f,
+                    "could not read file for module `{}`",
+                    (Reference::Error, &format!("{}", self.cause), span.span),
+                    vec![],
+                    &span.file.source,
+                    &span.file.content,
+                )
+            }
+            None => {
+                let path = match &self.res {
+                    ResolutionSource::File(path) => path.to_string_lossy().into(),
+                    ResolutionSource::Stdin => "<stdin>".to_string(),
+                };
+                writeln!(
+                    f,
+                    "{error}{header}",
+                    error = "error".red().bold(),
+                    header = format!(
+                        ": couldn't read {}: {}",
+                        path,
+                        self.cause
+                    )
+                    .bold(),
+                )
+            }
+        }
+
     }
 }
 
 error!(ResolveError {
     IoError => WrappedIoError,
     ParseError => PreciseSynParseError,
-    NotFoundError => NotFoundError,
+    WorkingDirectoryError => WorkingDirectoryError,
     DuplicateError => DuplicateError,
 });
 
 #[derive(Debug)]
 pub struct MultipleDefinitionError {
-    pub file: crate::resolve::File,
+    pub file: Rc<crate::resolve::File>,
     pub name: syn::Ident,
     pub original: Span,
     pub duplicates: Vec<Span>,
@@ -176,7 +184,7 @@ impl Display for MultipleDefinitionError {
             render_location(
                 f,
                 format!("the name `{}` is defined multiple times", self.name),
-                (Reference::Error, "", self.original),
+                (Reference::Error, "first defined here", self.original),
                 vec![(Reference::Info, "", *duplicate)],
                 &self.file.source,
                 &self.file.content,

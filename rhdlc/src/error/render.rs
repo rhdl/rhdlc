@@ -98,7 +98,7 @@ where
     // Fallback render
     if start.line == end.line && start.column == end.column {
         // Need an extra line here
-        writeln!(f);
+        writeln!(f)?;
         writeln!(
             f,
             "{indent} {pipe} {msg}",
