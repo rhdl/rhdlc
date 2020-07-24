@@ -3,6 +3,8 @@ name = "rhdlc"
 version = "0.1.0"
 authors = ["Sameer Puri <purisame@spuri.io>"]
 edition = "2018"
+license = "AGPL-3.0-or-later"
+homepage = "https://github.com/rhdl/rhdl"
 
 [dependencies]
 syn = { version = "1", features = ["full", "extra-traits"] }
