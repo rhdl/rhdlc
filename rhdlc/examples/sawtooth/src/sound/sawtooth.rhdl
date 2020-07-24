@@ -10,10 +10,6 @@ pub struct Sawtooth<N: Num + Bounded, R: Real> {
     level: N,
 }
 
-crate struct test {
-
-}
-
 /// tighter type bounds are needed for casting and other calculations
 /// N must be bounded (not an arbitrary width integer) for this calculation to work
 impl<N: Integer + Bounded, R: Real> Sawtooth<N, R>
