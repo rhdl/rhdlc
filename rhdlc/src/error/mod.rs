@@ -139,8 +139,8 @@ impl Display for WrappedIoError {
                 };
                 render_location(
                     f,
-                    "could not read file for module `{}`",
-                    (Reference::Error, &format!("{}", self.cause), span.span),
+                    format!("could not read module `{}`", ident),
+                    (Reference::Error, &format!("{} : {}", source, self.cause), span.span),
                     vec![],
                     &span.file.source,
                     &span.file.content,

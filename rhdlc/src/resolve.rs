@@ -151,9 +151,9 @@ impl Resolver {
                 );
                 return;
             }
-            (Err(err1), Err(_err2)) => {
-                // Prioritize file error over folder file error
+            (Err(err1), Err(err2)) => {
                 self.errors.push(err1);
+                self.errors.push(err2);
                 return;
             }
         };
@@ -178,11 +178,12 @@ impl Resolver {
         self.ancestry.push(idx);
         for m in mods {
             let module_span = m.span();
+            let file = self.file_graph[idx].clone();
             if let None = m.content {
                 self.resolve_mod(
                     m,
                     SpanSource {
-                        file: span.file.clone(),
+                        file,
                         ident_path: span.ident_path.clone(),
                         span: module_span,
                     },
@@ -191,7 +192,7 @@ impl Resolver {
                 self.resolve_mod(
                     m,
                     SpanSource {
-                        file: span.file.clone(),
+                        file,
                         ident_path: span.ident_path.clone(),
                         span: module_span,
                     },
