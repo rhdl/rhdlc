@@ -227,28 +227,28 @@ impl<'ast> ScopeBuilder<'ast> {
         // }
     }
 
-    /// If a node sets its visibility, apply it
+    /// If a node overrides its visibility, apply it
     fn apply_visibility(&mut self, node: NodeIndex) {
         use syn::Item::*;
         use syn::*;
         let vis = match self.scope_graph[node] {
             Node::Item { item, .. } => match item {
-                ExternCrate(ItemExternCrate { ident, vis, .. })
-                | Type(ItemType { ident, vis, .. })
-                | Static(ItemStatic { ident, vis, .. })
-                | Const(ItemConst { ident, vis, .. })
+                ExternCrate(ItemExternCrate { vis, .. })
+                | Type(ItemType { vis, .. })
+                | Static(ItemStatic { vis, .. })
+                | Const(ItemConst { vis, .. })
                 | Fn(ItemFn {
-                    sig: Signature { ident, .. },
+                    sig: Signature { .. },
                     vis,
                     ..
                 })
-                | Macro2(ItemMacro2 { ident, vis, .. })
-                | Struct(ItemStruct { ident, vis, .. })
-                | Enum(ItemEnum { ident, vis, .. })
-                | Trait(ItemTrait { ident, vis, .. })
-                | TraitAlias(ItemTraitAlias { ident, vis, .. })
-                | Mod(ItemMod { ident, vis, .. })
-                | Union(ItemUnion { ident, vis, .. }) => Some(vis),
+                | Macro2(ItemMacro2 { vis, .. })
+                | Struct(ItemStruct { vis, .. })
+                | Enum(ItemEnum { vis, .. })
+                | Trait(ItemTrait { vis, .. })
+                | TraitAlias(ItemTraitAlias { vis, .. })
+                | Mod(ItemMod { vis, .. })
+                | Union(ItemUnion { vis, .. }) => Some(vis),
                 _ => None,
             },
             Node::File {
