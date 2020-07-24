@@ -87,7 +87,12 @@ impl Display for DuplicateError {
         let ident = self.span.ident_path.last().unwrap();
         render_location(
             f,
-            format!("duplicates of module `{}` were found at {} and {}", ident, self.file_path.to_string_lossy(), self.folder_path.to_string_lossy()),
+            format!(
+                "duplicates of module `{}` were found at {} and {}",
+                ident,
+                self.file_path.to_string_lossy(),
+                self.folder_path.to_string_lossy()
+            ),
             (Reference::Error, "", self.span.span),
             vec![],
             &self.span.file.source,
@@ -150,16 +155,10 @@ impl Display for WrappedIoError {
                     f,
                     "{error}{header}",
                     error = "error".red().bold(),
-                    header = format!(
-                        ": couldn't read {}: {}",
-                        path,
-                        self.cause
-                    )
-                    .bold(),
+                    header = format!(": couldn't read {}: {}", path, self.cause).bold(),
                 )
             }
         }
-
     }
 }
 

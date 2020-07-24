@@ -130,7 +130,10 @@ impl Resolver {
         let mod_file_path = mod_file_path.with_extension(&self.extension);
 
         let resolved_file = match (
-            Self::resolve(ResolutionSource::File(mod_file_path.clone()), Some(span.clone())),
+            Self::resolve(
+                ResolutionSource::File(mod_file_path.clone()),
+                Some(span.clone()),
+            ),
             Self::resolve(
                 ResolutionSource::File(mod_folder_file_path.clone()),
                 Some(span.clone()),
