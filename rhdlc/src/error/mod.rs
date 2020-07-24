@@ -155,7 +155,7 @@ impl Display for WrappedIoError {
                     f,
                     "{error}{header}",
                     error = "error".red().bold(),
-                    header = format!(": couldn't read {}: {}", path, self.cause).bold(),
+                    header = format!(": couldn't read {} : {}", path, self.cause).bold(),
                 )
             }
         }
