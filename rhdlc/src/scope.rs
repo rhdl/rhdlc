@@ -33,8 +33,9 @@ use log::{debug, error, warn};
 ///             * heuristic guess by type (fn, struct, var, mod, etc.)
 ///         * fall back all the way to "not found" if nothing is similar
 use petgraph::{graph::NodeIndex, visit::EdgeRef, Direction, Graph};
+use std::collections::HashMap;
 use std::fmt::Display;
-use syn::{File, Ident, ImplItem, Item, ItemImpl, ItemMod, ItemUse};
+use syn::{File, Ident, ImplItem, Item, ItemImpl, ItemMod, ItemUse, Visibility};
 
 use crate::error::{MultipleDefinitionError, ScopeError};
 
@@ -157,6 +158,7 @@ impl<'ast> From<&'ast Item> for Name<'ast> {
 pub struct ScopeBuilder<'ast> {
     pub file_graph: &'ast crate::resolve::FileGraph,
     pub scope_graph: Graph<Node<'ast>, String>,
+    pub errors: Vec<ScopeError>,
     scope_ancestry: Vec<NodeIndex>,
     file_ancestry: Vec<NodeIndex>,
 }
@@ -166,6 +168,7 @@ impl<'ast> From<&'ast crate::resolve::FileGraph> for ScopeBuilder<'ast> {
         Self {
             file_graph,
             scope_graph: Graph::default(),
+            errors: vec![],
             scope_ancestry: vec![],
             file_ancestry: vec![],
         }
@@ -212,8 +215,26 @@ impl<'ast> ScopeBuilder<'ast> {
         // Stage four: tie impls
     }
 
-    /// Find conflicts
-    pub fn check_graph(&mut self) {
+    fn find_name_conflicts(&mut self) {
+        for node in self.scope_graph.node_indices() {
+            match self.scope_graph[node] {
+                Node::Root { .. } | Node::Mod { .. } => {
+                    // Check the scopes for conflicts
+                    let mut names: Vec<Name> = vec![];
+                    let mut errors: Vec<ScopeError> = vec![];
+                    for child in self.scope_graph.neighbors(node) {
+                        match self.scope_graph[child] {
+                            Node::Item { ident, item, .. } => {
+                                names.push(Name::from(item));
+                            }
+                            _ => {}
+                        }
+                    }
+                    self.errors.append(&mut errors);
+                }
+                _ => {}
+            }
+        }
         // let others = self.others_declared_with_same_name_in_scope(name);
         // if others.len() > 0 {
         //     // TODO: create name conflict errors for this
@@ -250,16 +271,12 @@ impl<'ast> ScopeBuilder<'ast> {
                 | Union(ItemUnion { vis, .. }) => Some(vis),
                 _ => None,
             },
-            Node::FileMod {
-                item_mod: ItemMod { vis, .. },
-                ..
-            }
-            | Node::Mod {
+            Node::Mod {
                 item_mod: ItemMod { vis, .. },
                 ..
             } => Some(vis),
             Node::Use {
-                item: ItemUse { vis, .. },
+                item_use: ItemUse { vis, .. },
                 ..
             } => Some(vis),
             _ => None,
@@ -298,21 +315,29 @@ impl<'ast> ScopeBuilder<'ast> {
     }
 
     fn apply_visibility_pub(&mut self, node: NodeIndex) {
-        // add grandparent connections
-        let grandparents: Vec<NodeIndex> = self
+        let parents: Vec<NodeIndex> = self
             .scope_graph
-            .edges_directed(node, Direction::Incoming)
-            .map(|edge| edge.source())
+            .neighbors_directed(node, Direction::Incoming)
+            .collect();
+        let grandparents: Vec<NodeIndex> = parents
+            .iter()
             .map(|parent| {
                 self.scope_graph
-                    .edges_directed(parent, Direction::Incoming)
-                    .map(|edge| edge.source())
+                    .neighbors_directed(*parent, Direction::Incoming)
             })
             .flatten()
             .collect();
-        for grandparent in grandparents {
-            self.scope_graph
-                .add_edge(grandparent, node, "pub".to_string());
+        for parent in parents {
+            match &mut self.scope_graph[parent] {
+                Node::Mod { exports, .. } => exports
+                    .entry(node)
+                    .or_insert_with(Vec::default)
+                    .extend(&grandparents),
+                Node::Root { exports, .. } => exports.extend(&grandparents),
+                other => {
+                    error!("parent is not a mod or root {:?}", other);
+                }
+            }
         }
     }
 
@@ -320,33 +345,43 @@ impl<'ast> ScopeBuilder<'ast> {
     /// TODO: check validity of a crate-level pub if this isn't a crate
     /// Bottom-up BFS
     fn apply_visibility_crate(&mut self, node: NodeIndex) {
-        let mut roots: Vec<NodeIndex> = vec![];
-        let mut level: Vec<NodeIndex> = vec![];
-        let mut next: Vec<NodeIndex> = vec![node];
-        while next.len() > 0 {
-            level.append(&mut next);
-            next.clear();
-            while let Some(n) = level.pop() {
-                if let Node::Root { .. } = self.scope_graph[n] {
-                    roots.push(n);
-                } else {
-                    next.extend(
-                        self.scope_graph
-                            .edges_directed(n, Direction::Incoming)
-                            .map(|x| x.source()),
-                    );
+        let parents: Vec<NodeIndex> = self
+            .scope_graph
+            .neighbors_directed(node, Direction::Incoming)
+            .collect();
+        let roots = {
+            let mut roots: Vec<NodeIndex> = vec![];
+            let mut level: Vec<NodeIndex> = vec![];
+            let mut next: Vec<NodeIndex> = vec![node];
+            while !next.is_empty() {
+                level.append(&mut next);
+                level.iter().for_each(|n| {
+                    if let Node::Root { .. } = self.scope_graph[*n] {
+                        roots.push(*n);
+                    } else {
+                        next.extend(self.scope_graph.neighbors_directed(*n, Direction::Incoming));
+                    }
+                });
+            }
+            roots
+        };
+        for parent in parents {
+            match &mut self.scope_graph[parent] {
+                Node::Mod { exports, .. } => exports
+                    .entry(node)
+                    .or_insert_with(Vec::default)
+                    .extend(&roots),
+                Node::Root { exports, .. } => exports.extend(&roots),
+                other => {
+                    error!("parent is not a mod or root {:?}", other);
                 }
             }
-        }
-        for root in roots {
-            self.scope_graph.add_edge(root, node, "crate".to_string());
         }
     }
 
     /// Stage four
     fn tie_impl(&mut self, item: &'ast Item) {
-        if let Item::Impl(ItemImpl { items, self_ty, .. }) = item {
-        }
+        if let Item::Impl(ItemImpl { items, self_ty, .. }) = item {}
     }
 
     /// Stage one
@@ -356,7 +391,11 @@ impl<'ast> ScopeBuilder<'ast> {
         match item {
             Mod(item_mod) => {
                 if let Some((_, items)) = &item_mod.content {
-                    let mod_idx = self.scope_graph.add_node(Node::Mod { item_mod });
+                    let mod_idx = self.scope_graph.add_node(Node::Mod {
+                        item_mod,
+                        exports: HashMap::default(),
+                        file_index: None,
+                    });
                     let parent = self.scope_ancestry.last().unwrap();
                     self.scope_graph
                         .add_edge(*parent, mod_idx, "mod".to_string());
@@ -368,9 +407,7 @@ impl<'ast> ScopeBuilder<'ast> {
                         .scope_ancestry
                         .iter()
                         .filter_map(|scope_ancestor| match self.scope_graph[*scope_ancestor] {
-                            Node::FileMod { item_mod, .. } | Node::Mod { item_mod, .. } => {
-                                Some(item_mod.ident.clone())
-                            }
+                            Node::Mod { item_mod, .. } => Some(item_mod.ident.clone()),
                             _ => None,
                         })
                         .collect();
@@ -384,9 +421,10 @@ impl<'ast> ScopeBuilder<'ast> {
                     });
 
                     if let Some(edge) = edge {
-                        let mod_idx = self.scope_graph.add_node(Node::FileMod {
+                        let mod_idx = self.scope_graph.add_node(Node::Mod {
                             item_mod,
-                            file_index: edge.target(),
+                            exports: HashMap::default(),
+                            file_index: Some(edge.target()),
                         });
                         if let Some(parent) = self.scope_ancestry.last() {
                             self.scope_graph
@@ -431,8 +469,8 @@ impl<'ast> ScopeBuilder<'ast> {
                 self.scope_graph
                     .add_edge(*parent, item_idx, "item".to_string());
             }
-            Use(u) => {
-                let use_idx = self.scope_graph.add_node(Node::Use { item: u });
+            Use(item_use) => {
+                let use_idx = self.scope_graph.add_node(Node::Use { item_use });
                 self.scope_graph.add_edge(
                     *self.scope_ancestry.last().unwrap(),
                     use_idx,
@@ -477,13 +515,13 @@ pub enum Node<'ast> {
     },
     Mod {
         item_mod: &'ast ItemMod,
-    },
-    FileMod {
-        item_mod: &'ast ItemMod,
-        file_index: NodeIndex,
+        /// Exports: (from item, to list of roots/mods)
+        exports: HashMap<NodeIndex, Vec<NodeIndex>>,
+        /// Whether this mod is backed by a file
+        file_index: Option<NodeIndex>,
     },
     Use {
-        item: &'ast ItemUse,
+        item_use: &'ast ItemUse,
     },
 }
 
@@ -492,10 +530,8 @@ impl<'ast> Display for Node<'ast> {
         match self {
             Self::Root { .. } => write!(f, "root"),
             Self::Item { ident, .. } => write!(f, "{}", ident),
-            Self::FileMod { item_mod, .. } | Self::Mod { item_mod, .. } => {
-                write!(f, "mod {}", item_mod.ident)
-            }
-            Self::Use { item, .. } => write!(f, "use"),
+            Self::Mod { item_mod, .. } => write!(f, "mod {}", item_mod.ident),
+            Self::Use { item_use, .. } => write!(f, "use"),
         }
     }
 }
