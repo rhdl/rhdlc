@@ -247,12 +247,15 @@ impl<'ast> ScopeBuilder<'ast> {
                 | Enum(ItemEnum { vis, .. })
                 | Trait(ItemTrait { vis, .. })
                 | TraitAlias(ItemTraitAlias { vis, .. })
-                | Mod(ItemMod { vis, .. })
                 | Union(ItemUnion { vis, .. }) => Some(vis),
                 _ => None,
             },
-            Node::File {
-                item: ItemMod { vis, .. },
+            Node::FileMod {
+                item_mod: ItemMod { vis, .. },
+                ..
+            }
+            | Node::Mod {
+                item_mod: ItemMod { vis, .. },
                 ..
             } => Some(vis),
             Node::Use {
@@ -343,10 +346,6 @@ impl<'ast> ScopeBuilder<'ast> {
     /// Stage four
     fn tie_impl(&mut self, item: &'ast Item) {
         if let Item::Impl(ItemImpl { items, self_ty, .. }) = item {
-            dbg!(&self_ty);
-            // match self_ty {
-
-            // }
         }
     }
 
@@ -355,11 +354,9 @@ impl<'ast> ScopeBuilder<'ast> {
         use syn::Item::*;
         use syn::*;
         match item {
-            Mod(m) => {
-                let ident = &m.ident;
-                let content = &m.content;
-                if let Some((_, items)) = content {
-                    let mod_idx = self.scope_graph.add_node(Node::Item { item, ident });
+            Mod(item_mod) => {
+                if let Some((_, items)) = &item_mod.content {
+                    let mod_idx = self.scope_graph.add_node(Node::Mod { item_mod });
                     let parent = self.scope_ancestry.last().unwrap();
                     self.scope_graph
                         .add_edge(*parent, mod_idx, "mod".to_string());
@@ -371,13 +368,13 @@ impl<'ast> ScopeBuilder<'ast> {
                         .scope_ancestry
                         .iter()
                         .filter_map(|scope_ancestor| match self.scope_graph[*scope_ancestor] {
-                            Node::File { ident, .. } | Node::Item { ident, .. } => {
-                                Some(ident.clone())
+                            Node::FileMod { item_mod, .. } | Node::Mod { item_mod, .. } => {
+                                Some(item_mod.ident.clone())
                             }
                             _ => None,
                         })
                         .collect();
-                    full_ident_path.push(m.ident.clone());
+                    full_ident_path.push(item_mod.ident.clone());
 
                     let edge = self.file_ancestry.last().and_then(|parent| {
                         self.file_graph
@@ -387,9 +384,8 @@ impl<'ast> ScopeBuilder<'ast> {
                     });
 
                     if let Some(edge) = edge {
-                        let mod_idx = self.scope_graph.add_node(Node::File {
-                            item: m,
-                            ident,
+                        let mod_idx = self.scope_graph.add_node(Node::FileMod {
+                            item_mod,
                             file_index: edge.target(),
                         });
                         if let Some(parent) = self.scope_ancestry.last() {
@@ -408,7 +404,7 @@ impl<'ast> ScopeBuilder<'ast> {
                     } else {
                         error!(
                             "Could not find a file for {}, this should not be possible",
-                            ident
+                            &item_mod.ident
                         );
                     }
                 }
@@ -479,9 +475,11 @@ pub enum Node<'ast> {
         item: &'ast Item,
         ident: &'ast Ident,
     },
-    File {
-        item: &'ast ItemMod,
-        ident: &'ast Ident,
+    Mod {
+        item_mod: &'ast ItemMod,
+    },
+    FileMod {
+        item_mod: &'ast ItemMod,
         file_index: NodeIndex,
     },
     Use {
@@ -494,7 +492,9 @@ impl<'ast> Display for Node<'ast> {
         match self {
             Self::Root { .. } => write!(f, "root"),
             Self::Item { ident, .. } => write!(f, "{}", ident),
-            Self::File { ident, .. } => write!(f, "{}.rhdl", ident),
+            Self::FileMod { item_mod, .. } | Self::Mod { item_mod, .. } => {
+                write!(f, "mod {}", item_mod.ident)
+            }
             Self::Use { item, .. } => write!(f, "use"),
         }
     }
