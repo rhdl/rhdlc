@@ -35,7 +35,7 @@ use std::collections::HashMap;
 use std::fmt::Display;
 use std::rc::Rc;
 
-use log::{error};
+use log::error;
 use petgraph::{graph::NodeIndex, visit::EdgeRef, Direction, Graph};
 use syn::{spanned::Spanned, Ident, Item, ItemImpl, ItemMod, ItemUse};
 
@@ -44,6 +44,9 @@ use crate::resolve::{File, FileGraph};
 
 mod name;
 use name::Name;
+
+mod r#use;
+use r#use::UseType;
 
 mod visibility;
 
@@ -99,7 +102,21 @@ impl<'ast> ScopeBuilder<'ast> {
             .node_indices()
             .for_each(|i| visibility::apply_visibility(&mut self.scope_graph, i));
 
-        // Stage three: delete use nodes
+        // Stage three: trace use nodes
+        self.scope_graph.node_indices().for_each(|i| {
+            if let Some(scope) = self
+                .scope_graph
+                .neighbors_directed(i, Direction::Incoming)
+                .next()
+            {
+                let tree = match &self.scope_graph[i] {
+                    Node::Use { item_use, .. } => &item_use.tree,
+                    _ => return,
+                };
+
+                r#use::trace_use(&mut self.scope_graph, i, scope, tree);
+            }
+        });
 
         // Stage four: tie impls
     }
@@ -173,7 +190,6 @@ impl<'ast> ScopeBuilder<'ast> {
             }
         }
     }
-
 
     /// Stage four
     fn tie_impl(&mut self, item: &'ast Item) {
@@ -268,7 +284,10 @@ impl<'ast> ScopeBuilder<'ast> {
                     .add_edge(*parent, item_idx, "item".to_string());
             }
             Use(item_use) => {
-                let use_idx = self.scope_graph.add_node(Node::Use { item_use, imports: vec![] });
+                let use_idx = self.scope_graph.add_node(Node::Use {
+                    item_use,
+                    imports: HashMap::default(),
+                });
                 self.scope_graph.add_edge(
                     *self.scope_ancestry.last().unwrap(),
                     use_idx,
@@ -300,8 +319,8 @@ pub enum Node<'ast> {
     },
     Use {
         item_use: &'ast ItemUse,
-        /// Imported items / mods
-        imports: Vec<NodeIndex>,
+        /// Imports: (from root/mod to list of items)
+        imports: HashMap<NodeIndex, Vec<UseType>>,
     },
 }
 
