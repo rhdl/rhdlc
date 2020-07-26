@@ -121,7 +121,10 @@ impl Resolver {
         let mut mod_file_path = self.cwd.clone();
         span.ident_path
             .iter()
-            .for_each(|ident| mod_file_path.push(ident.to_string()));
+            .for_each(|ident| {
+                let ident = ident.to_string();
+                mod_file_path.push(ident.strip_prefix("r#").unwrap_or(&ident));
+            });
         let mod_folder_file_path = mod_file_path.join("mod").with_extension(&self.extension);
         let mod_file_path = mod_file_path.with_extension(&self.extension);
 
