@@ -29,6 +29,7 @@ pub enum UseType {
 ///     * A beginning :: explicitly refers to the global scope
 ///     * A beginning `self` explicitly refers to the local scope
 ///     * A beginning `super` explicitly refers to the parent scope
+///     * A beginning `crate` explicitly refers to the root scope
 ///     * Any other word is implicitly the global or local scope
 ///         * Error if there is a root with the same name as a module in the local scope.
 ///             * Requires explicit disambiguation
