@@ -104,18 +104,19 @@ impl<'ast> ScopeBuilder<'ast> {
 
         // Stage three: trace use nodes
         self.scope_graph.node_indices().for_each(|i| {
-            if let Some(scope) = self
-                .scope_graph
-                .neighbors_directed(i, Direction::Incoming)
-                .next()
-            {
-                let tree = match &self.scope_graph[i] {
-                    Node::Use { item_use, .. } => &item_use.tree,
-                    _ => return,
-                };
-
-                r#use::trace_use(&mut self.scope_graph, i, scope, tree);
+            let mut root = i;
+            while match &self.scope_graph[root] {
+                Node::Root { .. } => false,
+                _ => true,
+            } {
+                root = self.scope_graph.neighbors_directed(root, Direction::Incoming).next().unwrap();
             }
+            let tree = match &self.scope_graph[i] {
+                Node::Use { item_use, .. } => &item_use.tree,
+                _ => return,
+            };
+
+            r#use::trace_use(&mut self.scope_graph, i, root, tree);
         });
 
         // Stage four: tie impls

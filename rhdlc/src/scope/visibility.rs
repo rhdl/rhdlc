@@ -1,3 +1,6 @@
+//! Note that the parent(s) iteration is overkill so no unwrap()s are done.
+//! Ideally, the scope graph is a tree and there cannot be multiple parents.
+
 use log::error;
 use petgraph::{graph::NodeIndex, Direction};
 use syn::Visibility;

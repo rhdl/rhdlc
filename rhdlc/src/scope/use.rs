@@ -36,21 +36,49 @@ pub enum UseType {
 ///     * Roots need names: `crate` is "this" root, vs. any other identifier
 pub fn trace_use<'ast>(
     scope_graph: &mut ScopeGraph<'ast>,
-    destination: NodeIndex,
+    dest: NodeIndex,
+    // Begins at the root
     scope: NodeIndex,
     tree: &UseTree,
 ) {
     use syn::UseTree::*;
-    if let Node::Use { imports, .. } = &mut scope_graph[destination] {
+    if let Node::Use {
+        imports, item_use, ..
+    } = &mut scope_graph[dest]
+    {
+        // Is this the tracing entry point?
+        let is_entry = tree == &item_use.tree;
         match tree {
             Path(path) => {
-                if path.ident == "super" {
-                    let parent = scope_graph
-                        .neighbors_directed(scope, Direction::Incoming)
+                if path.ident == "self" {
+                    if !is_entry {
+                        todo!("a `self` that isn't at the beginning of a path is an error");
+                    }
+                    let use_parent = scope_graph
+                        .neighbors_directed(dest, Direction::Incoming)
+                        .next()
+                        .unwrap();
+                    trace_use(scope_graph, dest, use_parent, &path.tree);
+                } else if path.ident == "super" {
+                    if !is_entry {
+                        todo!("a `super` that isn't at the beginning of a path is an error");
+                    }
+                    let use_parent = scope_graph
+                        .neighbors_directed(dest, Direction::Incoming)
+                        .next()
+                        .unwrap();
+                    let use_grandparent = scope_graph
+                        .neighbors_directed(use_parent, Direction::Incoming)
                         .next()
                         .expect("todo, going beyond the root is an error");
-                    trace_use(scope_graph, destination, parent, &path.tree);
+                    trace_use(scope_graph, dest, use_grandparent, &path.tree);
+                } else if path.ident == "crate" {
+                    if !is_entry {
+                        todo!("a `crate` that isn't at the beginning of a path is an error");
+                    }
+                    todo!("crate-level import not handled");
                 } else {
+                    // TODO: global vs local disambiguation
                     let child = scope_graph.neighbors(scope).find(|child| {
                         if let Node::Mod { item_mod, .. } = scope_graph[*child] {
                             item_mod.ident == path.ident.to_string()
@@ -60,7 +88,7 @@ pub fn trace_use<'ast>(
                     });
                     trace_use(
                         scope_graph,
-                        destination,
+                        dest,
                         child.expect("todo, entering a non-existent module is an error"),
                         &path.tree,
                     );
@@ -85,7 +113,7 @@ pub fn trace_use<'ast>(
             Group(group) => group
                 .items
                 .iter()
-                .for_each(|tree| trace_use(scope_graph, destination, scope, tree)),
+                .for_each(|tree| trace_use(scope_graph, dest, scope, tree)),
         }
     }
 }
