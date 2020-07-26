@@ -1,4 +1,3 @@
-use log::{error, warn};
 /// Build a scope digraph.
 /// Nodes are items with visibility
 /// Directional edges connect nodes to the places where they are visible, i.e.:
@@ -32,27 +31,31 @@ use log::{error, warn};
 ///             * use [strsim](https://docs.rs/strsim/0.10.0/strsim/) for Ident similarity
 ///             * heuristic guess by type (fn, struct, var, mod, etc.)
 ///         * fall back all the way to "not found" if nothing is similar
-use petgraph::{graph::NodeIndex, visit::EdgeRef, Direction, Graph};
 use std::collections::HashMap;
 use std::fmt::Display;
-use syn::{Ident, Item, ItemImpl, ItemMod, ItemUse, Visibility};
+use std::rc::Rc;
+
+use log::{error, warn};
+use petgraph::{graph::NodeIndex, visit::EdgeRef, Direction, Graph};
+use syn::{spanned::Spanned, Ident, Item, ItemImpl, ItemMod, ItemUse, Visibility};
 
 use crate::error::{MultipleDefinitionError, ScopeError};
+use crate::resolve::{File, FileGraph};
 
 mod name;
 use name::Name;
 
 #[derive(Debug)]
 pub struct ScopeBuilder<'ast> {
-    pub file_graph: &'ast crate::resolve::FileGraph,
+    pub file_graph: &'ast FileGraph,
     pub scope_graph: Graph<Node<'ast>, String>,
     pub errors: Vec<ScopeError>,
     scope_ancestry: Vec<NodeIndex>,
     file_ancestry: Vec<NodeIndex>,
 }
 
-impl<'ast> From<&'ast crate::resolve::FileGraph> for ScopeBuilder<'ast> {
-    fn from(file_graph: &'ast crate::resolve::FileGraph) -> Self {
+impl<'ast> From<&'ast FileGraph> for ScopeBuilder<'ast> {
+    fn from(file_graph: &'ast FileGraph) -> Self {
         Self {
             file_graph,
             scope_graph: Graph::default(),
@@ -70,21 +73,15 @@ impl<'ast> ScopeBuilder<'ast> {
     pub fn build_graph(&mut self) {
         // Stage one: add nodes
         let files: Vec<NodeIndex> = self.file_graph.externals(Direction::Incoming).collect();
-        for file in files {
-            if self.scope_ancestry.len() > 0 {
-                warn!(
-                    "scope_ancestry was not empty, clearing: {:?}",
-                    self.scope_ancestry
-                );
-                self.scope_ancestry.clear();
-            }
-            let idx = self.scope_graph.add_node(Node::Root {
-                file_index: file,
+        for file_index in files {
+            let file = self.file_graph[file_index].clone();
+            let scope_index = self.scope_graph.add_node(Node::Root {
+                file,
                 exports: vec![],
             });
-            self.scope_ancestry.push(idx);
-            self.file_ancestry.push(file);
-            self.file_graph[file]
+            self.scope_ancestry.push(scope_index);
+            self.file_ancestry.push(file_index);
+            self.file_graph[file_index]
                 .syn
                 .items
                 .iter()
@@ -94,33 +91,81 @@ impl<'ast> ScopeBuilder<'ast> {
         }
 
         // Stage two: apply visibility
-        for node in self.scope_graph.node_indices() {
-            self.apply_visibility(node);
-        }
+        self.scope_graph
+            .node_indices()
+            .for_each(|i| self.apply_visibility(i));
 
         // Stage three: delete use nodes
 
         // Stage four: tie impls
     }
 
+    pub fn check_graph(&mut self) {
+        self.find_name_conflicts();
+    }
+
     fn find_name_conflicts(&mut self) {
         for node in self.scope_graph.node_indices() {
-            match self.scope_graph[node] {
-                Node::Root { .. } | Node::Mod { .. } => {
-                    // Check the scopes for conflicts
-                    let mut names: Vec<Name> = vec![];
-                    let mut errors: Vec<ScopeError> = vec![];
-                    for child in self.scope_graph.neighbors(node) {
-                        match self.scope_graph[child] {
-                            Node::Item { ident, item, .. } => {
-                                names.push(Name::from(item));
+            let file = match &self.scope_graph[node] {
+                Node::Root { file, .. } | Node::Mod { file, .. } => file,
+                _ => continue,
+            };
+
+            // Check the scopes for conflicts
+            let mut ident_map: HashMap<String, Vec<NodeIndex>> = HashMap::default();
+            for child in self.scope_graph.neighbors(node) {
+                match self.scope_graph[child] {
+                    Node::Item { ident, .. } => {
+                        ident_map.entry(ident.to_string()).or_default().push(child)
+                    }
+                    _ => {}
+                }
+            }
+            for (ident, indices) in ident_map.iter() {
+                let mut claimed = vec![false; indices.len()];
+                // Unfortunately, need an O(n^2) check here on items with the same name
+                // As per petgraph docs, this is ordered most recent to least recent, so need to iterate in reverse
+                for i in (0..indices.len()).rev() {
+                    for j in (0..i).rev() {
+                        // Don't create repetitive errors by "claiming" duplicates for errors
+                        // TODO: see if this can be simplified since it is a bit hard to understand
+                        if claimed[j] {
+                            continue;
+                        }
+                        match (&self.scope_graph[indices[i]], &self.scope_graph[indices[j]]) {
+                            (
+                                Node::Item {
+                                    item: i_item,
+                                    ident: i_ident,
+                                    ..
+                                },
+                                Node::Item {
+                                    item: j_item,
+                                    ident: j_ident,
+                                    ..
+                                },
+                            ) => {
+                                if Name::from(*i_item).conflicts_with(&Name::from(*j_item)) {
+                                    self.errors.push(
+                                        MultipleDefinitionError {
+                                            file: file.clone(),
+                                            name: ident.clone(),
+                                            original: i_ident.span(),
+                                            duplicate: j_ident.span(),
+                                        }
+                                        .into(),
+                                    );
+                                    // Optimization: don't need to claim items that won't be seen again
+                                    // claimed[i] = true;
+                                    claimed[j] = true;
+                                    // Stop at the first conflict seen for `i`, since `j` will necessarily become `i` in the future and handle any further conflicts
+                                    break;
+                                }
                             }
-                            _ => {}
+                            _ => error!("Only item nodes were added, so this shouldn't happen"),
                         }
                     }
-                    self.errors.append(&mut errors);
                 }
-                _ => {}
             }
         }
         // let others = self.others_declared_with_same_name_in_scope(name);
@@ -217,10 +262,7 @@ impl<'ast> ScopeBuilder<'ast> {
             .collect();
         for parent in parents {
             match &mut self.scope_graph[parent] {
-                Node::Mod { exports, .. } => exports
-                    .entry(node)
-                    .or_insert_with(Vec::default)
-                    .extend(&grandparents),
+                Node::Mod { exports, .. } => exports.entry(node).or_default().extend(&grandparents),
                 Node::Root { exports, .. } => exports.extend(&grandparents),
                 other => {
                     error!("parent is not a mod or root {:?}", other);
@@ -255,10 +297,7 @@ impl<'ast> ScopeBuilder<'ast> {
         };
         for parent in parents {
             match &mut self.scope_graph[parent] {
-                Node::Mod { exports, .. } => exports
-                    .entry(node)
-                    .or_insert_with(Vec::default)
-                    .extend(&roots),
+                Node::Mod { exports, .. } => exports.entry(node).or_default().extend(&roots),
                 Node::Root { exports, .. } => exports.extend(&roots),
                 other => {
                     error!("parent is not a mod or root {:?}", other);
@@ -282,7 +321,7 @@ impl<'ast> ScopeBuilder<'ast> {
                     let mod_idx = self.scope_graph.add_node(Node::Mod {
                         item_mod,
                         exports: HashMap::default(),
-                        file_index: None,
+                        file: self.file_graph[*self.file_ancestry.last().unwrap()].clone(),
                     });
                     let parent = self.scope_ancestry.last().unwrap();
                     self.scope_graph
@@ -301,26 +340,28 @@ impl<'ast> ScopeBuilder<'ast> {
                         .collect();
                     full_ident_path.push(item_mod.ident.clone());
 
-                    let edge = self.file_ancestry.last().and_then(|parent| {
+                    let file_index = self.file_ancestry.last().and_then(|parent| {
                         self.file_graph
                             .edges(*parent)
                             .filter(|edge| full_ident_path.ends_with(edge.weight()))
                             .max_by_key(|edge| edge.weight().len())
+                            .map(|edge| edge.target())
                     });
 
-                    if let Some(edge) = edge {
+                    if let Some(file_index) = file_index {
+                        let file = self.file_graph[file_index].clone();
                         let mod_idx = self.scope_graph.add_node(Node::Mod {
                             item_mod,
                             exports: HashMap::default(),
-                            file_index: Some(edge.target()),
+                            file,
                         });
                         if let Some(parent) = self.scope_ancestry.last() {
                             self.scope_graph
                                 .add_edge(*parent, mod_idx, "mod".to_string());
                         }
                         self.scope_ancestry.push(mod_idx);
-                        self.file_ancestry.push(edge.target());
-                        self.file_graph[edge.target()]
+                        self.file_ancestry.push(file_index);
+                        self.file_graph[file_index]
                             .syn
                             .items
                             .iter()
@@ -394,7 +435,7 @@ impl<'ast> ScopeBuilder<'ast> {
 pub enum Node<'ast> {
     /// A dummy node for the root of a tree
     Root {
-        file_index: NodeIndex,
+        file: Rc<File>,
         exports: Vec<NodeIndex>,
     },
     Item {
@@ -405,8 +446,8 @@ pub enum Node<'ast> {
         item_mod: &'ast ItemMod,
         /// Exports: (from item, to list of roots/mods)
         exports: HashMap<NodeIndex, Vec<NodeIndex>>,
-        /// Whether this mod is backed by a file
-        file_index: Option<NodeIndex>,
+        /// The file backing this mod, whether it's its own file or the file of an ancestor
+        file: Rc<File>,
     },
     Use {
         item_use: &'ast ItemUse,

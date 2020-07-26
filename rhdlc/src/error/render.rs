@@ -161,7 +161,8 @@ fn write_ref(
 
     writeln!(
         f,
-        "{label} {pipe} {code}",
+        "{label_indent}{label} {pipe} {code}",
+        label_indent = " ".repeat(indent.len() - label.len()),
         label = label,
         pipe = PIPE.blue().bold(),
         code = code_line.trim_end()

@@ -37,6 +37,14 @@ fn main() {
 
     let mut scope_builder = scope::ScopeBuilder::from(&resolver.file_graph);
     scope_builder.build_graph();
-    // scope_builder.check_graph();
+    scope_builder.check_graph();
+    if scope_builder.errors.len() > 0 {
+        scope_builder
+            .errors
+            .iter()
+            .for_each(|err| eprintln!("{}", err));
+        process::exit(1)
+    }
+
     println!("{}", Dot::new(&scope_builder.scope_graph));
 }

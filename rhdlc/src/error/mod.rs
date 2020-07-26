@@ -140,7 +140,11 @@ impl Display for WrappedIoError {
                 render_location(
                     f,
                     format!("could not read module `{}`", ident),
-                    (Reference::Error, &format!("{} : {}", source, self.cause), span.span),
+                    (
+                        Reference::Error,
+                        &format!("{} : {}", source, self.cause),
+                        span.span,
+                    ),
                     vec![],
                     &span.file.source,
                     &span.file.content,
@@ -172,24 +176,29 @@ error!(ResolveError {
 #[derive(Debug)]
 pub struct MultipleDefinitionError {
     pub file: Rc<crate::resolve::File>,
-    pub name: syn::Ident,
+    pub name: String,
     pub original: Span,
-    pub duplicates: Vec<Span>,
+    pub duplicate: Span,
 }
 
 impl Display for MultipleDefinitionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
-        for duplicate in &self.duplicates {
-            render_location(
-                f,
-                format!("the name `{}` is defined multiple times", self.name),
-                (Reference::Error, "first defined here", self.original),
-                vec![(Reference::Info, "", *duplicate)],
-                &self.file.source,
-                &self.file.content,
-            )?;
-        }
-        Ok(())
+        render_location(
+            f,
+            format!("the name `{}` is defined multiple times", self.name),
+            (
+                Reference::Error,
+                &format!("previous definition of the type `{}` here", self.name),
+                self.original,
+            ),
+            vec![(
+                Reference::Info,
+                &format!("`{}` redefined here", self.name),
+                self.duplicate,
+            )],
+            &self.file.source,
+            &self.file.content,
+        )
     }
 }
 

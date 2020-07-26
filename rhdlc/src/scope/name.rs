@@ -1,4 +1,3 @@
-
 use syn::{File, Ident, ImplItem, Item, ItemImpl, ItemMod, ItemUse, Visibility};
 
 use crate::error::{MultipleDefinitionError, ScopeError};
@@ -20,7 +19,7 @@ impl<'ast> Name<'ast> {
     /// * functions & variables can conflict with types
     /// * types can conflict with anything
     /// * macros only conflict with macros
-    fn in_same_name_class(&self, other: &Name<'ast>) -> bool {
+    pub fn in_same_name_class(&self, other: &Name<'ast>) -> bool {
         use Name::*;
         match self {
             Mod(_) | Crate(_) => match other {
@@ -47,7 +46,7 @@ impl<'ast> Name<'ast> {
     }
 
     /// Check ident
-    fn has_same_ident(&self, other: &Name<'ast>) -> bool {
+    pub fn has_same_ident(&self, other: &Name<'ast>) -> bool {
         use Name::*;
         match self {
             Function(ident) | Variable(ident) | Macro(ident) | Type(ident) | Mod(ident)
