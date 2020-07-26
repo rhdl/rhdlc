@@ -139,7 +139,7 @@ impl Display for WrappedIoError {
                 };
                 render_location(
                     f,
-                    format!("could not read module `{}`", ident),
+                    format!("file not found for module `{}`", ident),
                     (
                         Reference::Error,
                         &format!("{} : {}", source, self.cause),

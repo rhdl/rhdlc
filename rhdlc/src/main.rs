@@ -12,7 +12,7 @@ mod scope;
 fn main() {
     env_logger::init();
 
-    let arg = match env::args().skip(1).next() {
+    let arg = match env::args().nth(1) {
         Some(arg) => arg,
         _ => {
             eprintln!("Usage: rhdlc path/to/filename.rs");
@@ -30,7 +30,7 @@ fn main() {
         }
     }
 
-    if resolver.errors.len() > 0 {
+    if !resolver.errors.is_empty() {
         resolver.errors.iter().for_each(|err| eprintln!("{}", err));
         process::exit(1)
     }
@@ -38,7 +38,7 @@ fn main() {
     let mut scope_builder = scope::ScopeBuilder::from(&resolver.file_graph);
     scope_builder.build_graph();
     scope_builder.check_graph();
-    if scope_builder.errors.len() > 0 {
+    if !scope_builder.errors.is_empty() {
         scope_builder
             .errors
             .iter()

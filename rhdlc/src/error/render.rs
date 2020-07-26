@@ -8,9 +8,9 @@ use proc_macro2::Span;
 
 use crate::resolve::ResolutionSource;
 
-const MOD_FILE_STEM: &'static str = "mod";
-const UNKNOWN_FILE: &'static str = "???.rhdl";
-const UNKNOWN_DIRECTORY: &'static str = "???";
+const MOD_FILE_STEM: &str = "mod";
+const UNKNOWN_FILE: &str = "???.rhdl";
+const UNKNOWN_DIRECTORY: &str = "???";
 
 const ARROW: &str = "-->";
 const PIPE: &str = "|";
@@ -37,7 +37,7 @@ where
             let filename = path
                 .file_name()
                 .map(OsStr::to_string_lossy)
-                .unwrap_or(UNKNOWN_FILE.into());
+                .unwrap_or_else(|| UNKNOWN_FILE.into());
 
             if path
                 .file_stem()
@@ -48,7 +48,7 @@ where
                 path.parent()
                     .and_then(Path::file_stem)
                     .map(OsStr::to_string_lossy)
-                    .unwrap_or(UNKNOWN_DIRECTORY.into())
+                    .unwrap_or_else(|| UNKNOWN_DIRECTORY.into())
                     + "/"
                     + filename
             } else {

@@ -1,6 +1,5 @@
-use syn::{File, Ident, ImplItem, Item, ItemImpl, ItemMod, ItemUse, Visibility};
+use syn::{Ident, Item};
 
-use crate::error::{MultipleDefinitionError, ScopeError};
 use log::{debug, error, warn};
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Name<'ast> {

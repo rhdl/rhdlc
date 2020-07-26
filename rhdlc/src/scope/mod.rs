@@ -135,11 +135,8 @@ impl<'ast> ScopeBuilder<'ast> {
             // Check the scopes for conflicts
             let mut ident_map: HashMap<String, Vec<NodeIndex>> = HashMap::default();
             for child in self.scope_graph.neighbors(node) {
-                match self.scope_graph[child] {
-                    Node::Item { ident, .. } => {
-                        ident_map.entry(ident.to_string()).or_default().push(child)
-                    }
-                    _ => {}
+                if let Node::Item { ident, .. } = self.scope_graph[child] {
+                    ident_map.entry(ident.to_string()).or_default().push(child)
                 }
             }
             for (ident, indices) in ident_map.iter() {
@@ -193,7 +190,7 @@ impl<'ast> ScopeBuilder<'ast> {
 
     /// Stage four
     fn tie_impl(&mut self, item: &'ast Item) {
-        if let Item::Impl(ItemImpl { items, self_ty, .. }) = item {}
+        if let Item::Impl(ItemImpl { .. }) = item {}
     }
 
     /// Stage one
@@ -301,8 +298,11 @@ impl<'ast> ScopeBuilder<'ast> {
 
 #[derive(Debug)]
 pub enum Node<'ast> {
-    /// A dummy node for the root of a tree
+    /// A node for the root of a tree
+    /// This could be a crate, or just "top.rhdl"
     Root {
+        /// This information comes externally, somehow...
+        // name: Option<String>,
         file: Rc<File>,
         exports: Vec<NodeIndex>,
     },
@@ -330,7 +330,7 @@ impl<'ast> Display for Node<'ast> {
             Self::Root { .. } => write!(f, "root"),
             Self::Item { ident, .. } => write!(f, "{}", ident),
             Self::Mod { item_mod, .. } => write!(f, "mod {}", item_mod.ident),
-            Self::Use { item_use, .. } => write!(f, "use"),
+            Self::Use { .. } => write!(f, "use"),
         }
     }
 }

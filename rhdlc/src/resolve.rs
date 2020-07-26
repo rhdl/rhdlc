@@ -5,7 +5,6 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 use petgraph::{graph::NodeIndex, Graph};
-use proc_macro2::Span;
 use syn::{spanned::Spanned, Ident, Item, ItemMod};
 
 use crate::error::{
@@ -61,7 +60,7 @@ impl Resolver {
                         Item::Mod(m) => Some(m),
                         _ => None,
                     })
-                    .map(|m| m.clone())
+                    .cloned()
                     .collect();
 
                 if let Some(cwd) = path
@@ -85,12 +84,12 @@ impl Resolver {
                             .map(OsStr::to_string_lossy)
                             .map(|cow| cow.to_string())
                     })
-                    .unwrap_or(STDIN_FALLBACK_EXTENSION.to_owned());
+                    .unwrap_or_else(|| STDIN_FALLBACK_EXTENSION.to_owned());
 
                 for m in mods {
                     let file = self.file_graph[idx].clone();
                     let module_span = m.span();
-                    if let None = m.content {
+                    if m.content.is_none() {
                         self.resolve_mod(
                             m,
                             SpanSource {
@@ -118,15 +117,12 @@ impl Resolver {
 
     /// If the code is in a mod file, there could be more modules that need to be recursively resolved.
     fn resolve_mod(&mut self, item_mod: ItemMod, mut span: SpanSource) {
-        span.ident_path.push(item_mod.ident.clone());
+        span.ident_path.push(item_mod.ident);
         let mut mod_file_path = self.cwd.clone();
         span.ident_path
             .iter()
             .for_each(|ident| mod_file_path.push(ident.to_string()));
-        let mod_folder_file_path = mod_file_path
-            .clone()
-            .join("mod")
-            .with_extension(&self.extension);
+        let mod_folder_file_path = mod_file_path.join("mod").with_extension(&self.extension);
         let mod_file_path = mod_file_path.with_extension(&self.extension);
 
         let resolved_file = match (
@@ -145,7 +141,7 @@ impl Resolver {
                     DuplicateError {
                         file_path: mod_file_path,
                         folder_path: mod_folder_file_path,
-                        span: span.clone(),
+                        span,
                     }
                     .into(),
                 );
@@ -166,7 +162,7 @@ impl Resolver {
                 Item::Mod(m) => Some(m),
                 _ => None,
             })
-            .map(|m| m.clone())
+            .cloned()
             .collect();
         let idx = self.file_graph.add_node(resolved_file.into());
         if let Some(parent) = self.ancestry.last() {
@@ -179,7 +175,7 @@ impl Resolver {
         for m in mods {
             let module_span = m.span();
             let file = self.file_graph[idx].clone();
-            if let None = m.content {
+            if m.content.is_none() {
                 self.resolve_mod(
                     m,
                     SpanSource {
@@ -189,7 +185,7 @@ impl Resolver {
                     },
                 );
             } else {
-                self.resolve_mod(
+                self.resolve_mod_with_content(
                     m,
                     SpanSource {
                         file,
@@ -207,30 +203,27 @@ impl Resolver {
         if let Some(content) = item_mod.content {
             span.ident_path.push(item_mod.ident);
             for item in content.1 {
-                match item {
-                    Item::Mod(m) => {
-                        let module_span = m.span();
-                        if let None = m.content {
-                            self.resolve_mod(
-                                m,
-                                SpanSource {
-                                    file: span.file.clone(),
-                                    ident_path: span.ident_path.clone(),
-                                    span: module_span,
-                                },
-                            );
-                        } else {
-                            self.resolve_mod(
-                                m,
-                                SpanSource {
-                                    file: span.file.clone(),
-                                    ident_path: span.ident_path.clone(),
-                                    span: module_span,
-                                },
-                            );
-                        }
+                if let Item::Mod(m) = item {
+                    let module_span = m.span();
+                    if m.content.is_none() {
+                        self.resolve_mod(
+                            m,
+                            SpanSource {
+                                file: span.file.clone(),
+                                ident_path: span.ident_path.clone(),
+                                span: module_span,
+                            },
+                        );
+                    } else {
+                        self.resolve_mod_with_content(
+                            m,
+                            SpanSource {
+                                file: span.file.clone(),
+                                ident_path: span.ident_path.clone(),
+                                span: module_span,
+                            },
+                        );
                     }
-                    _ => {}
                 }
             }
         }
@@ -270,7 +263,7 @@ impl Resolver {
             Err(err) => Err(PreciseSynParseError {
                 cause: err,
                 code: content,
-                res: res.clone(),
+                res,
             }
             .into()),
             Ok(syn) => Ok(File {

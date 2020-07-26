@@ -1,7 +1,5 @@
-use std::collections::HashMap;
-
 use petgraph::{graph::NodeIndex, Direction};
-use syn::{ItemUse, UseName, UseRename, UseTree};
+use syn::{UseName, UseRename, UseTree};
 
 use super::{Node, ScopeGraph};
 
@@ -43,54 +41,51 @@ pub fn trace_use<'ast>(
     tree: &UseTree,
 ) {
     use syn::UseTree::*;
-    match &mut scope_graph[destination] {
-        Node::Use { imports, .. } => {
-            match tree {
-                Path(path) => {
-                    if path.ident == "super" {
-                        let parent = scope_graph
-                            .neighbors_directed(scope, Direction::Incoming)
-                            .next()
-                            .expect("todo, going beyond the root is an error");
-                        trace_use(scope_graph, destination, parent, &path.tree);
-                    } else {
-                        let child = scope_graph.neighbors(scope).find(|child| {
-                            if let Node::Mod { item_mod, .. } = scope_graph[*child] {
-                                item_mod.ident.to_string() == path.ident.to_string()
-                            } else {
-                                false
-                            }
-                        });
-                        trace_use(
-                            scope_graph,
-                            destination,
-                            child.expect("todo, entering a non-existent module is an error"),
-                            &path.tree,
-                        );
-                    }
+    if let Node::Use { imports, .. } = &mut scope_graph[destination] {
+        match tree {
+            Path(path) => {
+                if path.ident == "super" {
+                    let parent = scope_graph
+                        .neighbors_directed(scope, Direction::Incoming)
+                        .next()
+                        .expect("todo, going beyond the root is an error");
+                    trace_use(scope_graph, destination, parent, &path.tree);
+                } else {
+                    let child = scope_graph.neighbors(scope).find(|child| {
+                        if let Node::Mod { item_mod, .. } = scope_graph[*child] {
+                            item_mod.ident == path.ident.to_string()
+                        } else {
+                            false
+                        }
+                    });
+                    trace_use(
+                        scope_graph,
+                        destination,
+                        child.expect("todo, entering a non-existent module is an error"),
+                        &path.tree,
+                    );
                 }
-                Name(name) => {
-                    imports.entry(scope).or_default().push(UseType::Name {
-                        name: name.clone(),
-                        // this is wrong, placeholder
-                        index: scope,
-                    })
-                }
-                Rename(rename) => imports.entry(scope).or_default().push(UseType::Rename {
-                    rename: rename.clone(),
+            }
+            Name(name) => {
+                imports.entry(scope).or_default().push(UseType::Name {
+                    name: name.clone(),
                     // this is wrong, placeholder
                     index: scope,
-                }),
-                Glob(glob) => imports
-                    .entry(scope)
-                    .or_default()
-                    .push(UseType::Glob { scope }),
-                Group(group) => group
-                    .items
-                    .iter()
-                    .for_each(|tree| trace_use(scope_graph, destination, scope, tree)),
+                })
             }
+            Rename(rename) => imports.entry(scope).or_default().push(UseType::Rename {
+                rename: rename.clone(),
+                // this is wrong, placeholder
+                index: scope,
+            }),
+            Glob(_) => imports
+                .entry(scope)
+                .or_default()
+                .push(UseType::Glob { scope }),
+            Group(group) => group
+                .items
+                .iter()
+                .for_each(|tree| trace_use(scope_graph, destination, scope, tree)),
         }
-        _ => {}
     }
 }

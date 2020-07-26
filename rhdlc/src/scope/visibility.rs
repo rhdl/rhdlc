@@ -1,4 +1,3 @@
-
 use log::error;
 use petgraph::{graph::NodeIndex, Direction};
 use syn::Visibility;
