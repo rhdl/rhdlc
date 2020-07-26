@@ -35,9 +35,9 @@ use std::collections::HashMap;
 use std::fmt::Display;
 use std::rc::Rc;
 
-use log::{error, warn};
+use log::{error};
 use petgraph::{graph::NodeIndex, visit::EdgeRef, Direction, Graph};
-use syn::{spanned::Spanned, Ident, Item, ItemImpl, ItemMod, ItemUse, Visibility};
+use syn::{spanned::Spanned, Ident, Item, ItemImpl, ItemMod, ItemUse};
 
 use crate::error::{MultipleDefinitionError, ScopeError};
 use crate::resolve::{File, FileGraph};
@@ -45,10 +45,14 @@ use crate::resolve::{File, FileGraph};
 mod name;
 use name::Name;
 
+mod visibility;
+
+pub type ScopeGraph<'ast> = Graph<Node<'ast>, String>;
+
 #[derive(Debug)]
 pub struct ScopeBuilder<'ast> {
     pub file_graph: &'ast FileGraph,
-    pub scope_graph: Graph<Node<'ast>, String>,
+    pub scope_graph: ScopeGraph<'ast>,
     pub errors: Vec<ScopeError>,
     scope_ancestry: Vec<NodeIndex>,
     file_ancestry: Vec<NodeIndex>,
@@ -93,7 +97,7 @@ impl<'ast> ScopeBuilder<'ast> {
         // Stage two: apply visibility
         self.scope_graph
             .node_indices()
-            .for_each(|i| self.apply_visibility(i));
+            .for_each(|i| visibility::apply_visibility(&mut self.scope_graph, i));
 
         // Stage three: delete use nodes
 
@@ -158,7 +162,7 @@ impl<'ast> ScopeBuilder<'ast> {
                                     // Optimization: don't need to claim items that won't be seen again
                                     // claimed[i] = true;
                                     claimed[j] = true;
-                                    // Stop at the first conflict seen for `i`, since `j` will necessarily become `i` in the future and handle any further conflicts
+                                    // Stop at the first conflict seen for `i`, since `j` will necessarily become `i` in the future and handle any further conflicts.
                                     break;
                                 }
                             }
@@ -168,143 +172,8 @@ impl<'ast> ScopeBuilder<'ast> {
                 }
             }
         }
-        // let others = self.others_declared_with_same_name_in_scope(name);
-        // if others.len() > 0 {
-        //     // TODO: create name conflict errors for this
-        //     warn!(
-        //         "duplicate item names! {:?}",
-        //         others
-        //             .iter()
-        //             .map(|i| Name::from(*i))
-        //             .collect::<Vec<Name<'ast>>>()
-        //     );
-        // }
     }
 
-    /// If a node overrides its own visibility, make a note of it in the parent node(s).
-    fn apply_visibility(&mut self, node: NodeIndex) {
-        use syn::Item::*;
-        use syn::*;
-        let vis = match self.scope_graph[node] {
-            Node::Item { item, .. } => match item {
-                ExternCrate(ItemExternCrate { vis, .. })
-                | Type(ItemType { vis, .. })
-                | Static(ItemStatic { vis, .. })
-                | Const(ItemConst { vis, .. })
-                | Fn(ItemFn {
-                    sig: Signature { .. },
-                    vis,
-                    ..
-                })
-                | Macro2(ItemMacro2 { vis, .. })
-                | Struct(ItemStruct { vis, .. })
-                | Enum(ItemEnum { vis, .. })
-                | Trait(ItemTrait { vis, .. })
-                | TraitAlias(ItemTraitAlias { vis, .. })
-                | Union(ItemUnion { vis, .. }) => Some(vis),
-                _ => None,
-            },
-            Node::Mod {
-                item_mod: ItemMod { vis, .. },
-                ..
-            } => Some(vis),
-            Node::Use {
-                item_use: ItemUse { vis, .. },
-                ..
-            } => Some(vis),
-            _ => None,
-        };
-
-        if let Some(vis) = vis {
-            use Visibility::*;
-            match vis {
-                Public(_) => self.apply_visibility_pub(node),
-                Crate(_) => self.apply_visibility_crate(node),
-                Restricted(r) => {
-                    if let Some(_in) = r.in_token {
-                        todo!("restricted visibility in paths is not implemented yet");
-                    // Edition Differences: Starting with the 2018 edition, paths for pub(in path) must start with crate, self, or super. The 2015 edition may also use paths starting with :: or modules from the crate root.
-                    } else {
-                        match r
-                            .path
-                            .get_ident()
-                            .map(|ident| ident.to_string())
-                            .expect("error if the path is not an ident")
-                            .as_str()
-                        {
-                            // No-op
-                            "self" => {}
-                            // Same as crate pub
-                            "crate" => self.apply_visibility_crate(node),
-                            // Same as pub
-                            "super" => self.apply_visibility_pub(node),
-                            _ => todo!("error if none of the above"),
-                        }
-                    }
-                }
-                Inherited => {}
-            }
-        }
-    }
-
-    fn apply_visibility_pub(&mut self, node: NodeIndex) {
-        let parents: Vec<NodeIndex> = self
-            .scope_graph
-            .neighbors_directed(node, Direction::Incoming)
-            .collect();
-        let grandparents: Vec<NodeIndex> = parents
-            .iter()
-            .map(|parent| {
-                self.scope_graph
-                    .neighbors_directed(*parent, Direction::Incoming)
-            })
-            .flatten()
-            .collect();
-        for parent in parents {
-            match &mut self.scope_graph[parent] {
-                Node::Mod { exports, .. } => exports.entry(node).or_default().extend(&grandparents),
-                Node::Root { exports, .. } => exports.extend(&grandparents),
-                other => {
-                    error!("parent is not a mod or root {:?}", other);
-                }
-            }
-        }
-    }
-
-    /// https://github.com/rust-lang/rust/issues/53120
-    /// TODO: check validity of a crate-level pub if this isn't a crate
-    /// Bottom-up BFS
-    fn apply_visibility_crate(&mut self, node: NodeIndex) {
-        let parents: Vec<NodeIndex> = self
-            .scope_graph
-            .neighbors_directed(node, Direction::Incoming)
-            .collect();
-        let roots = {
-            let mut roots: Vec<NodeIndex> = vec![];
-            let mut level: Vec<NodeIndex> = vec![];
-            let mut next: Vec<NodeIndex> = vec![node];
-            while !next.is_empty() {
-                level.append(&mut next);
-                level.iter().for_each(|n| {
-                    if let Node::Root { .. } = self.scope_graph[*n] {
-                        roots.push(*n);
-                    } else {
-                        next.extend(self.scope_graph.neighbors_directed(*n, Direction::Incoming));
-                    }
-                });
-            }
-            roots
-        };
-        for parent in parents {
-            match &mut self.scope_graph[parent] {
-                Node::Mod { exports, .. } => exports.entry(node).or_default().extend(&roots),
-                Node::Root { exports, .. } => exports.extend(&roots),
-                other => {
-                    error!("parent is not a mod or root {:?}", other);
-                }
-            }
-        }
-    }
 
     /// Stage four
     fn tie_impl(&mut self, item: &'ast Item) {
@@ -399,7 +268,7 @@ impl<'ast> ScopeBuilder<'ast> {
                     .add_edge(*parent, item_idx, "item".to_string());
             }
             Use(item_use) => {
-                let use_idx = self.scope_graph.add_node(Node::Use { item_use });
+                let use_idx = self.scope_graph.add_node(Node::Use { item_use, imports: vec![] });
                 self.scope_graph.add_edge(
                     *self.scope_ancestry.last().unwrap(),
                     use_idx,
@@ -408,26 +277,6 @@ impl<'ast> ScopeBuilder<'ast> {
             }
             _other => {}
         }
-    }
-
-    fn others_declared_with_same_name_in_scope(&self, name: Name<'ast>) -> Vec<&'ast Item> {
-        let parent = self.scope_ancestry.last().unwrap();
-        // Check parent neighbors
-        return self
-            .scope_graph
-            .neighbors(*parent)
-            .filter_map(|neighbor| {
-                if let Node::Item { item, .. } = self.scope_graph[neighbor] {
-                    if name.conflicts_with(&item.into()) {
-                        Some(item)
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<&'ast Item>>();
     }
 }
 
@@ -444,13 +293,15 @@ pub enum Node<'ast> {
     },
     Mod {
         item_mod: &'ast ItemMod,
-        /// Exports: (from item, to list of roots/mods)
+        /// Exports: (from item, to list of roots/mods) aka pubs
         exports: HashMap<NodeIndex, Vec<NodeIndex>>,
         /// The file backing this mod, whether it's its own file or the file of an ancestor
         file: Rc<File>,
     },
     Use {
         item_use: &'ast ItemUse,
+        /// Imported items / mods
+        imports: Vec<NodeIndex>,
     },
 }
 
