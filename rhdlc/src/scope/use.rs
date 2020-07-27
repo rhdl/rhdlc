@@ -21,14 +21,14 @@ pub enum UseType<'ast> {
 }
 
 /// TODO: Disambiguation errors can be done at this point instead of during tracing
-pub fn trace_use_entry<'ast>(scope_graph: &mut ScopeGraph<'ast>, i: NodeIndex) {
-    let (tree, has_leading_colon) = match &scope_graph[i] {
+pub fn trace_use_entry<'ast>(scope_graph: &mut ScopeGraph<'ast>, dest: NodeIndex) {
+    let (tree, has_leading_colon) = match &scope_graph[dest] {
         Node::Use { item_use, .. } => (&item_use.tree, item_use.leading_colon.is_some()),
         _ => return,
     };
 
     let scope = if has_leading_colon {
-        let mut root = i;
+        let mut root = dest;
         while match &scope_graph[root] {
             Node::Root { .. } => false,
             _ => true,
@@ -41,12 +41,12 @@ pub fn trace_use_entry<'ast>(scope_graph: &mut ScopeGraph<'ast>, i: NodeIndex) {
         root
     } else {
         scope_graph
-            .neighbors_directed(i, Direction::Incoming)
+            .neighbors_directed(dest, Direction::Incoming)
             .next()
             .unwrap()
     };
 
-    trace_use(scope_graph, i, scope, tree);
+    trace_use(scope_graph, dest, scope, tree);
 }
 
 /// Trace usages
@@ -62,7 +62,7 @@ pub fn trace_use_entry<'ast>(scope_graph: &mut ScopeGraph<'ast>, i: NodeIndex) {
 ///     * Any other word is implicitly the global or local scope
 ///         * Error if there is a root with the same name as a module in the local scope.
 ///             * Requires explicit disambiguation
-/// * Check scope visibility
+/// * Check scope visibility (!important)
 /// * Global imports
 ///     * Roots need names: `crate` is "this" root, vs. any other identifier
 fn trace_use<'ast>(
@@ -73,17 +73,18 @@ fn trace_use<'ast>(
     tree: &'ast UseTree,
 ) {
     use syn::UseTree::*;
-    let dest_tree = if let Node::Use { item_use, .. } = &scope_graph[dest] {
-        &item_use.tree
+    // Is this the tracing entry point? (value comparison)
+    // `item_use.tree` will always be either equal to or a superset of `tree`
+    let is_entry = if let Node::Use { item_use, .. } = &scope_graph[dest] {
+        tree == &item_use.tree
     } else {
         return;
     };
-    // Is this the tracing entry point?
-    let is_entry = tree == dest_tree;
     match tree {
         Path(path) => {
             let path_ident = path.ident.to_string();
             match path_ident.as_str() {
+                // Special keyword cases
                 "self" | "super" | "crate" => {
                     if !is_entry {
                         todo!(
@@ -103,7 +104,7 @@ fn trace_use<'ast>(
                             .next()
                             .expect("todo, going beyond the root is an error");
                         trace_use(scope_graph, dest, use_grandparent, &path.tree);
-                    } else {
+                    } else if path_ident == "crate" {
                         let mut root = use_parent;
                         while let Some(next_parent) = scope_graph
                             .neighbors_directed(root, Direction::Incoming)
@@ -114,6 +115,7 @@ fn trace_use<'ast>(
                         trace_use(scope_graph, dest, root, &path.tree);
                     }
                 }
+                // Default case: enter the matching child scope
                 _ => {
                     let child = scope_graph.neighbors(scope).find(|child| {
                         if let Node::Mod { item_mod, .. } = scope_graph[*child] {
@@ -131,19 +133,19 @@ fn trace_use<'ast>(
                 }
             };
         }
-        Name(name) => {
-            let name_string = name.ident.to_string();
-            let found_index = if name_string == "self" {
+        Name(UseName { ident, .. }) | Rename(UseRename { ident, .. }) => {
+            let original_name_string = ident.to_string();
+            let found_index = if original_name_string == "self" {
                 Some(scope)
             } else {
                 let child = scope_graph
                     .neighbors(scope)
                     .find(|child| match &scope_graph[*child] {
-                        Node::Item { ident, .. } => **ident == name_string,
+                        Node::Item { ident, .. } => **ident == original_name_string,
                         Node::Mod {
                             item_mod: ItemMod { ident, .. },
                             ..
-                        } => *ident == name_string,
+                        } => *ident == original_name_string,
                         Node::Use { .. } => {
                             warn!("uses aren't recursively traced (yet)");
                             false
@@ -152,39 +154,19 @@ fn trace_use<'ast>(
                     });
                 child
             };
+            let index = found_index.expect("uses that aren't found are an error");
             if let Node::Use { imports, .. } = &mut scope_graph[dest] {
-                imports.entry(scope).or_default().push(UseType::Name {
-                    name,
-                    index: found_index.expect("uses that aren't found are an error"),
-                })
-            }
-        }
-        Rename(rename) => {
-            let name_string = rename.ident.to_string();
-            let found_index = if name_string == "self" {
-                Some(scope)
-            } else {
-                let child = scope_graph
-                    .neighbors(scope)
-                    .find(|child| match &scope_graph[*child] {
-                        Node::Item { ident, .. } => **ident == name_string,
-                        Node::Mod {
-                            item_mod: ItemMod { ident, .. },
-                            ..
-                        } => *ident == name_string,
-                        Node::Use { .. } => {
-                            warn!("uses aren't recursively traced (yet)");
-                            false
-                        }
-                        _ => false,
-                    });
-                child
-            };
-            if let Node::Use { imports, .. } = &mut scope_graph[dest] {
-                imports.entry(scope).or_default().push(UseType::Rename {
-                    rename,
-                    index: found_index.expect("uses that aren't found are an error"),
-                })
+                match tree {
+                    Name(name) => imports
+                        .entry(scope)
+                        .or_default()
+                        .push(UseType::Name { name, index }),
+                    Rename(rename) => imports
+                        .entry(scope)
+                        .or_default()
+                        .push(UseType::Rename { rename, index }),
+                    _ => {}
+                }
             }
         }
         Glob(_) => {
