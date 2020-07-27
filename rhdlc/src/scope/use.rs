@@ -6,14 +6,14 @@ use super::{Node, ScopeGraph};
 
 #[derive(Debug)]
 pub enum UseType<'ast> {
-    /// All children from the root/mod are included
+    /// Pull a particular name into scope
     Name {
         name: &'ast UseName,
         index: NodeIndex,
     },
-    Glob {
-        scope: NodeIndex,
-    },
+    /// Optionally include all items/mods from the scope
+    Glob { scope: NodeIndex },
+    /// Pull a particular name into scope, but give it a new name (so as to avoid any conflicts)
     Rename {
         rename: &'ast UseRename,
         index: NodeIndex,

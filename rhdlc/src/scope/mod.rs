@@ -114,6 +114,7 @@ impl<'ast> ScopeBuilder<'ast> {
         self.find_name_conflicts();
     }
 
+    /// TODO: check use items for conflicts, and remember that globs are optional and don't conflict
     fn find_name_conflicts(&mut self) {
         for node in self.scope_graph.node_indices() {
             let file = match &self.scope_graph[node] {
