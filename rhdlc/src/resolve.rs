@@ -28,9 +28,9 @@ const STDIN_FALLBACK_EXTENSION: &str = "rhdl";
 /// Does not care about naming conflicts, as those are delegated to `ScopeBuilder`.
 #[derive(Default)]
 pub struct Resolver {
-    cwd: PathBuf,
     pub file_graph: FileGraph,
     pub errors: Vec<ResolveError>,
+    cwd: PathBuf,
     ancestry: Vec<NodeIndex>,
     extension: String,
 }
@@ -43,6 +43,7 @@ pub enum ResolutionSource {
 
 impl Resolver {
     /// A top level entry point
+    /// TODO: handle a top level file named `a.rhdl` with `mod a;` declared.
     pub fn resolve_tree(&mut self, res: ResolutionSource) {
         let path = match &res {
             ResolutionSource::File(path) => Some(path.clone()),
@@ -119,12 +120,10 @@ impl Resolver {
     fn resolve_mod(&mut self, item_mod: ItemMod, mut span: SpanSource) {
         span.ident_path.push(item_mod.ident);
         let mut mod_file_path = self.cwd.clone();
-        span.ident_path
-            .iter()
-            .for_each(|ident| {
-                let ident = ident.to_string();
-                mod_file_path.push(ident.strip_prefix("r#").unwrap_or(&ident));
-            });
+        span.ident_path.iter().for_each(|ident| {
+            let ident = ident.to_string();
+            mod_file_path.push(ident.strip_prefix("r#").unwrap_or(&ident));
+        });
         let mod_folder_file_path = mod_file_path.join("mod").with_extension(&self.extension);
         let mod_file_path = mod_file_path.with_extension(&self.extension);
 

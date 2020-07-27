@@ -104,19 +104,7 @@ impl<'ast> ScopeBuilder<'ast> {
 
         // Stage three: trace use nodes
         self.scope_graph.node_indices().for_each(|i| {
-            let mut root = i;
-            while match &self.scope_graph[root] {
-                Node::Root { .. } => false,
-                _ => true,
-            } {
-                root = self.scope_graph.neighbors_directed(root, Direction::Incoming).next().unwrap();
-            }
-            let tree = match &self.scope_graph[i] {
-                Node::Use { item_use, .. } => &item_use.tree,
-                _ => return,
-            };
-
-            r#use::trace_use(&mut self.scope_graph, i, root, tree);
+            r#use::trace_use_entry(&mut self.scope_graph, i);
         });
 
         // Stage four: tie impls
@@ -321,7 +309,7 @@ pub enum Node<'ast> {
     Use {
         item_use: &'ast ItemUse,
         /// Imports: (from root/mod to list of items)
-        imports: HashMap<NodeIndex, Vec<UseType>>,
+        imports: HashMap<NodeIndex, Vec<UseType<'ast>>>,
     },
 }
 
