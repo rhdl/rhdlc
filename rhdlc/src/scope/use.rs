@@ -76,7 +76,7 @@ fn trace_use<'ast>(
     // Is this the tracing entry point? (value comparison)
     // `item_use.tree` will always be either equal to or a superset of `tree`
     let is_entry = if let Node::Use { item_use, .. } = &scope_graph[dest] {
-        tree == &item_use.tree
+        *tree == item_use.tree
     } else {
         return;
     };
@@ -96,6 +96,14 @@ fn trace_use<'ast>(
                         .neighbors_directed(dest, Direction::Incoming)
                         .next()
                         .unwrap();
+                    if match path.tree.as_ref() {
+                        Name(name) => name.ident == "self",
+                        Rename(rename) => rename.ident == "self",
+                        _ => false,
+                    } {
+                        // Handle bad selves now.
+                        todo!("a self that isn't in a group is an error")
+                    }
                     if path_ident == "self" {
                         trace_use(scope_graph, dest, use_parent, &path.tree);
                     } else if path_ident == "super" {

@@ -8,6 +8,7 @@ use std::process;
 mod error;
 mod resolve;
 mod scope;
+mod ident;
 
 fn main() {
     env_logger::init();
