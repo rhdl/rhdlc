@@ -6,9 +6,9 @@ use std::env;
 use std::process;
 
 mod error;
+mod ident;
 mod resolve;
 mod scope;
-mod ident;
 
 fn main() {
     env_logger::init();

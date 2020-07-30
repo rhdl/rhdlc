@@ -104,7 +104,7 @@ impl<'ast> ScopeBuilder<'ast> {
 
         // Stage three: trace use nodes
         self.scope_graph.node_indices().for_each(|i| {
-            r#use::trace_use_entry(&mut self.scope_graph, i);
+            r#use::trace_use_entry(&mut self.scope_graph, &mut self.errors, i);
         });
 
         // Stage four: tie impls
@@ -320,7 +320,24 @@ impl<'ast> Display for Node<'ast> {
             Self::Root { .. } => write!(f, "root"),
             Self::Item { ident, .. } => write!(f, "{}", ident),
             Self::Mod { item_mod, .. } => write!(f, "mod {}", item_mod.ident),
-            Self::Use { .. } => write!(f, "use"),
+            Self::Use {
+                item_use, imports, ..
+            } => {
+                if let syn::Visibility::Public(_) = item_use.vis {
+                    write!(f, "pub ")?;
+                }
+                write!(f, "use")?;
+                for (_, uses) in imports.iter() {
+                    for r#use in uses.iter() {
+                        match r#use {
+                            UseType::Name { name, .. } => write!(f, " {}", name.ident)?,
+                            UseType::Glob { .. } => write!(f, " *")?,
+                            UseType::Rename { rename, .. } => write!(f, " {}", rename.rename)?,
+                        }
+                    }
+                }
+                Ok(())
+            }
         }
     }
 }

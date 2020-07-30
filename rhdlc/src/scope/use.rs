@@ -1,8 +1,14 @@
-use log::warn;
+use std::cell::Cell;
+use std::rc::Rc;
+
+use log::error;
 use petgraph::{graph::NodeIndex, Direction};
 use syn::{ItemMod, UseName, UseRename, UseTree};
 
-use super::{Node, ScopeGraph};
+use super::{File, Node, ScopeError, ScopeGraph};
+use crate::error::{
+    PathDisambiguationError, SpecialIdentNotAtStartOfPathError, UnresolvedImportError,
+};
 
 #[derive(Debug)]
 pub enum UseType<'ast> {
@@ -20,8 +26,20 @@ pub enum UseType<'ast> {
     },
 }
 
+struct TracingContext<'a, 'ast> {
+    scope_graph: &'a mut ScopeGraph<'ast>,
+    errors: &'a mut Vec<ScopeError>,
+    file: Rc<File>,
+    dest: NodeIndex,
+    previous_idents: Vec<syn::Ident>,
+}
+
 /// TODO: Disambiguation errors can be done at this point instead of during tracing
-pub fn trace_use_entry<'ast>(scope_graph: &mut ScopeGraph<'ast>, dest: NodeIndex) {
+pub fn trace_use_entry<'a, 'ast>(
+    scope_graph: &'a mut ScopeGraph<'ast>,
+    errors: &mut Vec<ScopeError>,
+    dest: NodeIndex,
+) {
     let (tree, has_leading_colon) = match &scope_graph[dest] {
         Node::Use { item_use, .. } => (&item_use.tree, item_use.leading_colon.is_some()),
         _ => return,
@@ -46,7 +64,26 @@ pub fn trace_use_entry<'ast>(scope_graph: &mut ScopeGraph<'ast>, dest: NodeIndex
             .unwrap()
     };
 
-    trace_use(scope_graph, dest, scope, tree);
+    let file = match &scope_graph[scope_graph
+        .neighbors_directed(dest, Direction::Incoming)
+        .next()
+        .unwrap()]
+    {
+        Node::Root { file, .. } => file.clone(),
+        Node::Mod { file, .. } => file.clone(),
+        _ => return,
+    };
+
+    let mut ctx = TracingContext {
+        scope_graph,
+        errors,
+        file: file,
+        dest,
+        previous_idents: vec![],
+    }
+    .into();
+
+    trace_use(&mut ctx, scope, tree);
 }
 
 /// Trace usages
@@ -54,6 +91,7 @@ pub fn trace_use_entry<'ast>(scope_graph: &mut ScopeGraph<'ast>, dest: NodeIndex
 /// * Handle "self" properly
 ///     * self in a group
 ///     * self at the beginning of a path (anywhere else is technically an error since it's a nop)
+/// * Handle "super"
 /// * Disambiguate between crate imports and local module imports
 ///     * A beginning :: explicitly refers to the global scope (handled in call)
 ///     * A beginning `self` explicitly refers to the local scope
@@ -65,35 +103,31 @@ pub fn trace_use_entry<'ast>(scope_graph: &mut ScopeGraph<'ast>, dest: NodeIndex
 /// * Check scope visibility (!important)
 /// * Global imports
 ///     * Roots need names: `crate` is "this" root, vs. any other identifier
-fn trace_use<'ast>(
-    scope_graph: &mut ScopeGraph<'ast>,
-    dest: NodeIndex,
-    // Begins at the root
-    scope: NodeIndex,
-    tree: &'ast UseTree,
-) {
+fn trace_use<'a, 'ast>(ctx: &mut TracingContext<'a, 'ast>, scope: NodeIndex, tree: &'ast UseTree) {
     use syn::UseTree::*;
     // Is this the tracing entry point? (value comparison)
     // `item_use.tree` will always be either equal to or a superset of `tree`
-    let is_entry = if let Node::Use { item_use, .. } = &scope_graph[dest] {
-        *tree == item_use.tree
-    } else {
-        return;
-    };
+    let is_entry = ctx.previous_idents.is_empty();
     match tree {
         Path(path) => {
             let path_ident = path.ident.to_string();
             match path_ident.as_str() {
                 // Special keyword cases
+                // TODO: handle super::super
                 "self" | "super" | "crate" => {
                     if !is_entry {
-                        todo!(
-                            "a `{}` that isn't at the beginning of a path is an error",
-                            path_ident
+                        ctx.errors.push(
+                            SpecialIdentNotAtStartOfPathError {
+                                file: ctx.file.clone(),
+                                path_ident: path.ident.clone(),
+                            }
+                            .into(),
                         );
+                        return;
                     }
-                    let use_parent = scope_graph
-                        .neighbors_directed(dest, Direction::Incoming)
+                    let use_parent = ctx
+                        .scope_graph
+                        .neighbors_directed(ctx.dest, Direction::Incoming)
                         .next()
                         .unwrap();
                     if match path.tree.as_ref() {
@@ -105,39 +139,55 @@ fn trace_use<'ast>(
                         todo!("a self that isn't in a group is an error")
                     }
                     if path_ident == "self" {
-                        trace_use(scope_graph, dest, use_parent, &path.tree);
+                        ctx.previous_idents.push(path.ident.clone());
+                        trace_use(ctx, use_parent, &path.tree);
+                        ctx.previous_idents.pop();
                     } else if path_ident == "super" {
-                        let use_grandparent = scope_graph
+                        let use_grandparent = ctx
+                            .scope_graph
                             .neighbors_directed(use_parent, Direction::Incoming)
                             .next()
                             .expect("todo, going beyond the root is an error");
-                        trace_use(scope_graph, dest, use_grandparent, &path.tree);
+                        ctx.previous_idents.push(path.ident.clone());
+                        trace_use(ctx, use_grandparent, &path.tree);
+                        ctx.previous_idents.pop();
                     } else if path_ident == "crate" {
                         let mut root = use_parent;
-                        while let Some(next_parent) = scope_graph
+                        while let Some(next_parent) = ctx
+                            .scope_graph
                             .neighbors_directed(root, Direction::Incoming)
                             .next()
                         {
                             root = next_parent;
                         }
-                        trace_use(scope_graph, dest, root, &path.tree);
+                        ctx.previous_idents.push(path.ident.clone());
+                        trace_use(ctx, root, &path.tree);
+                        ctx.previous_idents.pop();
                     }
                 }
                 // Default case: enter the matching child scope
                 _ => {
-                    let child = scope_graph.neighbors(scope).find(|child| {
-                        if let Node::Mod { item_mod, .. } = scope_graph[*child] {
+                    let child = ctx.scope_graph.neighbors(scope).find(|child| {
+                        if let Node::Mod { item_mod, .. } = ctx.scope_graph[*child] {
                             item_mod.ident == path.ident.to_string()
                         } else {
                             false
                         }
                     });
-                    trace_use(
-                        scope_graph,
-                        dest,
-                        child.expect("todo, entering a non-existent module is an error"),
-                        &path.tree,
-                    );
+                    if child.is_none() {
+                        ctx.errors.push(
+                            UnresolvedImportError {
+                                file: ctx.file.clone(),
+                                previous_idents: ctx.previous_idents.clone(),
+                                unresolved_ident: path.ident.clone(),
+                            }
+                            .into(),
+                        );
+                        return;
+                    }
+                    ctx.previous_idents.push(path.ident.clone());
+                    trace_use(ctx, child.unwrap(), &path.tree);
+                    ctx.previous_idents.pop();
                 }
             };
         }
@@ -146,24 +196,54 @@ fn trace_use<'ast>(
             let found_index = if original_name_string == "self" {
                 Some(scope)
             } else {
-                let child = scope_graph
-                    .neighbors(scope)
-                    .find(|child| match &scope_graph[*child] {
-                        Node::Item { ident, .. } => **ident == original_name_string,
-                        Node::Mod {
-                            item_mod: ItemMod { ident, .. },
-                            ..
-                        } => *ident == original_name_string,
-                        Node::Use { .. } => {
-                            warn!("uses aren't recursively traced (yet)");
-                            false
-                        }
-                        _ => false,
-                    });
+                let child =
+                    ctx.scope_graph
+                        .neighbors(scope)
+                        .find(|child| match &ctx.scope_graph[*child] {
+                            Node::Item { ident, .. } => **ident == original_name_string,
+                            Node::Mod {
+                                item_mod: ItemMod { ident, .. },
+                                ..
+                            } => *ident == original_name_string,
+                            Node::Use {
+                                imports: other_use_imports,
+                                ..
+                            } => {
+                                if other_use_imports.is_empty() {
+                                    error!("uses that aren't traced yet can't be resolved");
+                                    return false;
+                                }
+                                other_use_imports.iter().any(|(_, use_types)| {
+                                    use_types.iter().any(|use_type| match use_type {
+                                        UseType::Name { name, .. } => {
+                                            name.ident == original_name_string
+                                        }
+                                        UseType::Rename { rename, .. } => {
+                                            rename.rename == original_name_string
+                                        }
+                                        _ => false,
+                                    })
+                                })
+                            }
+                            _ => false,
+                        });
+                // TODO: check for implicit glob imports
                 child
             };
-            let index = found_index.expect("uses that aren't found are an error");
-            if let Node::Use { imports, .. } = &mut scope_graph[dest] {
+            if found_index.is_none() {
+                //
+                ctx.errors.push(
+                    UnresolvedImportError {
+                        file: ctx.file.clone(),
+                        previous_idents: ctx.previous_idents.clone(),
+                        unresolved_ident: ident.clone(),
+                    }
+                    .into(),
+                );
+                return;
+            }
+            let index = found_index.unwrap();
+            if let Node::Use { imports, .. } = &mut ctx.scope_graph[ctx.dest] {
                 match tree {
                     Name(name) => imports
                         .entry(scope)
@@ -178,7 +258,7 @@ fn trace_use<'ast>(
             }
         }
         Glob(_) => {
-            if let Node::Use { imports, .. } = &mut scope_graph[dest] {
+            if let Node::Use { imports, .. } = &mut ctx.scope_graph[ctx.dest] {
                 imports
                     .entry(scope)
                     .or_default()
@@ -188,6 +268,6 @@ fn trace_use<'ast>(
         Group(group) => group
             .items
             .iter()
-            .for_each(|tree| trace_use(scope_graph, dest, scope, tree)),
+            .for_each(|tree| trace_use(ctx, scope, tree)),
     }
 }

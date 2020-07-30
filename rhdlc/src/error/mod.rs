@@ -6,7 +6,7 @@ use std::rc::Rc;
 use colored::Colorize;
 use proc_macro2::Span;
 
-use crate::resolve::ResolutionSource;
+use crate::resolve::{File, ResolutionSource};
 
 mod render;
 use render::*;
@@ -70,7 +70,7 @@ impl Display for PreciseSynParseError {
 
 #[derive(Debug, Clone)]
 pub struct SpanSource {
-    pub file: Rc<crate::resolve::File>,
+    pub file: Rc<File>,
     pub span: Span,
     pub ident_path: Vec<syn::Ident>,
 }
@@ -175,7 +175,7 @@ error!(ResolveError {
 
 #[derive(Debug)]
 pub struct MultipleDefinitionError {
-    pub file: Rc<crate::resolve::File>,
+    pub file: Rc<File>,
     pub name: String,
     pub original: Span,
     pub duplicate: Span,
@@ -202,6 +202,100 @@ impl Display for MultipleDefinitionError {
     }
 }
 
+#[derive(Debug)]
+pub struct SpecialIdentNotAtStartOfPathError {
+    pub file: Rc<File>,
+    pub path_ident: syn::Ident,
+}
+
+impl Display for SpecialIdentNotAtStartOfPathError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        render_location(
+            f,
+            format!(
+                "`{}` in paths can only be used in the start position",
+                self.path_ident
+            ),
+            (
+                Reference::Error,
+                &format!(
+                    "`{}` in paths can only be used in the start position",
+                    self.path_ident
+                ),
+                self.path_ident.span(),
+            ),
+            vec![],
+            &self.file.source,
+            &self.file.content,
+        )
+    }
+}
+
+#[derive(Debug)]
+pub struct PathDisambiguationError {
+    pub file: Rc<File>,
+    pub path_ident: syn::Ident,
+}
+
+impl Display for PathDisambiguationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        render_location(
+            f,
+            format!(
+                "`{}` is ambiguous (name vs any other name during import resolution)",
+                self.path_ident
+            ),
+            (Reference::Error, "ambiguous name", self.path_ident.span()),
+            vec![],
+            &self.file.source,
+            &self.file.content,
+        )
+    }
+}
+
+#[derive(Debug)]
+pub struct UnresolvedImportError {
+    pub file: Rc<File>,
+    pub previous_idents: Vec<syn::Ident>,
+    pub unresolved_ident: syn::Ident,
+}
+
+impl Display for UnresolvedImportError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        let (reference_msg, reference_span) = match self.previous_idents.len() {
+            0 => (
+                format!("no `{}` crate or mod", self.unresolved_ident),
+                self.unresolved_ident.span(),
+            ),
+            _nonzero => (
+                format!(
+                    "no `{}` in `{}`",
+                    self.unresolved_ident,
+                    self.previous_idents
+                        .last()
+                        .map(|ident| ident.to_string())
+                        .unwrap()
+                ),
+                self.unresolved_ident
+                    .span()
+                    .join(self.previous_idents.last().unwrap().span())
+                    .unwrap(),
+            ),
+        };
+        render_location(
+            f,
+            format!("unresolved import `{}`", self.unresolved_ident),
+            (Reference::Error, &reference_msg, reference_span),
+            vec![],
+            &self.file.source,
+            &self.file.content,
+        )
+    }
+}
+
 error!(ScopeError {
     MultipleDefinitionError => MultipleDefinitionError,
+    PathDisambiguationError => PathDisambiguationError,
+    SpecialIdentNotAtStartOfPathError => SpecialIdentNotAtStartOfPathError,
+    UnresolvedImportError => UnresolvedImportError,
 });
