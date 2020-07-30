@@ -1,4 +1,3 @@
-use std::cell::Cell;
 use std::rc::Rc;
 
 use log::error;
@@ -46,6 +45,7 @@ pub fn trace_use_entry<'a, 'ast>(
     };
 
     let scope = if has_leading_colon {
+        // TODO: this is wrong, roots need names now
         let mut root = dest;
         while match &scope_graph[root] {
             Node::Root { .. } => false,

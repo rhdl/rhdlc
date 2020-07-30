@@ -291,8 +291,11 @@ pub enum Node<'ast> {
     /// A node for the root of a tree
     /// This could be a crate, or just "top.rhdl"
     Root {
-        /// This information comes externally, somehow...
-        // name: Option<String>,
+        /// This information comes from an external source
+        /// Only the top level entity is allowed to have no name
+        /// TODO: figure out how to reconcile library-building behavior of rustc
+        /// with the fact that there are no binaries for RHDL...
+        name: Option<String>,
         file: Rc<File>,
         exports: Vec<NodeIndex>,
     },
