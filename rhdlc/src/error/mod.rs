@@ -355,7 +355,7 @@ impl Display for VisibilityError {
             format!("{} `{}` is private", "item", self.name_ident),
             (
                 Reference::Error,
-                format!("private {}", "item"),
+                &format!("private {}", "item"),
                 self.name_ident.span(),
             ),
             vec![],

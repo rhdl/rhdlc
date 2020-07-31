@@ -112,7 +112,7 @@ fn trace_use<'a, 'ast>(ctx: &mut TracingContext<'a, 'ast>, scope: NodeIndex, tre
     match tree {
         Path(path) => {
             let path_ident = path.ident.to_string();
-            match path_ident.as_str() {
+            let new_scope = match path_ident.as_str() {
                 // Special keyword cases
                 "self" | "super" | "crate" => {
                     let is_last_super = ctx
@@ -130,14 +130,13 @@ fn trace_use<'a, 'ast>(ctx: &mut TracingContext<'a, 'ast>, scope: NodeIndex, tre
                         );
                         return;
                     }
-                    let new_scope = if path_ident == "self" {
+                    if path_ident == "self" {
                         scope
                     } else if path_ident == "super" {
                         let use_grandparent = ctx
                             .scope_graph
                             .neighbors_directed(scope, Direction::Incoming)
                             .next();
-                        dbg!(scope, &use_grandparent);
                         if use_grandparent.is_none() {
                             ctx.errors.push(
                                 TooManySupersError {
@@ -162,27 +161,7 @@ fn trace_use<'a, 'ast>(ctx: &mut TracingContext<'a, 'ast>, scope: NodeIndex, tre
                     } else {
                         error!("the match that led to this arm should prevent this from ever happening");
                         scope
-                    };
-
-                    if let Some(ident) = match path.tree.as_ref() {
-                        Name(name) => Some(&name.ident),
-                        Rename(rename) => Some(&rename.ident),
-                        _ => None,
-                    } {
-                        if ident == "self" {
-                            ctx.errors.push(
-                                SelfNameNotInGroupError {
-                                    file: ctx.file.clone(),
-                                    name_ident: ident.clone(),
-                                }
-                                .into(),
-                            );
-                            return;
-                        }
                     }
-                    ctx.previous_idents.push(path.ident.clone());
-                    trace_use(ctx, new_scope, &path.tree);
-                    ctx.previous_idents.pop();
                 }
                 // Default case: enter the matching child scope
                 _ => {
@@ -204,27 +183,40 @@ fn trace_use<'a, 'ast>(ctx: &mut TracingContext<'a, 'ast>, scope: NodeIndex, tre
                         );
                         return;
                     }
-                    if let Some(ident) = match path.tree.as_ref() {
-                        Name(name) => Some(&name.ident),
-                        Rename(rename) => Some(&rename.ident),
-                        _ => None,
-                    } {
-                        if ident == "self" {
-                            ctx.errors.push(
-                                SelfNameNotInGroupError {
-                                    file: ctx.file.clone(),
-                                    name_ident: ident.clone(),
-                                }
-                                .into(),
-                            );
-                            return;
-                        }
-                    }
-                    ctx.previous_idents.push(path.ident.clone());
-                    trace_use(ctx, child.unwrap(), &path.tree);
-                    ctx.previous_idents.pop();
+                    child.unwrap()
                 }
             };
+            if let Some(ident) = match path.tree.as_ref() {
+                Name(name) => Some(&name.ident),
+                Rename(rename) => Some(&rename.ident),
+                _ => None,
+            } {
+                if ident == "self" {
+                    ctx.errors.push(
+                        SelfNameNotInGroupError {
+                            file: ctx.file.clone(),
+                            name_ident: ident.clone(),
+                        }
+                        .into(),
+                    );
+                    return;
+                }
+            }
+            if !is_entry
+                && !super::visibility::is_target_visible(ctx.scope_graph, ctx.dest, new_scope).unwrap()
+            {
+                ctx.errors.push(
+                    VisibilityError {
+                        name_file: ctx.file.clone(),
+                        name_ident: path.ident.clone(),
+                    }
+                    .into(),
+                );
+                return;
+            }
+            ctx.previous_idents.push(path.ident.clone());
+            trace_use(ctx, new_scope, &path.tree);
+            ctx.previous_idents.pop();
         }
         Name(UseName { ident, .. }) | Rename(UseRename { ident, .. }) => {
             let original_name_string = ident.to_string();
@@ -279,6 +271,18 @@ fn trace_use<'a, 'ast>(ctx: &mut TracingContext<'a, 'ast>, scope: NodeIndex, tre
                 return;
             }
             let index = found_index.unwrap();
+            if !is_entry
+                && !super::visibility::is_target_visible(ctx.scope_graph, ctx.dest, index).unwrap()
+            {
+                ctx.errors.push(
+                    VisibilityError {
+                        name_file: ctx.file.clone(),
+                        name_ident: ident.clone(),
+                    }
+                    .into(),
+                );
+                return;
+            }
             if let Node::Use { imports, .. } = &mut ctx.scope_graph[ctx.dest] {
                 match tree {
                     Name(name) => imports

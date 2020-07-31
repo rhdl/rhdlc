@@ -127,3 +127,28 @@ fn apply_visibility_crate<'ast>(scope_graph: &mut ScopeGraph<'ast>, node: NodeIn
         }
     }
 }
+
+pub fn is_target_visible<'ast>(
+    scope_graph: &mut ScopeGraph,
+    dest: NodeIndex,
+    target: NodeIndex,
+) -> Option<bool> {
+    let dest_parent = scope_graph
+        .neighbors_directed(dest, Direction::Incoming)
+        .next()
+        .unwrap();
+    let target_parent = scope_graph
+        .neighbors_directed(target, Direction::Incoming)
+        .next()
+        .unwrap();
+    match &scope_graph[target_parent] {
+        Node::Root { exports, .. } => Some(exports.contains(&target)),
+        Node::Mod { exports, .. } => Some(
+            exports
+                .get(&target)
+                .map(|exports| exports.contains(&dest_parent))
+                .unwrap_or_default(),
+        ),
+        _ => None,
+    }
+}

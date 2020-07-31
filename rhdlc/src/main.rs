@@ -69,9 +69,8 @@ mod test {
 
         for test in fs::read_dir("./test/compile-fail/file-resolution").unwrap() {
             let test = test.unwrap();
-            dbg!(test.path().to_string_lossy());
-
             let input = test.path().join("top.rhdl");
+            dbg!(input.to_string_lossy());
             let expected = fs::read_to_string(test.path().join("expected.txt")).unwrap();
             let output = super::entry(crate::resolve::ResolutionSource::File(input));
             assert_eq!(output, expected);
@@ -85,9 +84,8 @@ mod test {
 
         for test in fs::read_dir("./test/compile-fail/scope").unwrap() {
             let test = test.unwrap();
-            dbg!(test.path().to_string_lossy());
-
             let input = test.path().join("top.rhdl");
+            dbg!(input.to_string_lossy());
             let expected = fs::read_to_string(test.path().join("expected.txt")).unwrap();
             let output = super::entry(crate::resolve::ResolutionSource::File(input));
             assert_eq!(output, expected);
