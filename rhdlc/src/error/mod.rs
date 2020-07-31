@@ -319,10 +319,37 @@ impl Display for SelfNameNotInGroupError {
     }
 }
 
+#[derive(Debug)]
+pub struct TooManySupersError {
+    pub file: Rc<File>,
+    pub ident: syn::Ident,
+}
+
+impl Display for TooManySupersError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        render_location(
+            f,
+            format!(
+                "there are too many leading `{}` keywords",
+                self.ident
+            ),
+            (
+                Reference::Error,
+                "goes beyond the crate root",
+                self.ident.span(),
+            ),
+            vec![],
+            &self.file.source,
+            &self.file.content,
+        )
+    }
+}
+
 error!(ScopeError {
     MultipleDefinitionError => MultipleDefinitionError,
     PathDisambiguationError => PathDisambiguationError,
     SpecialIdentNotAtStartOfPathError => SpecialIdentNotAtStartOfPathError,
     SelfNameNotInGroupError => SelfNameNotInGroupError,
     UnresolvedImportError => UnresolvedImportError,
+    TooManySupersError => TooManySupersError,
 });

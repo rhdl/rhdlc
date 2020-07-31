@@ -4,7 +4,6 @@ use clap::{clap_app, crate_authors, crate_description, crate_version};
 use petgraph::dot::Dot;
 
 use std::env;
-use std::process;
 
 mod error;
 mod ident;

@@ -7,7 +7,7 @@ use syn::{ItemMod, UseName, UseRename, UseTree};
 use super::{File, Node, ScopeError, ScopeGraph};
 use crate::error::{
     PathDisambiguationError, SelfNameNotInGroupError, SpecialIdentNotAtStartOfPathError,
-    UnresolvedImportError,
+    TooManySupersError, UnresolvedImportError,
 };
 
 #[derive(Debug)]
@@ -118,7 +118,7 @@ fn trace_use<'a, 'ast>(ctx: &mut TracingContext<'a, 'ast>, scope: NodeIndex, tre
                     let is_last_super = ctx
                         .previous_idents
                         .last()
-                        .map(|ident| ident == "self")
+                        .map(|ident| ident == "super")
                         .unwrap_or_default();
                     if !is_entry && !(path_ident == "super" && is_last_super) {
                         ctx.errors.push(
@@ -130,20 +130,27 @@ fn trace_use<'a, 'ast>(ctx: &mut TracingContext<'a, 'ast>, scope: NodeIndex, tre
                         );
                         return;
                     }
-                    let use_parent = ctx
-                        .scope_graph
-                        .neighbors_directed(ctx.dest, Direction::Incoming)
-                        .next()
-                        .unwrap();
-                    let scope = if path_ident == "self" {
-                        use_parent
+                    let new_scope = if path_ident == "self" {
+                        scope
                     } else if path_ident == "super" {
-                        ctx.scope_graph
-                            .neighbors_directed(use_parent, Direction::Incoming)
-                            .next()
-                            .expect("todo, going beyond the root is an error")
+                        let use_grandparent = ctx
+                            .scope_graph
+                            .neighbors_directed(scope, Direction::Incoming)
+                            .next();
+                        dbg!(scope, &use_grandparent);
+                        if use_grandparent.is_none() {
+                            ctx.errors.push(
+                                TooManySupersError {
+                                    file: ctx.file.clone(),
+                                    ident: path.ident.clone(),
+                                }
+                                .into(),
+                            );
+                            return;
+                        }
+                        use_grandparent.unwrap()
                     } else if path_ident == "crate" {
-                        let mut root = use_parent;
+                        let mut root = scope;
                         while let Some(next_parent) = ctx
                             .scope_graph
                             .neighbors_directed(root, Direction::Incoming)
@@ -154,7 +161,7 @@ fn trace_use<'a, 'ast>(ctx: &mut TracingContext<'a, 'ast>, scope: NodeIndex, tre
                         root
                     } else {
                         error!("the match that led to this arm should prevent this from ever happening");
-                        use_parent
+                        scope
                     };
 
                     if let Some(ident) = match path.tree.as_ref() {
@@ -174,7 +181,7 @@ fn trace_use<'a, 'ast>(ctx: &mut TracingContext<'a, 'ast>, scope: NodeIndex, tre
                         }
                     }
                     ctx.previous_idents.push(path.ident.clone());
-                    trace_use(ctx, scope, &path.tree);
+                    trace_use(ctx, new_scope, &path.tree);
                     ctx.previous_idents.pop();
                 }
                 // Default case: enter the matching child scope
