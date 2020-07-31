@@ -203,6 +203,7 @@ fn trace_use<'a, 'ast>(ctx: &mut TracingContext<'a, 'ast>, scope: NodeIndex, tre
                 let child =
                     ctx.scope_graph
                         .neighbors(scope)
+                        .filter(|child| *child != ctx.dest)
                         .find(|child| match &ctx.scope_graph[*child] {
                             Node::Item { ident, .. } => **ident == original_name_string,
                             Node::Mod {

@@ -2,9 +2,9 @@ error: file not found for module `c`
  --> top.rhdl:3:8
   |
 3 |         mod c;
-  |         ^^^^^^ ./test/compile-fail/resolution/no-module-nested/a/b/c.rhdl : No such file or directory (os error 2)
+  |         ^^^^^^ ./test/compile-fail/file-resolution/no-module-nested/a/b/c.rhdl : No such file or directory (os error 2)
 error: file not found for module `c`
  --> top.rhdl:3:8
   |
 3 |         mod c;
-  |         ^^^^^^ ./test/compile-fail/resolution/no-module-nested/a/b/c/mod.rhdl : No such file or directory (os error 2)
+  |         ^^^^^^ ./test/compile-fail/file-resolution/no-module-nested/a/b/c/mod.rhdl : No such file or directory (os error 2)
