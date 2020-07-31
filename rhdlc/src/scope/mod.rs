@@ -127,7 +127,12 @@ impl<'ast> ScopeBuilder<'ast> {
             // Check the scopes for conflicts
             let mut ident_map: HashMap<String, Vec<NodeIndex>> = HashMap::default();
             for child in self.scope_graph.neighbors(node) {
-                if let Node::Item { ident, .. } = self.scope_graph[child] {
+                if let Node::Item { ident, .. }
+                | Node::Mod {
+                    item_mod: ItemMod { ident, .. },
+                    ..
+                } = self.scope_graph[child]
+                {
                     ident_map.entry(ident.to_string()).or_default().push(child)
                 }
             }
@@ -142,37 +147,112 @@ impl<'ast> ScopeBuilder<'ast> {
                         if claimed[j] {
                             continue;
                         }
-                        match (&self.scope_graph[indices[i]], &self.scope_graph[indices[j]]) {
-                            (
-                                Node::Item {
-                                    item: i_item,
-                                    ident: i_ident,
-                                    ..
-                                },
-                                Node::Item {
-                                    item: j_item,
-                                    ident: j_ident,
-                                    ..
-                                },
-                            ) => {
-                                if Name::from(*i_item).conflicts_with(&Name::from(*j_item)) {
-                                    self.errors.push(
-                                        MultipleDefinitionError {
+                        let err =
+                            match (&self.scope_graph[indices[i]], &self.scope_graph[indices[j]]) {
+                                (
+                                    Node::Item {
+                                        item: i_item,
+                                        ident: i_ident,
+                                        ..
+                                    },
+                                    Node::Item {
+                                        item: j_item,
+                                        ident: j_ident,
+                                        ..
+                                    },
+                                ) => {
+                                    if Name::from(*i_item).conflicts_with(&Name::from(*j_item)) {
+                                        Some(MultipleDefinitionError {
                                             file: file.clone(),
                                             name: ident.clone(),
                                             original: i_ident.span(),
                                             duplicate: j_ident.span(),
-                                        }
-                                        .into(),
-                                    );
-                                    // Optimization: don't need to claim items that won't be seen again
-                                    // claimed[i] = true;
-                                    claimed[j] = true;
-                                    // Stop at the first conflict seen for `i`, since `j` will necessarily become `i` in the future and handle any further conflicts.
-                                    break;
+                                        })
+                                    } else {
+                                        None
+                                    }
                                 }
-                            }
-                            _ => error!("Only item nodes were added, so this shouldn't happen"),
+                                (
+                                    Node::Item {
+                                        item: i_item,
+                                        ident: i_ident,
+                                        ..
+                                    },
+                                    Node::Mod {
+                                        item_mod: j_item_mod,
+                                        ..
+                                    },
+                                ) => {
+                                    if Name::from(*i_item).conflicts_with(&Name::from(*j_item_mod))
+                                    {
+                                        Some(MultipleDefinitionError {
+                                            file: file.clone(),
+                                            name: ident.clone(),
+                                            original: i_ident.span(),
+                                            duplicate: j_item_mod.ident.span(),
+                                        })
+                                    } else {
+                                        None
+                                    }
+                                }
+                                (
+                                    Node::Mod {
+                                        item_mod: i_item_mod,
+                                        ..
+                                    },
+                                    Node::Item {
+                                        item: j_item,
+                                        ident: j_ident,
+                                        ..
+                                    },
+                                ) => {
+                                    if Name::from(*j_item).conflicts_with(&Name::from(*i_item_mod))
+                                    {
+                                        Some(MultipleDefinitionError {
+                                            file: file.clone(),
+                                            name: ident.clone(),
+                                            original: i_item_mod.ident.span(),
+                                            duplicate: j_ident.span(),
+                                        })
+                                    } else {
+                                        None
+                                    }
+                                }
+                                (
+                                    Node::Mod {
+                                        item_mod: i_item_mod,
+                                        ..
+                                    },
+                                    Node::Mod {
+                                        item_mod: j_item_mod,
+                                        ..
+                                    },
+                                ) => {
+                                    if Name::from(*j_item_mod)
+                                        .conflicts_with(&Name::from(*i_item_mod))
+                                    {
+                                        Some(MultipleDefinitionError {
+                                            file: file.clone(),
+                                            name: ident.clone(),
+                                            original: i_item_mod.ident.span(),
+                                            duplicate: j_item_mod.ident.span(),
+                                        })
+                                    } else {
+                                        None
+                                    }
+                                }
+                                _ => {
+                                    error!("Only item nodes were added, so this shouldn't happen");
+                                    None
+                                }
+                            };
+                        if let Some(err) = err {
+                            self.errors.push(err.into());
+                            // Optimization: don't need to claim items that won't be seen again
+                            // claimed[i] = true;
+                            claimed[j] = true;
+                            // Stop at the first conflict seen for `i`, since `j` will necessarily become `i` in the future and handle any further conflicts.
+                            break;
                         }
                     }
                 }

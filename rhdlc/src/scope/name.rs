@@ -1,4 +1,4 @@
-use syn::{Ident, Item};
+use syn::{Ident, Item, ItemMod};
 
 use log::{debug, error, warn};
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -55,7 +55,7 @@ impl<'ast> Name<'ast> {
                 | Macro(other_ident)
                 | Type(other_ident)
                 | Mod(other_ident)
-                | Crate(other_ident) => ident == other_ident,
+                | Crate(other_ident) => **ident == other_ident.to_string(),
                 _ => false,
             },
             Other => match other {
@@ -68,6 +68,12 @@ impl<'ast> Name<'ast> {
     /// Two names in the same name class with the same identifier are conflicting
     pub fn conflicts_with(&self, other: &Name<'ast>) -> bool {
         self.in_same_name_class(other) && self.has_same_ident(other)
+    }
+}
+
+impl<'ast> From<&'ast ItemMod> for Name<'ast> {
+    fn from(item_mod: &'ast ItemMod) -> Self {
+        Self::Mod(&item_mod.ident)
     }
 }
 

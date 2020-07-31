@@ -91,7 +91,7 @@ pub fn trace_use_entry<'a, 'ast>(
 /// * Handle "self" properly
 ///     * self in a group
 ///     * self at the beginning of a path (anywhere else is technically an error since it's a nop)
-/// * Handle "super"
+/// * Handle "super", "super::super"
 /// * Disambiguate between crate imports and local module imports
 ///     * A beginning :: explicitly refers to the global scope (handled in call)
 ///     * A beginning `self` explicitly refers to the local scope
