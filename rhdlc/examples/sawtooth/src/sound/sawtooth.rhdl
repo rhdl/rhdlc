@@ -12,8 +12,7 @@ pub struct Sawtooth<N: Num + Bounded, R: Real> {
 
 /// tighter type bounds are needed for casting and other calculations
 /// N must be bounded (not an arbitrary width integer) for this calculation to work
-impl<N: Integer + Bounded, R: Real> Sawtooth<N, R>
-{
+impl<N: Integer + Bounded, R: Real> Sawtooth<N, R> {
     /// A function relying only on parameters is equivalent to a localparam
     /// We want to calculate (N_max - N_min) / (f_wave / f_sample).
     /// To avoid overflows, calculate as `N_max / f_wave * f_sample - N_min / f_wave * f_sample`.
