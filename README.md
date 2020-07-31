@@ -1,5 +1,7 @@
 # Rust Hardware Design Language (RHDL)
 
+[![Build Status](https://travis-ci.com/rhdl/rhdl.svg?branch=master)](https://travis-ci.com/rhdl/rhdl)
+
 An experiment in using Rust syntax to describe hardware.
 
 ## Motivation
