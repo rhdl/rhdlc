@@ -64,11 +64,11 @@ fn entry(src: resolve::ResolutionSource) -> String {
 #[cfg(test)]
 mod test {
     #[test]
-    fn compile_fail_resolution() {
+    fn compile_fail_file_resolution() {
         use pretty_assertions::assert_eq;
         use std::fs;
 
-        for test in fs::read_dir("./test/compile-fail/resolution").unwrap() {
+        for test in fs::read_dir("./test/compile-fail/file-resolution").unwrap() {
             let test = test.unwrap();
             dbg!(test.path().to_string_lossy());
 
