@@ -24,31 +24,58 @@ fn main() {
     )
     .get_matches();
 
-    let mut resolver = resolve::Resolver::default();
-    match matches.value_of("FILE") {
-        Some("-") | None => {
-            resolver.resolve_tree(resolve::ResolutionSource::Stdin);
-        }
-        Some(path) => {
-            resolver.resolve_tree(resolve::ResolutionSource::File(path.into()));
-        }
-    }
+    let src = match matches.value_of("FILE") {
+        Some("-") | None => resolve::ResolutionSource::Stdin,
+        Some(path) => resolve::ResolutionSource::File(path.into()),
+    };
 
+    let out = entry(src);
+    eprint!("{}", out);
+}
+
+fn entry(src: resolve::ResolutionSource) -> String {
+    let mut resolver = resolve::Resolver::default();
+    resolver.resolve_tree(src);
     if !resolver.errors.is_empty() {
-        resolver.errors.iter().for_each(|err| eprintln!("{}", err));
-        process::exit(1)
+        return resolver
+            .errors
+            .iter()
+            .map(|err| format!("{}", err))
+            .collect();
     }
 
     let mut scope_builder = scope::ScopeBuilder::from(&resolver.file_graph);
     scope_builder.build_graph();
     scope_builder.check_graph();
     if !scope_builder.errors.is_empty() {
-        scope_builder
+        return scope_builder
             .errors
             .iter()
-            .for_each(|err| eprintln!("{}", err));
-        process::exit(1)
+            .map(|err| format!("{}", err))
+            .collect();
     }
 
+    #[cfg(not(test))]
     println!("{}", Dot::new(&scope_builder.scope_graph));
+
+    String::default()
+}
+
+#[cfg(test)]
+mod test {
+    #[test]
+    fn compile_fail() {
+        use pretty_assertions::assert_eq;
+        use std::fs;
+
+        for test in fs::read_dir("./test/compile-fail").unwrap() {
+            let test = test.unwrap();
+            dbg!(test.path().to_string_lossy());
+
+            let input = test.path().join("top.rhdl");
+            let expected = fs::read_to_string(test.path().join("expected.txt")).unwrap();
+            let output = super::entry(crate::resolve::ResolutionSource::File(input));
+            assert_eq!(output, expected);
+        }
+    }
 }

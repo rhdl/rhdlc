@@ -1,0 +1,7 @@
+error: the name `b` is defined multiple times
+ --> top.rhdl:1:4
+  |
+1 | mod b {}
+  |     ^ previous definition of the type `b` here
+3 | struct b {}
+  |        - `b` redefined here

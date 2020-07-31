@@ -1,0 +1,7 @@
+error: the name `a` is defined multiple times
+ --> top.rhdl:1:4
+  |
+1 | mod a {}
+  |     ^ previous definition of the type `a` here
+2 | mod a {}
+  |     - `a` redefined here

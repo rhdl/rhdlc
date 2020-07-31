@@ -68,7 +68,6 @@ where
     let indent = " ".repeat(max_line.line.to_string().len());
 
     use Reference::*;
-    writeln!(f)?;
     let msg = match main_reference.0 {
         Error => {
             write!(f, "{}", "error".red().bold())?;

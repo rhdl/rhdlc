@@ -1,0 +1,3 @@
+fn b() {}
+mod b {}
+struct b {}

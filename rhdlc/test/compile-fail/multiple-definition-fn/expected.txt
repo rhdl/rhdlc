@@ -1,0 +1,7 @@
+error: the name `a` is defined multiple times
+ --> top.rhdl:1:3
+  |
+1 | fn a() {}
+  |    ^ previous definition of the type `a` here
+2 | fn a() {}
+  |    - `a` redefined here
