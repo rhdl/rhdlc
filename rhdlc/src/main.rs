@@ -64,11 +64,27 @@ fn entry(src: resolve::ResolutionSource) -> String {
 #[cfg(test)]
 mod test {
     #[test]
-    fn compile_fail() {
+    fn compile_fail_resolution() {
         use pretty_assertions::assert_eq;
         use std::fs;
 
-        for test in fs::read_dir("./test/compile-fail").unwrap() {
+        for test in fs::read_dir("./test/compile-fail/resolution").unwrap() {
+            let test = test.unwrap();
+            dbg!(test.path().to_string_lossy());
+
+            let input = test.path().join("top.rhdl");
+            let expected = fs::read_to_string(test.path().join("expected.txt")).unwrap();
+            let output = super::entry(crate::resolve::ResolutionSource::File(input));
+            assert_eq!(output, expected);
+        }
+    }
+
+    #[test]
+    fn compile_fail_scope() {
+        use pretty_assertions::assert_eq;
+        use std::fs;
+
+        for test in fs::read_dir("./test/compile-fail/scope").unwrap() {
             let test = test.unwrap();
             dbg!(test.path().to_string_lossy());
 
