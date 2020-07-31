@@ -1,0 +1,5 @@
+error: unresolved import `a`
+ --> top.rhdl:2:8
+  |
+2 |     use crate::a;
+  |         ^^^^^^^^ no `a` in `crate`

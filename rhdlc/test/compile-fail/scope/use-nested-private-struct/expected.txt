@@ -1,0 +1,5 @@
+error: item `c` is private
+ --> top.rhdl:7:10
+  |
+7 | use a::b::c;
+  |           ^ private item
