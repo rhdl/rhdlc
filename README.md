@@ -1,6 +1,6 @@
 # Rust Hardware Design Language (RHDL)
 
-[![Build Status](https://github.com/rhdl/rhdl/workflows/rhdlc%20build/badge.svg)
+![Build Status](https://github.com/rhdl/rhdl/workflows/rhdlc%20build/badge.svg)
 
 An experiment in using Rust syntax to describe hardware.
 
