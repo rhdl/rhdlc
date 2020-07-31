@@ -141,113 +141,45 @@ impl<'ast> ScopeBuilder<'ast> {
                 // Unfortunately, need an O(n^2) check here on items with the same name
                 // As per petgraph docs, this is ordered most recent to least recent, so need to iterate in reverse
                 for i in (0..indices.len()).rev() {
+                    let (i_name, i_span) = match &self.scope_graph[indices[i]] {
+                        Node::Item {
+                            item: i_item,
+                            ident: i_ident,
+                            ..
+                        } => (Name::from(*i_item), i_ident.span()),
+                        Node::Mod {
+                            item_mod: i_item_mod,
+                            ..
+                        } => (Name::from(*i_item_mod), i_item_mod.ident.span()),
+                        _ => continue,
+                    };
                     for j in (0..i).rev() {
                         // Don't create repetitive errors by "claiming" duplicates for errors
-                        // TODO: see if this can be simplified since it is a bit hard to understand
                         if claimed[j] {
                             continue;
                         }
-                        let err =
-                            match (&self.scope_graph[indices[i]], &self.scope_graph[indices[j]]) {
-                                (
-                                    Node::Item {
-                                        item: i_item,
-                                        ident: i_ident,
-                                        ..
-                                    },
-                                    Node::Item {
-                                        item: j_item,
-                                        ident: j_ident,
-                                        ..
-                                    },
-                                ) => {
-                                    if Name::from(*i_item).conflicts_with(&Name::from(*j_item)) {
-                                        Some(MultipleDefinitionError {
-                                            file: file.clone(),
-                                            name: ident.clone(),
-                                            original: i_ident.span(),
-                                            duplicate: j_ident.span(),
-                                        })
-                                    } else {
-                                        None
-                                    }
+                        let (j_name, j_span) = match &self.scope_graph[indices[j]] {
+                            Node::Item {
+                                item: j_item,
+                                ident: j_ident,
+                                ..
+                            } => (Name::from(*j_item), j_ident.span()),
+                            Node::Mod {
+                                item_mod: j_item_mod,
+                                ..
+                            } => (Name::from(*j_item_mod), j_item_mod.ident.span()),
+                            _ => continue,
+                        };
+                        if i_name.conflicts_with(&j_name) {
+                            self.errors.push(
+                                MultipleDefinitionError {
+                                    file: file.clone(),
+                                    name: ident.clone(),
+                                    original: i_span,
+                                    duplicate: j_span,
                                 }
-                                (
-                                    Node::Item {
-                                        item: i_item,
-                                        ident: i_ident,
-                                        ..
-                                    },
-                                    Node::Mod {
-                                        item_mod: j_item_mod,
-                                        ..
-                                    },
-                                ) => {
-                                    if Name::from(*i_item).conflicts_with(&Name::from(*j_item_mod))
-                                    {
-                                        Some(MultipleDefinitionError {
-                                            file: file.clone(),
-                                            name: ident.clone(),
-                                            original: i_ident.span(),
-                                            duplicate: j_item_mod.ident.span(),
-                                        })
-                                    } else {
-                                        None
-                                    }
-                                }
-                                (
-                                    Node::Mod {
-                                        item_mod: i_item_mod,
-                                        ..
-                                    },
-                                    Node::Item {
-                                        item: j_item,
-                                        ident: j_ident,
-                                        ..
-                                    },
-                                ) => {
-                                    if Name::from(*j_item).conflicts_with(&Name::from(*i_item_mod))
-                                    {
-                                        Some(MultipleDefinitionError {
-                                            file: file.clone(),
-                                            name: ident.clone(),
-                                            original: i_item_mod.ident.span(),
-                                            duplicate: j_ident.span(),
-                                        })
-                                    } else {
-                                        None
-                                    }
-                                }
-                                (
-                                    Node::Mod {
-                                        item_mod: i_item_mod,
-                                        ..
-                                    },
-                                    Node::Mod {
-                                        item_mod: j_item_mod,
-                                        ..
-                                    },
-                                ) => {
-                                    if Name::from(*j_item_mod)
-                                        .conflicts_with(&Name::from(*i_item_mod))
-                                    {
-                                        Some(MultipleDefinitionError {
-                                            file: file.clone(),
-                                            name: ident.clone(),
-                                            original: i_item_mod.ident.span(),
-                                            duplicate: j_item_mod.ident.span(),
-                                        })
-                                    } else {
-                                        None
-                                    }
-                                }
-                                _ => {
-                                    error!("Only item nodes were added, so this shouldn't happen");
-                                    None
-                                }
-                            };
-                        if let Some(err) = err {
-                            self.errors.push(err.into());
+                                .into(),
+                            );
                             // Optimization: don't need to claim items that won't be seen again
                             // claimed[i] = true;
                             claimed[j] = true;
