@@ -20,8 +20,8 @@ petgraph = "0.5"
 strsim = "0.10"
 clap = "2"
 
-[dev-dependencies.colored]
-features = ["no-color"]
+[features]
+no-color = ["colored/no-color"]
 
 [dev-dependencies]
 pretty_assertions = "0.6"
