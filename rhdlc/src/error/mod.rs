@@ -307,11 +307,7 @@ impl Display for SelfNameNotInGroupError {
                 "`{}` imports are only allowed within a {{ }} list",
                 self.name_ident
             ),
-            (
-                Reference::Error,
-                "",
-                self.name_ident.span(),
-            ),
+            (Reference::Error, "", self.name_ident.span()),
             vec![],
             &self.file.source,
             &self.file.content,
@@ -329,10 +325,7 @@ impl Display for TooManySupersError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
         render_location(
             f,
-            format!(
-                "there are too many leading `{}` keywords",
-                self.ident
-            ),
+            format!("there are too many leading `{}` keywords", self.ident),
             (
                 Reference::Error,
                 "goes beyond the crate root",
@@ -345,6 +338,33 @@ impl Display for TooManySupersError {
     }
 }
 
+/// TODO: support references to other files
+/// TODO: give the actual type of item
+/// this way, there can be a
+/// "item `b` is defined here" reference wherever the item is defined
+#[derive(Debug)]
+pub struct VisibilityError {
+    pub name_file: Rc<File>,
+    pub name_ident: syn::Ident,
+}
+
+impl Display for VisibilityError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        render_location(
+            f,
+            format!("{} `{}` is private", "item", self.name_ident),
+            (
+                Reference::Error,
+                format!("private {}", "item"),
+                self.name_ident.span(),
+            ),
+            vec![],
+            &self.name_file.source,
+            &self.name_file.content,
+        )
+    }
+}
+
 error!(ScopeError {
     MultipleDefinitionError => MultipleDefinitionError,
     PathDisambiguationError => PathDisambiguationError,
@@ -352,4 +372,5 @@ error!(ScopeError {
     SelfNameNotInGroupError => SelfNameNotInGroupError,
     UnresolvedImportError => UnresolvedImportError,
     TooManySupersError => TooManySupersError,
+    VisibilityError => VisibilityError,
 });

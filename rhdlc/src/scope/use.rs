@@ -7,7 +7,7 @@ use syn::{ItemMod, UseName, UseRename, UseTree};
 use super::{File, Node, ScopeError, ScopeGraph};
 use crate::error::{
     PathDisambiguationError, SelfNameNotInGroupError, SpecialIdentNotAtStartOfPathError,
-    TooManySupersError, UnresolvedImportError,
+    TooManySupersError, UnresolvedImportError, VisibilityError,
 };
 
 #[derive(Debug)]
