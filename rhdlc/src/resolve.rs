@@ -151,7 +151,14 @@ impl Resolver {
             }
             (Err(err1), Err(err2)) => {
                 self.errors.push(err1);
-                self.errors.push(err2);
+                if let ResolveError::IoError(wrapped_io_error) = &err2 {
+                    // Only give error 2 if it's NOT file not found
+                    if wrapped_io_error.cause.kind() != std::io::ErrorKind::NotFound {
+                        self.errors.push(err2);
+                    }
+                } else {
+                    self.errors.push(err2);
+                }
                 return;
             }
         };

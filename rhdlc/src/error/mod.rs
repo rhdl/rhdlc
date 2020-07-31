@@ -365,6 +365,29 @@ impl Display for VisibilityError {
     }
 }
 
+#[derive(Debug)]
+pub struct InvalidRawIdentifierError {
+    pub file: Rc<File>,
+    pub ident: syn::Ident,
+}
+
+impl Display for InvalidRawIdentifierError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        render_location(
+            f,
+            format!("`{}` cannot be a raw identifier", self.ident),
+            (
+                Reference::Error,
+                "",
+                self.ident.span(),
+            ),
+            vec![],
+            &self.file.source,
+            &self.file.content,
+        )
+    }
+}
+
 error!(ScopeError {
     MultipleDefinitionError => MultipleDefinitionError,
     PathDisambiguationError => PathDisambiguationError,
@@ -373,4 +396,5 @@ error!(ScopeError {
     UnresolvedImportError => UnresolvedImportError,
     TooManySupersError => TooManySupersError,
     VisibilityError => VisibilityError,
+    InvalidRawIdentifierError => InvalidRawIdentifierError,
 });

@@ -3,8 +3,3 @@ error: file not found for module `a`
   |
 1 | mod a;
   | ^^^^^^ ./test/compile-fail/file-resolution/no-module-single/a.rhdl : No such file or directory (os error 2)
-error: file not found for module `a`
- --> top.rhdl:1:0
-  |
-1 | mod a;
-  | ^^^^^^ ./test/compile-fail/file-resolution/no-module-single/a/mod.rhdl : No such file or directory (os error 2)

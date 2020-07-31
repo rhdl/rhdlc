@@ -40,8 +40,12 @@ pub fn trace_use_entry<'a, 'ast>(
     errors: &mut Vec<ScopeError>,
     dest: NodeIndex,
 ) {
-    let (tree, has_leading_colon) = match &scope_graph[dest] {
-        Node::Use { item_use, .. } => (&item_use.tree, item_use.leading_colon.is_some()),
+    let (tree, file, has_leading_colon) = match &scope_graph[dest] {
+        Node::Use { item_use, file, .. } => (
+            &item_use.tree,
+            file.clone(),
+            item_use.leading_colon.is_some(),
+        ),
         _ => return,
     };
 
@@ -63,16 +67,6 @@ pub fn trace_use_entry<'a, 'ast>(
             .neighbors_directed(dest, Direction::Incoming)
             .next()
             .unwrap()
-    };
-
-    let file = match &scope_graph[scope_graph
-        .neighbors_directed(dest, Direction::Incoming)
-        .next()
-        .unwrap()]
-    {
-        Node::Root { file, .. } => file.clone(),
-        Node::Mod { file, .. } => file.clone(),
-        _ => return,
     };
 
     let mut ctx = TracingContext {

@@ -33,31 +33,29 @@ fn main() {
 }
 
 fn entry(src: resolve::ResolutionSource) -> String {
+    let mut acc = String::default();
+
     let mut resolver = resolve::Resolver::default();
     resolver.resolve_tree(src);
-    if !resolver.errors.is_empty() {
-        return resolver
-            .errors
-            .iter()
-            .map(|err| format!("{}", err))
-            .collect();
-    }
+    resolver
+        .errors
+        .iter()
+        .map(|err| format!("{}", err))
+        .for_each(|err| acc += &err);
 
     let mut scope_builder = scope::ScopeBuilder::from(&resolver.file_graph);
     scope_builder.build_graph();
     scope_builder.check_graph();
-    if !scope_builder.errors.is_empty() {
-        return scope_builder
-            .errors
-            .iter()
-            .map(|err| format!("{}", err))
-            .collect();
-    }
+    scope_builder
+        .errors
+        .iter()
+        .map(|err| format!("{}", err))
+        .for_each(|err| acc += &err);
 
     #[cfg(not(test))]
     println!("{}", Dot::new(&scope_builder.scope_graph));
 
-    String::default()
+    acc
 }
 
 #[cfg(test)]

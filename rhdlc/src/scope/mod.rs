@@ -39,7 +39,7 @@ use log::error;
 use petgraph::{graph::NodeIndex, visit::EdgeRef, Direction, Graph};
 use syn::{spanned::Spanned, Ident, Item, ItemImpl, ItemMod, ItemUse};
 
-use crate::error::{MultipleDefinitionError, ScopeError};
+use crate::error::{InvalidRawIdentifierError, MultipleDefinitionError, ScopeError};
 use crate::resolve::{File, FileGraph};
 
 mod name;
@@ -113,7 +113,91 @@ impl<'ast> ScopeBuilder<'ast> {
     }
 
     pub fn check_graph(&mut self) {
+        self.find_invalid_names();
         self.find_name_conflicts();
+    }
+
+    pub fn find_invalid_names(&mut self) {
+        use crate::ident::*;
+        for node in self.scope_graph.node_indices() {
+            match &self.scope_graph[node] {
+                Node::Root { name, file, .. } => {}
+                Node::Item { ident, file, .. } => {
+                    if !can_be_raw(ident) {
+                        self.errors.push(
+                            InvalidRawIdentifierError {
+                                file: file.clone(),
+                                ident: (*ident).clone(),
+                            }
+                            .into(),
+                        );
+                    }
+                }
+                Node::Mod {
+                    item_mod: ItemMod { ident, .. },
+                    file,
+                    ..
+                } => {
+                    if !can_be_raw(ident) {
+                        self.errors.push(
+                            InvalidRawIdentifierError {
+                                file: file.clone(),
+                                ident: ident.clone(),
+                            }
+                            .into(),
+                        );
+                    }
+                }
+                Node::Use { imports, file, .. } => {
+                    for (_, uses) in imports.iter() {
+                        for r#use in uses.iter() {
+                            use r#use::UseType::*;
+                            use syn::{UseName, UseRename};
+                            match r#use {
+                                Name {
+                                    name: UseName { ident, .. },
+                                    ..
+                                } => {
+                                    if !can_be_raw(ident) {
+                                        self.errors.push(
+                                            InvalidRawIdentifierError {
+                                                file: file.clone(),
+                                                ident: (*ident).clone(),
+                                            }
+                                            .into(),
+                                        );
+                                    }
+                                }
+                                Rename {
+                                    rename: UseRename { ident, rename, .. },
+                                    ..
+                                } => {
+                                    if !can_be_raw(ident) {
+                                        self.errors.push(
+                                            InvalidRawIdentifierError {
+                                                file: file.clone(),
+                                                ident: (*ident).clone(),
+                                            }
+                                            .into(),
+                                        );
+                                    }
+                                    if !can_be_raw(rename) {
+                                        self.errors.push(
+                                            InvalidRawIdentifierError {
+                                                file: file.clone(),
+                                                ident: (*rename).clone(),
+                                            }
+                                            .into(),
+                                        );
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /// TODO: check use items for conflicts, and remember that globs are optional and don't conflict
@@ -208,6 +292,7 @@ impl<'ast> ScopeBuilder<'ast> {
                         item_mod,
                         exports: HashMap::default(),
                         file: self.file_graph[*self.file_ancestry.last().unwrap()].clone(),
+                        content_file: None,
                     });
                     let parent = self.scope_ancestry.last().unwrap();
                     self.scope_graph
@@ -235,11 +320,12 @@ impl<'ast> ScopeBuilder<'ast> {
                     });
 
                     if let Some(file_index) = file_index {
-                        let file = self.file_graph[file_index].clone();
+                        let content_file = self.file_graph[file_index].clone();
                         let mod_idx = self.scope_graph.add_node(Node::Mod {
                             item_mod,
                             exports: HashMap::default(),
-                            file,
+                            file: self.file_graph[*self.file_ancestry.last().unwrap()].clone(),
+                            content_file: Some(content_file),
                         });
                         if let Some(parent) = self.scope_ancestry.last() {
                             self.scope_graph
@@ -255,10 +341,16 @@ impl<'ast> ScopeBuilder<'ast> {
                         self.file_ancestry.pop();
                         self.scope_ancestry.pop();
                     } else {
-                        error!(
-                            "Could not find a file for {}, this should not be possible",
-                            &item_mod.ident
-                        );
+                        let mod_idx = self.scope_graph.add_node(Node::Mod {
+                            item_mod,
+                            exports: HashMap::default(),
+                            file: self.file_graph[*self.file_ancestry.last().unwrap()].clone(),
+                            content_file: None,
+                        });
+                        if let Some(parent) = self.scope_ancestry.last() {
+                            self.scope_graph
+                                .add_edge(*parent, mod_idx, "mod".to_string());
+                        }
                     }
                 }
             }
@@ -279,7 +371,11 @@ impl<'ast> ScopeBuilder<'ast> {
             | Trait(ItemTrait { ident, .. })
             | TraitAlias(ItemTraitAlias { ident, .. })
             | Union(ItemUnion { ident, .. }) => {
-                let item_idx = self.scope_graph.add_node(Node::Item { item, ident });
+                let item_idx = self.scope_graph.add_node(Node::Item {
+                    item,
+                    ident,
+                    file: self.file_graph[*self.file_ancestry.last().unwrap()].clone(),
+                });
                 let parent = self.scope_ancestry.last().unwrap();
                 self.scope_graph
                     .add_edge(*parent, item_idx, "item".to_string());
@@ -288,6 +384,7 @@ impl<'ast> ScopeBuilder<'ast> {
                 let use_idx = self.scope_graph.add_node(Node::Use {
                     item_use,
                     imports: HashMap::default(),
+                    file: self.file_graph[*self.file_ancestry.last().unwrap()].clone(),
                 });
                 self.scope_graph.add_edge(
                     *self.scope_ancestry.last().unwrap(),
@@ -316,18 +413,21 @@ pub enum Node<'ast> {
     Item {
         item: &'ast Item,
         ident: &'ast Ident,
+        file: Rc<File>,
     },
     Mod {
         item_mod: &'ast ItemMod,
         /// Exports: (from item, to list of roots/mods) aka pubs
         exports: HashMap<NodeIndex, Vec<NodeIndex>>,
-        /// The file backing this mod, whether it's its own file or the file of an ancestor
         file: Rc<File>,
+        /// The file backing the content of this mod when content = None, if available
+        content_file: Option<Rc<File>>,
     },
     Use {
         item_use: &'ast ItemUse,
         /// Imports: (from root/mod to list of items)
         imports: HashMap<NodeIndex, Vec<UseType<'ast>>>,
+        file: Rc<File>,
     },
 }
 
