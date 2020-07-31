@@ -1,4 +1,4 @@
-name: Rust
+name: rhdlc build
 
 on:
   push:
