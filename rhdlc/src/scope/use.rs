@@ -113,9 +113,13 @@ fn trace_use<'a, 'ast>(ctx: &mut TracingContext<'a, 'ast>, scope: NodeIndex, tre
             let path_ident = path.ident.to_string();
             match path_ident.as_str() {
                 // Special keyword cases
-                // TODO: handle super::super
                 "self" | "super" | "crate" => {
-                    if !is_entry {
+                    let is_last_super = ctx
+                        .previous_idents
+                        .last()
+                        .map(|ident| ident == "self")
+                        .unwrap_or_default();
+                    if !is_entry && !(path_ident == "super" && is_last_super) {
                         ctx.errors.push(
                             SpecialIdentNotAtStartOfPathError {
                                 file: ctx.file.clone(),
