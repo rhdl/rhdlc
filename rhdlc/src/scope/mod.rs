@@ -83,6 +83,8 @@ impl<'ast> ScopeBuilder<'ast> {
         for file_index in files {
             let file = self.file_graph[file_index].clone();
             let scope_index = self.scope_graph.add_node(Node::Root {
+                // TODO: attach a real name
+                name: None,
                 file,
                 exports: vec![],
             });

@@ -5,6 +5,7 @@ authors = ["Sameer Puri <purisame@spuri.io>"]
 edition = "2018"
 license = "AGPL-3.0-or-later"
 homepage = "https://github.com/rhdl/rhdl"
+description = "Compiler for RHDL"
 
 [dependencies]
 syn = { version = "1", features = ["full", "extra-traits"] }
@@ -17,3 +18,4 @@ log = "0"
 env_logger = "0"
 petgraph = "0.5"
 strsim = "0.10"
+clap = "2"

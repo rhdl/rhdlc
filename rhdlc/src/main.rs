@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+use clap::{clap_app, crate_authors, crate_description, crate_version};
 use petgraph::dot::Dot;
 
 use std::env;
@@ -11,22 +12,24 @@ mod resolve;
 mod scope;
 
 fn main() {
+    if env::var("RUST_LOG").is_err() {
+        env::set_var("RUST_LOG", "rhdlc=info")
+    }
     env_logger::init();
-
-    let arg = match env::args().nth(1) {
-        Some(arg) => arg,
-        _ => {
-            eprintln!("Usage: rhdlc path/to/filename.rs");
-            process::exit(1);
-        }
-    };
+    let matches = clap_app!(rhdlc =>
+        (version: crate_version!())
+        (author: crate_authors!())
+        (about: crate_description!())
+        (@arg FILE: "The top level RHDL file")
+    )
+    .get_matches();
 
     let mut resolver = resolve::Resolver::default();
-    match arg.as_str() {
-        "-" => {
+    match matches.value_of("FILE") {
+        Some("-") | None => {
             resolver.resolve_tree(resolve::ResolutionSource::Stdin);
         }
-        path => {
+        Some(path) => {
             resolver.resolve_tree(resolve::ResolutionSource::File(path.into()));
         }
     }
