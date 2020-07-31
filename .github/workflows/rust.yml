@@ -1,4 +1,4 @@
-name: rhdlc build
+name: rhdlc
 
 on:
   push:
