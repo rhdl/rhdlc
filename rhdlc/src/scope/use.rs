@@ -203,7 +203,7 @@ fn trace_use<'a, 'ast>(ctx: &mut TracingContext<'a, 'ast>, scope: NodeIndex, tre
                 }
             }
             if !is_entry
-                && !super::visibility::is_target_visible(ctx.scope_graph, ctx.dest, new_scope).unwrap()
+                && !super::visibility::is_target_visible(ctx.scope_graph, scope, new_scope).unwrap()
             {
                 ctx.errors.push(
                     VisibilityError {
@@ -272,7 +272,7 @@ fn trace_use<'a, 'ast>(ctx: &mut TracingContext<'a, 'ast>, scope: NodeIndex, tre
             }
             let index = found_index.unwrap();
             if !is_entry
-                && !super::visibility::is_target_visible(ctx.scope_graph, ctx.dest, index).unwrap()
+                && !super::visibility::is_target_visible(ctx.scope_graph, scope, index).unwrap()
             {
                 ctx.errors.push(
                     VisibilityError {
