@@ -293,9 +293,36 @@ impl Display for UnresolvedImportError {
     }
 }
 
+#[derive(Debug)]
+pub struct SelfNameNotInGroupError {
+    pub file: Rc<File>,
+    pub name_ident: syn::Ident,
+}
+
+impl Display for SelfNameNotInGroupError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        render_location(
+            f,
+            format!(
+                "`{}` imports are only allowed within a {{ }} list",
+                self.name_ident
+            ),
+            (
+                Reference::Error,
+                "",
+                self.name_ident.span(),
+            ),
+            vec![],
+            &self.file.source,
+            &self.file.content,
+        )
+    }
+}
+
 error!(ScopeError {
     MultipleDefinitionError => MultipleDefinitionError,
     PathDisambiguationError => PathDisambiguationError,
     SpecialIdentNotAtStartOfPathError => SpecialIdentNotAtStartOfPathError,
+    SelfNameNotInGroupError => SelfNameNotInGroupError,
     UnresolvedImportError => UnresolvedImportError,
 });

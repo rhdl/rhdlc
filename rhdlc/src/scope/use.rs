@@ -6,7 +6,8 @@ use syn::{ItemMod, UseName, UseRename, UseTree};
 
 use super::{File, Node, ScopeError, ScopeGraph};
 use crate::error::{
-    PathDisambiguationError, SpecialIdentNotAtStartOfPathError, UnresolvedImportError,
+    PathDisambiguationError, SelfNameNotInGroupError, SpecialIdentNotAtStartOfPathError,
+    UnresolvedImportError,
 };
 
 #[derive(Debug)]
@@ -134,27 +135,13 @@ fn trace_use<'a, 'ast>(ctx: &mut TracingContext<'a, 'ast>, scope: NodeIndex, tre
                         .neighbors_directed(ctx.dest, Direction::Incoming)
                         .next()
                         .unwrap();
-                    if match path.tree.as_ref() {
-                        Name(name) => name.ident == "self",
-                        Rename(rename) => rename.ident == "self",
-                        _ => false,
-                    } {
-                        // Handle bad selves now.
-                        todo!("a self that isn't in a group is an error")
-                    }
-                    if path_ident == "self" {
-                        ctx.previous_idents.push(path.ident.clone());
-                        trace_use(ctx, use_parent, &path.tree);
-                        ctx.previous_idents.pop();
+                    let scope = if path_ident == "self" {
+                        use_parent
                     } else if path_ident == "super" {
-                        let use_grandparent = ctx
-                            .scope_graph
+                        ctx.scope_graph
                             .neighbors_directed(use_parent, Direction::Incoming)
                             .next()
-                            .expect("todo, going beyond the root is an error");
-                        ctx.previous_idents.push(path.ident.clone());
-                        trace_use(ctx, use_grandparent, &path.tree);
-                        ctx.previous_idents.pop();
+                            .expect("todo, going beyond the root is an error")
                     } else if path_ident == "crate" {
                         let mut root = use_parent;
                         while let Some(next_parent) = ctx
@@ -164,10 +151,31 @@ fn trace_use<'a, 'ast>(ctx: &mut TracingContext<'a, 'ast>, scope: NodeIndex, tre
                         {
                             root = next_parent;
                         }
-                        ctx.previous_idents.push(path.ident.clone());
-                        trace_use(ctx, root, &path.tree);
-                        ctx.previous_idents.pop();
+                        root
+                    } else {
+                        error!("the match that led to this arm should prevent this from ever happening");
+                        use_parent
+                    };
+
+                    if let Some(ident) = match path.tree.as_ref() {
+                        Name(name) => Some(&name.ident),
+                        Rename(rename) => Some(&rename.ident),
+                        _ => None,
+                    } {
+                        if ident == "self" {
+                            ctx.errors.push(
+                                SelfNameNotInGroupError {
+                                    file: ctx.file.clone(),
+                                    name_ident: ident.clone(),
+                                }
+                                .into(),
+                            );
+                            return;
+                        }
                     }
+                    ctx.previous_idents.push(path.ident.clone());
+                    trace_use(ctx, scope, &path.tree);
+                    ctx.previous_idents.pop();
                 }
                 // Default case: enter the matching child scope
                 _ => {
@@ -189,6 +197,22 @@ fn trace_use<'a, 'ast>(ctx: &mut TracingContext<'a, 'ast>, scope: NodeIndex, tre
                         );
                         return;
                     }
+                    if let Some(ident) = match path.tree.as_ref() {
+                        Name(name) => Some(&name.ident),
+                        Rename(rename) => Some(&rename.ident),
+                        _ => None,
+                    } {
+                        if ident == "self" {
+                            ctx.errors.push(
+                                SelfNameNotInGroupError {
+                                    file: ctx.file.clone(),
+                                    name_ident: ident.clone(),
+                                }
+                                .into(),
+                            );
+                            return;
+                        }
+                    }
                     ctx.previous_idents.push(path.ident.clone());
                     trace_use(ctx, child.unwrap(), &path.tree);
                     ctx.previous_idents.pop();
@@ -200,38 +224,38 @@ fn trace_use<'a, 'ast>(ctx: &mut TracingContext<'a, 'ast>, scope: NodeIndex, tre
             let found_index = if original_name_string == "self" {
                 Some(scope)
             } else {
-                let child =
-                    ctx.scope_graph
-                        .neighbors(scope)
-                        .filter(|child| *child != ctx.dest)
-                        .find(|child| match &ctx.scope_graph[*child] {
-                            Node::Item { ident, .. } => **ident == original_name_string,
-                            Node::Mod {
-                                item_mod: ItemMod { ident, .. },
-                                ..
-                            } => *ident == original_name_string,
-                            Node::Use {
-                                imports: other_use_imports,
-                                ..
-                            } => {
-                                if other_use_imports.is_empty() {
-                                    error!("uses that aren't traced yet can't be resolved");
-                                    return false;
-                                }
-                                other_use_imports.iter().any(|(_, use_types)| {
-                                    use_types.iter().any(|use_type| match use_type {
-                                        UseType::Name { name, .. } => {
-                                            name.ident == original_name_string
-                                        }
-                                        UseType::Rename { rename, .. } => {
-                                            rename.rename == original_name_string
-                                        }
-                                        _ => false,
-                                    })
-                                })
+                let child = ctx
+                    .scope_graph
+                    .neighbors(scope)
+                    .filter(|child| *child != ctx.dest)
+                    .find(|child| match &ctx.scope_graph[*child] {
+                        Node::Item { ident, .. } => **ident == original_name_string,
+                        Node::Mod {
+                            item_mod: ItemMod { ident, .. },
+                            ..
+                        } => *ident == original_name_string,
+                        Node::Use {
+                            imports: other_use_imports,
+                            ..
+                        } => {
+                            if other_use_imports.is_empty() {
+                                error!("uses that aren't traced yet can't be resolved");
+                                return false;
                             }
-                            _ => false,
-                        });
+                            other_use_imports.iter().any(|(_, use_types)| {
+                                use_types.iter().any(|use_type| match use_type {
+                                    UseType::Name { name, .. } => {
+                                        name.ident == original_name_string
+                                    }
+                                    UseType::Rename { rename, .. } => {
+                                        rename.rename == original_name_string
+                                    }
+                                    _ => false,
+                                })
+                            })
+                        }
+                        _ => false,
+                    });
                 // TODO: check for implicit glob imports
                 child
             };

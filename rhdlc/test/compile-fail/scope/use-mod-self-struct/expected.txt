@@ -1,0 +1,5 @@
+error: `self` in paths can only be used in the start position
+ --> top.rhdl:5:7
+  |
+5 | use a::self::b;
+  |        ^^^^ `self` in paths can only be used in the start position

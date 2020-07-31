@@ -1,0 +1,5 @@
+mod a {
+    struct b {}
+}
+
+use a::self::b;

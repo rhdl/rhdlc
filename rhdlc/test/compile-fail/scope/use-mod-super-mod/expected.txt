@@ -1,0 +1,5 @@
+error: `super` in paths can only be used in the start position
+ --> top.rhdl:3:7
+  |
+3 | use a::super::a;
+  |        ^^^^^ `super` in paths can only be used in the start position
