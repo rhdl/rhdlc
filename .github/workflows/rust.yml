@@ -20,14 +20,21 @@ jobs:
         with:
           toolchain: nightly
           override: true
-      - name: Run Tests
+      - name: Run tests
         uses: rhdl/cargo@master
         with:
           working-directory: rhdlc/
           command: test
-          args: --features no-color --no-fail-fast -- --nocapture
+          args: --features no-color -- --nocapture
+      - name: Re-run tests for coverage
+        uses: rhdl/cargo@master
+        with:
+          working-directory: rhdlc/
+          command: test
+          args: --features no-color -- --nocapture
         env:
           CARGO_INCREMENTAL: '0'
           RUSTFLAGS: '-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Cpanic=abort -Zpanic_abort_tests'
           RUSTDOCFLAGS: '-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Cpanic=abort -Zpanic_abort_tests'
       - uses: actions-rs/grcov@v0.1
+        name: Generate coverage report
