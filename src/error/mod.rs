@@ -269,7 +269,7 @@ impl Display for UnresolvedImportError {
                     format!("no `{}` crate or mod", self.unresolved_ident),
                     self.unresolved_ident.span(),
                 ),
-                (0, true) => (format!("no `{}` crate in root", self.unresolved_ident), self.unresolved_ident.span()),
+                (0, true) => (format!("no `{}` external crate", self.unresolved_ident), self.unresolved_ident.span()),
                 (_nonzero, _) => (
                     format!(
                         "no `{}` in `{}`",
@@ -384,6 +384,35 @@ impl Display for InvalidRawIdentifierError {
     }
 }
 
+#[derive(Debug)]
+pub struct GlobalPathCannotHaveSpecialIdentError {
+    pub file: Rc<File>,
+    pub path_ident: syn::Ident,
+}
+
+impl Display for GlobalPathCannotHaveSpecialIdentError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        render_location(
+            f,
+            format!(
+                "global paths cannot start with `{}`",
+                self.path_ident
+            ),
+            (
+                Reference::Error,
+                &format!(
+                    "global paths cannot start with `{}`",
+                    self.path_ident
+                ),
+                self.path_ident.span(),
+            ),
+            vec![],
+            &self.file.source,
+            &self.file.content,
+        )
+    }
+}
+
 error!(ScopeError {
     MultipleDefinitionError => MultipleDefinitionError,
     PathDisambiguationError => PathDisambiguationError,
@@ -393,4 +422,5 @@ error!(ScopeError {
     TooManySupersError => TooManySupersError,
     VisibilityError => VisibilityError,
     InvalidRawIdentifierError => InvalidRawIdentifierError,
+    GlobalPathCannotHaveSpecialIdentError => GlobalPathCannotHaveSpecialIdentError,
 });

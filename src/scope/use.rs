@@ -6,8 +6,8 @@ use syn::{ItemMod, UseName, UseRename, UseTree};
 
 use super::{File, Node, ScopeError, ScopeGraph};
 use crate::error::{
-    PathDisambiguationError, SelfNameNotInGroupError, SpecialIdentNotAtStartOfPathError,
-    TooManySupersError, UnresolvedImportError, VisibilityError,
+    GlobalPathCannotHaveSpecialIdentError, PathDisambiguationError, SelfNameNotInGroupError,
+    SpecialIdentNotAtStartOfPathError, TooManySupersError, UnresolvedImportError, VisibilityError,
 };
 
 #[derive(Debug)]
@@ -119,6 +119,16 @@ fn trace_use<'a, 'ast>(ctx: &mut TracingContext<'a, 'ast>, scope: NodeIndex, tre
                     if !is_entry && !(path_ident == "super" && is_last_super) {
                         ctx.errors.push(
                             SpecialIdentNotAtStartOfPathError {
+                                file: ctx.file.clone(),
+                                path_ident: path.ident.clone(),
+                            }
+                            .into(),
+                        );
+                        return;
+                    }
+                    if ctx.has_leading_colon {
+                        ctx.errors.push(
+                            GlobalPathCannotHaveSpecialIdentError {
                                 file: ctx.file.clone(),
                                 path_ident: path.ident.clone(),
                             }

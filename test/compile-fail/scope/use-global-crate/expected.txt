@@ -1,0 +1,5 @@
+error: global paths cannot start with `crate`
+ --> top.rhdl:2:10
+  |
+2 |     use ::crate::a;
+  |           ^^^^^ global paths cannot start with `crate`
