@@ -432,6 +432,7 @@ pub enum Node<'ast> {
     },
 }
 
+#[cfg(not(tarpaulin_include))]
 impl<'ast> Display for Node<'ast> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
         match self {
