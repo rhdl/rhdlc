@@ -1,0 +1,10 @@
+mod a {
+    pub mod b {
+        use c::d as e;
+        mod c {
+            pub struct d {}
+        }
+    }
+}
+
+use a::b::d;
