@@ -138,16 +138,17 @@ impl Resolver {
             ),
         ) {
             (Ok(resolved_file), Err(_)) | (Err(_), Ok(resolved_file)) => resolved_file,
-            (Ok(_), Ok(_)) => {
+            (Ok(resolved_file), Ok(resolved_mod_file)) => {
                 self.errors.push(
                     DuplicateError {
                         file_path: mod_file_path,
                         folder_path: mod_folder_file_path,
-                        span,
+                        span: span.clone(),
                     }
                     .into(),
                 );
-                return;
+                // Create an error, but assume name.rhdl is the correct one and keep going
+                resolved_file
             }
             (Err(err1), Err(err2)) => {
                 self.errors.push(err1);
