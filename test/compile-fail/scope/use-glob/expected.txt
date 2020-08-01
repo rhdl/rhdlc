@@ -1,0 +1,5 @@
+error: cannot glob-import without a scope
+ --> top.rhdl:1:4
+  |
+1 | use *;
+  |     ^ this would re-import all crates and local items

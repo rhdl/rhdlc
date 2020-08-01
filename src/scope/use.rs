@@ -6,8 +6,9 @@ use syn::{ItemMod, UseName, UseRename, UseTree};
 
 use super::{File, Node, ScopeError, ScopeGraph};
 use crate::error::{
-    GlobalPathCannotHaveSpecialIdentError, PathDisambiguationError, SelfNameNotInGroupError,
-    SpecialIdentNotAtStartOfPathError, TooManySupersError, UnresolvedImportError, VisibilityError,
+    GlobAtEntryError, GlobalPathCannotHaveSpecialIdentError, PathDisambiguationError,
+    SelfNameNotInGroupError, SpecialIdentNotAtStartOfPathError, TooManySupersError,
+    UnresolvedImportError, VisibilityError,
 };
 
 #[derive(Debug)]
@@ -170,13 +171,15 @@ fn trace_use<'a, 'ast>(
                         match &ctx.scope_graph[*child] {
                             Node::Mod { item_mod, .. } => item_mod.ident == path.ident.to_string(),
                             // this will work just fine since n is a string
-                            Node::Root{name: Some(n), ..} => path.ident == n,
+                            Node::Root { name: Some(n), .. } => path.ident == n,
                             _ => false,
                         }
                     };
                     let child = if is_entry && ctx.has_leading_colon {
                         // we know the scope can be ignored in this case...
-                        ctx.scope_graph.externals(Direction::Incoming).find(same_ident_finder)
+                        ctx.scope_graph
+                            .externals(Direction::Incoming)
+                            .find(same_ident_finder)
                     } else {
                         ctx.scope_graph.neighbors(scope).find(same_ident_finder)
                     };
@@ -233,43 +236,47 @@ fn trace_use<'a, 'ast>(
                 }
                 Some(scope)
             } else {
-                let child = ctx
-                    .scope_graph
-                    .neighbors(scope)
-                    .filter(|child| *child != ctx.dest)
-                    .find(|child| match &ctx.scope_graph[*child] {
-                        Node::Item { ident, .. } => **ident == original_name_string,
-                        Node::Mod {
-                            item_mod: ItemMod { ident, .. },
-                            ..
-                        } => *ident == original_name_string,
-                        Node::Use {
-                            imports: other_use_imports,
-                            ..
-                        } => {
-                            if other_use_imports.is_empty() {
-                                error!("uses that aren't traced yet can't be resolved");
-                                return false;
-                            }
-                            other_use_imports.iter().any(|(_, use_types)| {
-                                use_types.iter().any(|use_type| match use_type {
-                                    UseType::Name { name, .. } => {
-                                        name.ident == original_name_string
-                                    }
-                                    UseType::Rename { rename, .. } => {
-                                        rename.rename == original_name_string
-                                    }
-                                    _ => false,
-                                })
-                            })
+                let finder = |child: &NodeIndex| match &ctx.scope_graph[*child] {
+                    Node::Item { ident, .. } => **ident == original_name_string,
+                    Node::Mod {
+                        item_mod: ItemMod { ident, .. },
+                        ..
+                    } => *ident == original_name_string,
+                    Node::Root { name: Some(n), .. } => original_name_string == *n,
+                    Node::Use {
+                        imports: other_use_imports,
+                        ..
+                    } => {
+                        if other_use_imports.is_empty() {
+                            error!("uses that aren't traced yet can't be resolved");
+                            return false;
                         }
-                        _ => false,
-                    });
-                // TODO: check for implicit glob imports
+                        other_use_imports.iter().any(|(_, use_types)| {
+                            use_types.iter().any(|use_type| match use_type {
+                                UseType::Name { name, .. } => name.ident == original_name_string,
+                                UseType::Rename { rename, .. } => {
+                                    rename.rename == original_name_string
+                                }
+                                _ => false,
+                            })
+                        })
+                    }
+                    _ => false,
+                };
+
+                let child = if is_entry && ctx.has_leading_colon {
+                    // special resolution required
+                    ctx.scope_graph.externals(Direction::Incoming).find(finder)
+                } else {
+                    // todo: unwrap_or_else look for glob implicit imports
+                    ctx.scope_graph
+                        .neighbors(scope)
+                        .filter(|child| *child != ctx.dest)
+                        .find(finder)
+                };
                 child
             };
             if found_index.is_none() {
-                //
                 ctx.errors.push(
                     UnresolvedImportError {
                         file: ctx.file.clone(),
@@ -309,7 +316,25 @@ fn trace_use<'a, 'ast>(
                 }
             }
         }
-        Glob(_) => {
+        Glob(glob) => {
+            if is_entry
+                || ctx.has_leading_colon
+                || ctx
+                    .previous_idents
+                    .last()
+                    .map(|ident| ident == "self")
+                    .unwrap_or_default()
+            {
+                ctx.errors.push(
+                    GlobAtEntryError {
+                        file: ctx.file.clone(),
+                        star_span: glob.star_token.spans[0].clone(),
+                        has_leading_colon: ctx.has_leading_colon,
+                    }
+                    .into(),
+                );
+                return;
+            }
             if let Node::Use { imports, .. } = &mut ctx.scope_graph[ctx.dest] {
                 imports
                     .entry(scope)

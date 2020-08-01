@@ -269,7 +269,10 @@ impl Display for UnresolvedImportError {
                     format!("no `{}` crate or mod", self.unresolved_ident),
                     self.unresolved_ident.span(),
                 ),
-                (0, true) => (format!("no `{}` external crate", self.unresolved_ident), self.unresolved_ident.span()),
+                (0, true) => (
+                    format!("no `{}` external crate", self.unresolved_ident),
+                    self.unresolved_ident.span(),
+                ),
                 (_nonzero, _) => (
                     format!(
                         "no `{}` in `{}`",
@@ -394,17 +397,39 @@ impl Display for GlobalPathCannotHaveSpecialIdentError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
         render_location(
             f,
-            format!(
-                "global paths cannot start with `{}`",
-                self.path_ident
-            ),
+            format!("global paths cannot start with `{}`", self.path_ident),
             (
                 Reference::Error,
-                &format!(
-                    "global paths cannot start with `{}`",
-                    self.path_ident
-                ),
+                &format!("global paths cannot start with `{}`", self.path_ident),
                 self.path_ident.span(),
+            ),
+            vec![],
+            &self.file.source,
+            &self.file.content,
+        )
+    }
+}
+
+#[derive(Debug)]
+pub struct GlobAtEntryError {
+    pub file: Rc<File>,
+    pub star_span: Span,
+    pub has_leading_colon: bool,
+}
+
+impl Display for GlobAtEntryError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        render_location(
+            f,
+            "cannot glob-import without a scope",
+            (
+                Reference::Error,
+                if self.has_leading_colon {
+                    "this would import all crates"
+                } else {
+                    "this would re-import all crates and local items"
+                },
+                self.star_span,
             ),
             vec![],
             &self.file.source,
@@ -423,4 +448,5 @@ error!(ScopeError {
     VisibilityError => VisibilityError,
     InvalidRawIdentifierError => InvalidRawIdentifierError,
     GlobalPathCannotHaveSpecialIdentError => GlobalPathCannotHaveSpecialIdentError,
+    GlobAtEntryError => GlobAtEntryError,
 });

@@ -1,0 +1,5 @@
+error: cannot glob-import without a scope
+ --> top.rhdl:1:6
+  |
+1 | use ::*;
+  |       ^ this would import all crates
