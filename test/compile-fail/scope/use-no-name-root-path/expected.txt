@@ -1,5 +1,5 @@
 error: unresolved import `c`
- --> top.rhdl:4:14
+ --> top.rhdl:6:14
   |
-4 |         use ::c;
+6 |         use ::c::d;
   |               ^ no `c` crate in root
