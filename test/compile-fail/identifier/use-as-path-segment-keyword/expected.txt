@@ -1,0 +1,5 @@
+error: `r#self` cannot be a raw identifier
+ --> top.rhdl:2:9
+  |
+2 | use a as r#self;
+  |          ^^^^^^ 
