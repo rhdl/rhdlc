@@ -4,7 +4,12 @@ error: `r#self` cannot be a raw identifier
 2 |     pub struct r#self {}
   |                ^^^^^^ 
 error: `r#self` cannot be a raw identifier
- --> top.rhdl:4:7
+ --> top.rhdl:5:7
   |
-4 | use a::r#self;
+5 | use a::r#self;
+  |        ^^^^^^ 
+error: `r#self` cannot be a raw identifier
+ --> top.rhdl:6:7
+  |
+6 | use a::r#self as selfie;
   |        ^^^^^^ 
