@@ -1,0 +1,5 @@
+error: unresolved import `a`
+ --> top.rhdl:1:4
+  |
+1 | use a::b;
+  |     ^ no `a` crate or mod
