@@ -277,9 +277,7 @@ impl Display for UnresolvedImportError {
                         .unwrap()
                 ),
                 self.unresolved_ident
-                    .span()
-                    .join(self.previous_idents.last().unwrap().span())
-                    .unwrap(),
+                    .span(),
             ),
         };
         render_location(
