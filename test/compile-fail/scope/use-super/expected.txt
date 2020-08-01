@@ -1,0 +1,5 @@
+error: unresolved import `super`
+ --> top.rhdl:2:7
+  |
+2 | use a::super;
+  |        ^^^^^ no `super` in `a`
