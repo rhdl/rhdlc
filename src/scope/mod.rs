@@ -408,6 +408,7 @@ pub enum Node<'ast> {
         /// with the fact that there are no binaries for RHDL...
         name: Option<String>,
         file: Rc<File>,
+        // The list of items this root exports, visible from ANY scope
         exports: Vec<NodeIndex>,
     },
     Item {

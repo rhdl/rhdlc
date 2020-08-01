@@ -84,8 +84,10 @@ fn apply_visibility_pub<'ast>(scope_graph: &mut ScopeGraph<'ast>, node: NodeInde
         .collect();
     for parent in parents {
         match &mut scope_graph[parent] {
+            // export node to grandparents
             Node::Mod { exports, .. } => exports.entry(node).or_default().extend(&grandparents),
-            Node::Root { exports, .. } => exports.extend(&grandparents),
+            // export node to root
+            Node::Root { exports, .. } => exports.push(node),
             other => {
                 error!("parent is not a mod or root {:?}", other);
             }
@@ -118,9 +120,10 @@ fn apply_visibility_crate<'ast>(scope_graph: &mut ScopeGraph<'ast>, node: NodeIn
     };
     for parent in parents {
         match &mut scope_graph[parent] {
+            // export node to roots
             Node::Mod { exports, .. } => exports.entry(node).or_default().extend(&roots),
-            // TODO: isn't this effectively "export to self"?
-            Node::Root { exports, .. } => exports.extend(&roots),
+            // export node to root
+            Node::Root { exports, .. } => exports.push(node),
             other => {
                 error!("parent is not a mod or root {:?}", other);
             }
