@@ -130,11 +130,11 @@ fn apply_visibility_crate<'ast>(scope_graph: &mut ScopeGraph<'ast>, node: NodeIn
 
 pub fn is_target_visible<'ast>(
     scope_graph: &mut ScopeGraph,
-    dest: NodeIndex,
+    scope: NodeIndex,
     target: NodeIndex,
 ) -> Option<bool> {
-    let dest_parent = scope_graph
-        .neighbors_directed(dest, Direction::Incoming)
+    let scope_parent = scope_graph
+        .neighbors_directed(scope, Direction::Incoming)
         .next()
         .unwrap();
     let target_parent = scope_graph
@@ -146,7 +146,7 @@ pub fn is_target_visible<'ast>(
         Node::Mod { exports, .. } => Some(
             exports
                 .get(&target)
-                .map(|exports| exports.contains(&dest_parent))
+                .map(|exports| exports.contains(&scope_parent))
                 .unwrap_or_default(),
         ),
         _ => None,

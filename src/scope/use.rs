@@ -196,7 +196,14 @@ fn trace_use<'a, 'ast>(ctx: &mut TracingContext<'a, 'ast>, scope: NodeIndex, tre
                     return;
                 }
             }
+            // Only check visibility if scope differs
+            let last_is_self = ctx
+                .previous_idents
+                .last()
+                .map(|ident| ident == "self")
+                .unwrap_or_default();
             if !is_entry
+                && !last_is_self
                 && !super::visibility::is_target_visible(ctx.scope_graph, scope, new_scope).unwrap()
             {
                 ctx.errors.push(
