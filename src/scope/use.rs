@@ -180,6 +180,9 @@ fn trace_use<'a, 'ast>(
                         ctx.scope_graph
                             .externals(Direction::Incoming)
                             .find(same_ident_finder)
+                    } else if is_entry {
+                        // TODO: path disambiguation error
+                        ctx.scope_graph.neighbors(scope).find(same_ident_finder)
                     } else {
                         ctx.scope_graph.neighbors(scope).find(same_ident_finder)
                     };
@@ -267,6 +270,12 @@ fn trace_use<'a, 'ast>(
                 let child = if is_entry && ctx.has_leading_colon {
                     // special resolution required
                     ctx.scope_graph.externals(Direction::Incoming).find(finder)
+                } else if is_entry {
+                    // todo: disambiguation error
+                    ctx.scope_graph
+                        .neighbors(scope)
+                        .filter(|child| *child != ctx.dest)
+                        .find(finder)
                 } else {
                     // todo: unwrap_or_else look for glob implicit imports
                     ctx.scope_graph
