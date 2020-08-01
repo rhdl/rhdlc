@@ -21,7 +21,7 @@ jobs:
           toolchain: nightly
           override: true
       - name: Run Tests
-        uses: marcopolo/cargo@master
+        uses: rhdl/cargo@master
         with:
           working-directory: rhdlc/
           command: test
