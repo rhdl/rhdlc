@@ -1,0 +1,10 @@
+error: `r#self` cannot be a raw identifier
+ --> top.rhdl:2:15
+  |
+2 |     pub struct r#self {}
+  |                ^^^^^^ 
+error: `r#self` cannot be a raw identifier
+ --> top.rhdl:4:7
+  |
+4 | use a::r#self;
+  |        ^^^^^^ 

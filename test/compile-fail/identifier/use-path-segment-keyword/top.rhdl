@@ -1,0 +1,4 @@
+mod a {
+    pub struct r#self {}
+}
+use a::r#self;
