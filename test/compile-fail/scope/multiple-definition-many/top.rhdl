@@ -1,0 +1,4 @@
+struct a {}
+enum a {}
+union a {}
+trait a {}
