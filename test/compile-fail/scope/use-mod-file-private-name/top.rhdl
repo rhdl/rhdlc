@@ -1,0 +1,2 @@
+mod a;
+use a::b;
