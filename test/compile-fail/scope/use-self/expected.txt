@@ -1,0 +1,5 @@
+error: `self` imports are only allowed within a { } list
+ --> top.rhdl:2:8
+  |
+2 |     use self;
+  |         ^^^^ 

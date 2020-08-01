@@ -80,7 +80,7 @@ pub fn trace_use_entry<'a, 'ast>(
     }
     .into();
 
-    trace_use(&mut ctx, scope, tree);
+    trace_use(&mut ctx, scope, tree, false);
 }
 
 /// Trace usages
@@ -100,7 +100,7 @@ pub fn trace_use_entry<'a, 'ast>(
 /// * Check scope visibility (!important)
 /// * Global imports
 ///     * Roots need names: `crate` is "this" root, vs. any other identifier
-fn trace_use<'a, 'ast>(ctx: &mut TracingContext<'a, 'ast>, scope: NodeIndex, tree: &'ast UseTree) {
+fn trace_use<'a, 'ast>(ctx: &mut TracingContext<'a, 'ast>, scope: NodeIndex, tree: &'ast UseTree, in_group: bool) {
     use syn::UseTree::*;
     // Is this the tracing entry point? (value comparison)
     // `item_use.tree` will always be either equal to or a superset of `tree`
@@ -193,22 +193,6 @@ fn trace_use<'a, 'ast>(ctx: &mut TracingContext<'a, 'ast>, scope: NodeIndex, tre
                     child.unwrap()
                 }
             };
-            if let Some(ident) = match path.tree.as_ref() {
-                Name(name) => Some(&name.ident),
-                Rename(rename) => Some(&rename.ident),
-                _ => None,
-            } {
-                if ident == "self" {
-                    ctx.errors.push(
-                        SelfNameNotInGroupError {
-                            file: ctx.file.clone(),
-                            name_ident: ident.clone(),
-                        }
-                        .into(),
-                    );
-                    return;
-                }
-            }
             // Only check visibility if scope differs
             let last_is_self = ctx
                 .previous_idents
@@ -229,12 +213,22 @@ fn trace_use<'a, 'ast>(ctx: &mut TracingContext<'a, 'ast>, scope: NodeIndex, tre
                 return;
             }
             ctx.previous_idents.push(path.ident.clone());
-            trace_use(ctx, new_scope, &path.tree);
+            trace_use(ctx, new_scope, &path.tree, false);
             ctx.previous_idents.pop();
         }
         Name(UseName { ident, .. }) | Rename(UseRename { ident, .. }) => {
             let original_name_string = ident.to_string();
             let found_index = if original_name_string == "self" {
+                if !in_group {
+                    ctx.errors.push(
+                        SelfNameNotInGroupError {
+                            file: ctx.file.clone(),
+                            name_ident: ident.clone(),
+                        }
+                        .into(),
+                    );
+                    return;
+                }
                 Some(scope)
             } else {
                 let child = ctx
@@ -323,6 +317,6 @@ fn trace_use<'a, 'ast>(ctx: &mut TracingContext<'a, 'ast>, scope: NodeIndex, tre
         Group(group) => group
             .items
             .iter()
-            .for_each(|tree| trace_use(ctx, scope, tree)),
+            .for_each(|tree| trace_use(ctx, scope, tree, true)),
     }
 }
