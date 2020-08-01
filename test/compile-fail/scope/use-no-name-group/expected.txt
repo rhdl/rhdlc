@@ -1,5 +1,5 @@
 error: unresolved import `c`
  --> top.rhdl:5:11
   |
-5 | use a::{b, c};
+5 | use a::{b, c, self};
   |            ^ no `c` in `a`

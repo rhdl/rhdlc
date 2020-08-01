@@ -100,7 +100,12 @@ pub fn trace_use_entry<'a, 'ast>(
 /// * Check scope visibility (!important)
 /// * Global imports
 ///     * Roots need names: `crate` is "this" root, vs. any other identifier
-fn trace_use<'a, 'ast>(ctx: &mut TracingContext<'a, 'ast>, scope: NodeIndex, tree: &'ast UseTree, in_group: bool) {
+fn trace_use<'a, 'ast>(
+    ctx: &mut TracingContext<'a, 'ast>,
+    scope: NodeIndex,
+    tree: &'ast UseTree,
+    in_group: bool,
+) {
     use syn::UseTree::*;
     // Is this the tracing entry point? (value comparison)
     // `item_use.tree` will always be either equal to or a superset of `tree`
@@ -281,6 +286,7 @@ fn trace_use<'a, 'ast>(ctx: &mut TracingContext<'a, 'ast>, scope: NodeIndex, tre
             }
             let index = found_index.unwrap();
             if !is_entry
+                && original_name_string != "self"
                 && !super::visibility::is_target_visible(ctx.scope_graph, scope, index).unwrap()
             {
                 ctx.errors.push(
