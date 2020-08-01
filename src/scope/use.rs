@@ -51,18 +51,8 @@ pub fn trace_use_entry<'a, 'ast>(
     };
 
     let scope = if has_leading_colon {
-        // TODO: this is completely wrong, roots need names now
-        let mut root = dest;
-        while match &scope_graph[root] {
-            Node::Root { .. } => false,
-            _ => true,
-        } {
-            root = scope_graph
-                .neighbors_directed(root, Direction::Incoming)
-                .next()
-                .unwrap();
-        }
-        root
+        // just give any old dummy node because it'll have to be ignored in path/name finding
+        NodeIndex::new(0)
     } else {
         scope_graph
             .neighbors_directed(dest, Direction::Incoming)
@@ -176,13 +166,20 @@ fn trace_use<'a, 'ast>(
                 }
                 // Default case: enter the matching child scope
                 _ => {
-                    let child = ctx.scope_graph.neighbors(scope).find(|child| {
-                        if let Node::Mod { item_mod, .. } = ctx.scope_graph[*child] {
-                            item_mod.ident == path.ident.to_string()
-                        } else {
-                            false
+                    let same_ident_finder = |child: &NodeIndex| {
+                        match &ctx.scope_graph[*child] {
+                            Node::Mod { item_mod, .. } => item_mod.ident == path.ident.to_string(),
+                            // this will work just fine since n is a string
+                            Node::Root{name: Some(n), ..} => path.ident == n,
+                            _ => false,
                         }
-                    });
+                    };
+                    let child = if is_entry && ctx.has_leading_colon {
+                        // we know the scope can be ignored in this case...
+                        ctx.scope_graph.externals(Direction::Incoming).find(same_ident_finder)
+                    } else {
+                        ctx.scope_graph.neighbors(scope).find(same_ident_finder)
+                    };
                     if child.is_none() {
                         ctx.errors.push(
                             UnresolvedImportError {
