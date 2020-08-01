@@ -4,3 +4,4 @@ mod a {
 }
 use a::r#self;
 use a::r#self as selfie;
+use a::*;
