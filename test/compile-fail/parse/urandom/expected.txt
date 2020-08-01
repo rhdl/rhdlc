@@ -1,0 +1,1 @@
+error: couldn't read ./test/compile-fail/parse/urandom/top.rhdl : stream did not contain valid UTF-8
