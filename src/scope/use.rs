@@ -32,6 +32,7 @@ struct TracingContext<'a, 'ast> {
     file: Rc<File>,
     dest: NodeIndex,
     previous_idents: Vec<syn::Ident>,
+    has_leading_colon: bool,
 }
 
 /// TODO: Disambiguation errors can be done at this point instead of during tracing
@@ -50,7 +51,7 @@ pub fn trace_use_entry<'a, 'ast>(
     };
 
     let scope = if has_leading_colon {
-        // TODO: this is wrong, roots need names now
+        // TODO: this is completely wrong, roots need names now
         let mut root = dest;
         while match &scope_graph[root] {
             Node::Root { .. } => false,
@@ -75,6 +76,7 @@ pub fn trace_use_entry<'a, 'ast>(
         file: file,
         dest,
         previous_idents: vec![],
+        has_leading_colon,
     }
     .into();
 
@@ -172,6 +174,7 @@ fn trace_use<'a, 'ast>(ctx: &mut TracingContext<'a, 'ast>, scope: NodeIndex, tre
                                 file: ctx.file.clone(),
                                 previous_idents: ctx.previous_idents.clone(),
                                 unresolved_ident: path.ident.clone(),
+                                has_leading_colon: ctx.has_leading_colon,
                             }
                             .into(),
                         );
@@ -266,6 +269,7 @@ fn trace_use<'a, 'ast>(ctx: &mut TracingContext<'a, 'ast>, scope: NodeIndex, tre
                         file: ctx.file.clone(),
                         previous_idents: ctx.previous_idents.clone(),
                         unresolved_ident: ident.clone(),
+                        has_leading_colon: ctx.has_leading_colon,
                     }
                     .into(),
                 );

@@ -1,0 +1,6 @@
+mod a {
+    mod b {
+        struct c {}
+        use ::c;
+    }
+}

@@ -257,29 +257,31 @@ impl Display for PathDisambiguationError {
 pub struct UnresolvedImportError {
     pub file: Rc<File>,
     pub previous_idents: Vec<syn::Ident>,
+    pub has_leading_colon: bool,
     pub unresolved_ident: syn::Ident,
 }
 
 impl Display for UnresolvedImportError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
-        let (reference_msg, reference_span) = match self.previous_idents.len() {
-            0 => (
-                format!("no `{}` crate or mod", self.unresolved_ident),
-                self.unresolved_ident.span(),
-            ),
-            _nonzero => (
-                format!(
-                    "no `{}` in `{}`",
-                    self.unresolved_ident,
-                    self.previous_idents
-                        .last()
-                        .map(|ident| ident.to_string())
-                        .unwrap()
+        let (reference_msg, reference_span) =
+            match (self.previous_idents.len(), self.has_leading_colon) {
+                (0, false) => (
+                    format!("no `{}` crate or mod", self.unresolved_ident),
+                    self.unresolved_ident.span(),
                 ),
-                self.unresolved_ident
-                    .span(),
-            ),
-        };
+                (0, true) => (format!("no `{}` crate in root", self.unresolved_ident), self.unresolved_ident.span()),
+                (_nonzero, _) => (
+                    format!(
+                        "no `{}` in `{}`",
+                        self.unresolved_ident,
+                        self.previous_idents
+                            .last()
+                            .map(|ident| ident.to_string())
+                            .unwrap()
+                    ),
+                    self.unresolved_ident.span(),
+                ),
+            };
         render_location(
             f,
             format!("unresolved import `{}`", self.unresolved_ident),
@@ -374,11 +376,7 @@ impl Display for InvalidRawIdentifierError {
         render_location(
             f,
             format!("`{}` cannot be a raw identifier", self.ident),
-            (
-                Reference::Error,
-                "",
-                self.ident.span(),
-            ),
+            (Reference::Error, "", self.ident.span()),
             vec![],
             &self.file.source,
             &self.file.content,
