@@ -1,0 +1,8 @@
+mod a {
+    pub struct b {}
+    pub trait d {}
+}
+
+use a::b;
+use a::c;
+use a::d;
