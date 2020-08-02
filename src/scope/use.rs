@@ -93,22 +93,6 @@ fn trace_use_entry_reenterable<'a, 'ast>(ctx: &mut TracingContext<'a, 'ast>, tre
 }
 
 /// Trace usages
-/// TODOs:
-/// * Handle "self" properly
-///     * self in a group
-///     * self at the beginning of a path (anywhere else is technically an error since it's a nop)
-/// * Handle "super", "super::super"
-/// * Disambiguate between crate imports and local module imports
-///     * A beginning :: explicitly refers to the global scope (handled in call)
-///     * A beginning `self` explicitly refers to the local scope
-///     * A beginning `super` explicitly refers to the parent scope
-///     * A beginning `crate` explicitly refers to the root scope
-///     * Any other word is implicitly the global or local scope
-///         * Error if there is a root with the same name as a module in the local scope.
-///             * Requires explicit disambiguation
-/// * Check scope visibility (!important)
-/// * Global imports
-///     * Roots need names: `crate` is "this" root, vs. any other identifier
 fn trace_use<'a, 'ast>(
     ctx: &mut TracingContext<'a, 'ast>,
     scope: NodeIndex,
@@ -153,11 +137,13 @@ fn trace_use<'a, 'ast>(
                     if path_ident == "self" {
                         scope
                     } else if path_ident == "super" {
-                        let use_grandparent = ctx
+                        if let Some(use_grandparent) = ctx
                             .scope_graph
                             .neighbors_directed(scope, Direction::Incoming)
-                            .next();
-                        if use_grandparent.is_none() {
+                            .next()
+                        {
+                            use_grandparent
+                        } else {
                             ctx.errors.push(
                                 TooManySupersError {
                                     file: ctx.file.clone(),
@@ -167,7 +153,6 @@ fn trace_use<'a, 'ast>(
                             );
                             return;
                         }
-                        use_grandparent.unwrap()
                     } else if path_ident == "crate" {
                         let mut root = scope;
                         while let Some(next_parent) = ctx
@@ -234,15 +219,8 @@ fn trace_use<'a, 'ast>(
                     child.unwrap()
                 }
             };
-            // Only check visibility if scope differs
-            let last_is_self = ctx
-                .previous_idents
-                .last()
-                .map(|ident| ident == "self")
-                .unwrap_or_default();
-            if !is_entry
-                && !last_is_self
-                && !super::visibility::is_target_visible(ctx.scope_graph, scope, new_scope).unwrap()
+            if !super::visibility::is_target_visible(ctx.scope_graph, ctx.dest, scope, new_scope)
+                .unwrap()
             {
                 ctx.errors.push(
                     VisibilityError {
@@ -381,7 +359,9 @@ fn trace_use<'a, 'ast>(
                 };
                 child
             };
-            if found_index.is_none() {
+            let index = if let Some(index) = found_index {
+                index
+            } else {
                 ctx.errors.push(
                     UnresolvedImportError {
                         file: ctx.file.clone(),
@@ -392,11 +372,9 @@ fn trace_use<'a, 'ast>(
                     .into(),
                 );
                 return;
-            }
-            let index = found_index.unwrap();
-            if !is_entry
-                && original_name_string != "self"
-                && !super::visibility::is_target_visible(ctx.scope_graph, scope, index).unwrap()
+            };
+            if !super::visibility::is_target_visible(ctx.scope_graph, ctx.dest, scope, index)
+                .unwrap()
             {
                 ctx.errors.push(
                     VisibilityError {

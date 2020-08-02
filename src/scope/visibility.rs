@@ -152,25 +152,62 @@ fn apply_visibility_crate<'ast>(
     Ok(())
 }
 
+/// Target is always a child of scope
+/// Check if the target is visible in the context of the original use
+/// Possibilities:
+/// * dest_parent == target_parent (self, always visible)
+/// * target_parent == root && dest_root == root (crate, always visible)
+/// * target == target_parent (use a::{self, b}, always visible)
+/// * target is actually a parent of target_parent (use super::super::b, always visible)
+/// * target_parent is a parent of dest_parent (use super::a, always visible)
+/// TODO: try to move special cases like supers & selfs here
 pub fn is_target_visible<'ast>(
     scope_graph: &mut ScopeGraph,
-    scope: NodeIndex,
+    dest: NodeIndex,
+    target_parent: NodeIndex,
     target: NodeIndex,
 ) -> Option<bool> {
-    let scope_parent = scope_graph
-        .neighbors_directed(scope, Direction::Incoming)
+    let dest_parent = scope_graph
+        .neighbors_directed(dest, Direction::Incoming)
         .next()
         .unwrap();
-    let target_parent = scope_graph
-        .neighbors_directed(target, Direction::Incoming)
-        .next()
-        .unwrap();
+    if dest_parent == target_parent
+        || target == target_parent
+        || scope_graph
+            .neighbors_directed(target_parent, Direction::Incoming)
+            .any(|n| n == target)
+        || scope_graph
+            .neighbors_directed(dest_parent, Direction::Incoming)
+            .any(|n| n == target_parent)
+    {
+        return Some(true);
+    }
+    dbg!(dest_parent, dest, target_parent, target);
+    let target_grandparent = scope_graph
+        .neighbors_directed(target_parent, Direction::Incoming)
+        .next();
+
     match &scope_graph[target_parent] {
-        Node::Root { exports, .. } => Some(exports.contains(&target)),
+        Node::Root { exports, .. } => {
+            let mut dest_root = dest_parent;
+            while let Some(next_dest_parent) = scope_graph
+                .neighbors_directed(dest_root, Direction::Incoming)
+                .next()
+            {
+                dest_root = next_dest_parent;
+            }
+            Some(target_parent == dest_root || exports.contains(&target))
+        }
         Node::Mod { exports, .. } => Some(
             exports
                 .get(&target)
-                .map(|exports| exports.contains(&scope_parent))
+                .map(|exports| {
+                    target_grandparent
+                        .as_ref()
+                        .map(|tgp| exports.contains(tgp))
+                        .unwrap_or_default()
+                        || exports.contains(&dest_parent)
+                })
                 .unwrap_or_default(),
         ),
         _ => None,
