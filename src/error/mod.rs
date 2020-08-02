@@ -6,7 +6,7 @@ use std::rc::Rc;
 use colored::Colorize;
 use proc_macro2::Span;
 
-use crate::file::{File, FileContentSource};
+use crate::find_file::{File, FileContentSource};
 
 mod render;
 use render::*;
