@@ -17,7 +17,9 @@ pub fn apply_visibility<'ast>(
     use syn::Item::*;
     use syn::*;
     let vis_and_file = match &scope_graph[node] {
-        Node::Item { item, file, .. } => match item {
+        Node::Var { item, file, .. }
+        | Node::Macro { item, file, .. }
+        | Node::Type { item, file, .. } => match item {
             ExternCrate(ItemExternCrate { vis, .. })
             | Type(ItemType { vis, .. })
             | Static(ItemStatic { vis, .. })

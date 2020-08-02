@@ -91,8 +91,15 @@ fn trace_use_entry_reenterable<'a, 'ast>(ctx: &mut TracingContext<'a, 'ast>, tre
     };
     trace_use(ctx, scope, tree, false);
 }
-
 /// Trace usages
+/// TODO: support ambiguous multi-uses like:
+/// ```
+/// mod a {
+///     pub mod b {}
+///     pub fn b() {}
+/// }
+/// use a::b;
+/// ```
 fn trace_use<'a, 'ast>(
     ctx: &mut TracingContext<'a, 'ast>,
     scope: NodeIndex,
@@ -299,12 +306,16 @@ fn trace_use<'a, 'ast>(
                     }
                 }
                 let child_finder = |child: &NodeIndex| match &ctx.scope_graph[*child] {
-                    Node::Item { ident, .. } => **ident == original_name_string,
+                    Node::Var { ident, .. }
+                    | Node::Macro { ident, .. }
+                    | Node::Type { ident, .. } => **ident == original_name_string,
+                    Node::Fn { item_fn, .. } => item_fn.sig.ident == original_name_string,
                     Node::Mod {
                         item_mod: ItemMod { ident, .. },
                         ..
                     } => *ident == original_name_string,
                     Node::Root { name: Some(n), .. } => original_name_string == *n,
+                    Node::Root { name: None, .. } => false,
                     Node::Use {
                         imports: other_use_imports,
                         ..
@@ -323,7 +334,6 @@ fn trace_use<'a, 'ast>(
                             })
                         })
                     }
-                    _ => false,
                 };
 
                 let child = if is_entry && ctx.has_leading_colon {
