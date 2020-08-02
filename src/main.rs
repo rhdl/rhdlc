@@ -94,8 +94,10 @@ mod test {
         for test in fs::read_dir(dir).unwrap() {
             let test = test.unwrap();
             let input = test.path().join("top.rhdl");
-            let expected = fs::read_to_string(test.path().join("expected.txt")).unwrap();
+            let expected = fs::read_to_string(test.path().join("expected.txt"))
+                .expect(&test.path().join("expected.txt").to_string_lossy());
             let output = super::entry(crate::find_file::FileContentSource::File(input));
+            eprintln!("{}", test.path().to_string_lossy());
             std::io::stderr()
                 .flush()
                 .ok()

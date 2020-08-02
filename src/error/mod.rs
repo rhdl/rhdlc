@@ -188,13 +188,13 @@ impl Display for MultipleDefinitionError {
             format!("the name `{}` is defined multiple times", self.name),
             (
                 Reference::Error,
-                &format!("previous definition of the type `{}` here", self.name),
-                self.original,
+                &format!("`{}` redefined here", self.name),
+                self.duplicate,
             ),
             vec![(
                 Reference::Info,
-                &format!("`{}` redefined here", self.name),
-                self.duplicate,
+                &format!("previous definition of the type `{}` here", self.name),
+                self.original,
             )],
             &self.file.src,
             &self.file.content,
@@ -473,11 +473,7 @@ impl Display for UnsupportedError {
         render_location(
             f,
             "unsupported feature",
-            (
-                Reference::Error,
-                self.reason,
-                self.span,
-            ),
+            (Reference::Error, self.reason, self.span),
             vec![],
             &self.file.src,
             &self.file.content,

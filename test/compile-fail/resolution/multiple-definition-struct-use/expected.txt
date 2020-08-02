@@ -1,7 +1,7 @@
 error: the name `a` is defined multiple times
- --> top.rhdl:1:7
+ --> top.rhdl:5:7
   |
 1 | struct a {}
-  |        ^ previous definition of the type `a` here
+  |        - previous definition of the type `a` here
 5 | use b::a;
-  |        - `a` redefined here
+  |        ^ `a` redefined here

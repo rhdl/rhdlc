@@ -369,7 +369,7 @@ impl<'ast> ScopeBuilder<'ast> {
             | Enum(ItemEnum { ident, .. })
             | Trait(ItemTrait { ident, .. })
             | TraitAlias(ItemTraitAlias { ident, .. })
-            | Union(ItemUnion { ident, .. }) => {
+             => {
                 let item_idx = self.scope_graph.add_node(Node::Type {
                     item,
                     ident,
@@ -401,6 +401,13 @@ impl<'ast> ScopeBuilder<'ast> {
                 self.scope_graph
                     .add_edge(*parent, impl_idx, "impl".to_string());
             }
+            Union(ItemUnion { ident, .. }) => {
+                self.errors.push(UnsupportedError {
+                    file: self.file_graph[*self.file_ancestry.last().unwrap()].clone(),
+                    span: ident.span(),
+                    reason: "RHDL cannot support unions or other unsafe code"
+                }.into());
+            },
             ExternCrate(ItemExternCrate { ident, .. }) => {
                 self.errors.push(UnsupportedError {
                     file: self.file_graph[*self.file_ancestry.last().unwrap()].clone(),

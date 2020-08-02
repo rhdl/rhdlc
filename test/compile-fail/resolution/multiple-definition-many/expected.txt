@@ -1,21 +1,28 @@
 error: the name `a` is defined multiple times
- --> top.rhdl:1:7
-  |
-1 | struct a {}
-  |        ^ previous definition of the type `a` here
-2 | enum a {}
-  |      - `a` redefined here
-error: the name `a` is defined multiple times
  --> top.rhdl:2:5
   |
+1 | struct a {}
+  |        - previous definition of the type `a` here
 2 | enum a {}
-  |      ^ previous definition of the type `a` here
-3 | union a {}
-  |       - `a` redefined here
+  |      ^ `a` redefined here
 error: the name `a` is defined multiple times
  --> top.rhdl:3:6
   |
-3 | union a {}
-  |       ^ previous definition of the type `a` here
-4 | trait a {}
-  |       - `a` redefined here
+2 | enum a {}
+  |      - previous definition of the type `a` here
+3 | trait a {}
+  |       ^ `a` redefined here
+error: the name `a` is defined multiple times
+ --> top.rhdl:4:6
+  |
+3 | trait a {}
+  |       - previous definition of the type `a` here
+4 | const a: bool = false;
+  |       ^ `a` redefined here
+error: the name `a` is defined multiple times
+ --> top.rhdl:5:5
+  |
+4 | const a: bool = false;
+  |       - previous definition of the type `a` here
+5 | type a = bool;
+  |      ^ `a` redefined here

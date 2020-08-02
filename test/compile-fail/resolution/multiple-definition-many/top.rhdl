@@ -1,4 +1,5 @@
 struct a {}
 enum a {}
-union a {}
 trait a {}
+const a: bool = false;
+type a = bool;
