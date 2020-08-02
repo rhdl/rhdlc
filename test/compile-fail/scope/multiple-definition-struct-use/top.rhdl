@@ -1,0 +1,5 @@
+struct a {}
+mod b {
+    pub enum a {}
+}
+use b::a;

@@ -8,6 +8,7 @@ use syn::Visibility;
 use super::{Node, ScopeGraph};
 
 /// If a node overrides its own visibility, make a note of it in the parent node(s) as an "export".
+/// TODO: pub in enum: "not allowed because it is implied"
 pub fn apply_visibility<'ast>(scope_graph: &mut ScopeGraph<'ast>, node: NodeIndex) {
     use syn::Item::*;
     use syn::*;

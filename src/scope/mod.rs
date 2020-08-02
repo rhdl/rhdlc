@@ -32,10 +32,10 @@
 ///             * heuristic guess by type (fn, struct, var, mod, etc.)
 ///         * fall back all the way to "not found" if nothing is similar
 use std::collections::HashMap;
+use std::convert::TryFrom;
 use std::fmt::Display;
 use std::rc::Rc;
 
-use log::error;
 use petgraph::{graph::NodeIndex, visit::EdgeRef, Direction, Graph};
 use syn::{spanned::Spanned, Ident, Item, ItemImpl, ItemMod, ItemUse};
 
@@ -200,7 +200,6 @@ impl<'ast> ScopeBuilder<'ast> {
         }
     }
 
-    /// TODO: check use items for conflicts, and remember that globs are optional and don't conflict
     fn find_name_conflicts(&mut self) {
         for node in self.scope_graph.node_indices() {
             let file = match &self.scope_graph[node] {
@@ -209,58 +208,47 @@ impl<'ast> ScopeBuilder<'ast> {
             };
 
             // Check the scopes for conflicts
-            let mut ident_map: HashMap<String, Vec<NodeIndex>> = HashMap::default();
+            let mut ident_map: HashMap<String, Vec<Name<'ast>>> = HashMap::default();
             for child in self.scope_graph.neighbors(node) {
-                if let Node::Item { ident, .. }
-                | Node::Mod {
-                    item_mod: ItemMod { ident, .. },
-                    ..
-                } = self.scope_graph[child]
-                {
-                    ident_map.entry(ident.to_string()).or_default().push(child)
+                match &self.scope_graph[child] {
+                    Node::Item { item, .. } => {
+                        if let Ok(name) = Name::try_from(*item) {
+                            ident_map.entry(name.to_string()).or_default().push(name);
+                        }
+                    }
+                    Node::Mod { item_mod, .. } => {
+                        let name = Name::from(*item_mod);
+                        ident_map.entry(name.to_string()).or_default().push(name);
+                    }
+                    Node::Use { imports, .. } => {
+                        imports.values().flatten().for_each(|item| {
+                            if let Ok(name) = Name::try_from(item) {
+                                ident_map.entry(name.to_string()).or_default().push(name);
+                            }
+                        });
+                    }
+                    _ => continue,
                 }
             }
-            for (ident, indices) in ident_map.iter() {
-                let mut claimed = vec![false; indices.len()];
+            for (ident, names) in ident_map.iter() {
+                let mut claimed = vec![false; names.len()];
                 // Unfortunately, need an O(n^2) check here on items with the same name
                 // As per petgraph docs, this is ordered most recent to least recent, so need to iterate in reverse
-                for i in (0..indices.len()).rev() {
-                    let (i_name, i_span) = match &self.scope_graph[indices[i]] {
-                        Node::Item {
-                            item: i_item,
-                            ident: i_ident,
-                            ..
-                        } => (Name::from(*i_item), i_ident.span()),
-                        Node::Mod {
-                            item_mod: i_item_mod,
-                            ..
-                        } => (Name::from(*i_item_mod), i_item_mod.ident.span()),
-                        _ => continue,
-                    };
+                for i in (0..names.len()).rev() {
+                    let i_name = &names[i];
                     for j in (0..i).rev() {
                         // Don't create repetitive errors by "claiming" duplicates for errors
                         if claimed[j] {
                             continue;
                         }
-                        let (j_name, j_span) = match &self.scope_graph[indices[j]] {
-                            Node::Item {
-                                item: j_item,
-                                ident: j_ident,
-                                ..
-                            } => (Name::from(*j_item), j_ident.span()),
-                            Node::Mod {
-                                item_mod: j_item_mod,
-                                ..
-                            } => (Name::from(*j_item_mod), j_item_mod.ident.span()),
-                            _ => continue,
-                        };
+                        let j_name = &names[j];
                         if i_name.conflicts_with(&j_name) {
                             self.errors.push(
                                 MultipleDefinitionError {
                                     file: file.clone(),
                                     name: ident.clone(),
-                                    original: i_span,
-                                    duplicate: j_span,
+                                    original: i_name.span(),
+                                    duplicate: j_name.span(),
                                 }
                                 .into(),
                             );
