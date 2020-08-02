@@ -232,20 +232,20 @@ impl Display for SpecialIdentNotAtStartOfPathError {
 }
 
 #[derive(Debug)]
-pub struct PathDisambiguationError {
+pub struct DisambiguationError {
     pub file: Rc<File>,
-    pub path_ident: syn::Ident,
+    pub ident: syn::Ident,
 }
 
-impl Display for PathDisambiguationError {
+impl Display for DisambiguationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
         render_location(
             f,
             format!(
-                "`{}` is ambiguous (name vs any other name during import resolution)",
-                self.path_ident
+                "`{}` is ambiguous (name versus other names found during scoping)",
+                self.ident
             ),
-            (Reference::Error, "ambiguous name", self.path_ident.span()),
+            (Reference::Error, "ambiguous name", self.ident.span()),
             vec![],
             &self.file.source,
             &self.file.content,
@@ -440,7 +440,7 @@ impl Display for GlobAtEntryError {
 
 error!(ScopeError {
     MultipleDefinitionError => MultipleDefinitionError,
-    PathDisambiguationError => PathDisambiguationError,
+    DisambiguationError => DisambiguationError,
     SpecialIdentNotAtStartOfPathError => SpecialIdentNotAtStartOfPathError,
     SelfNameNotInGroupError => SelfNameNotInGroupError,
     UnresolvedImportError => UnresolvedImportError,

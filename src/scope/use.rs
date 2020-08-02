@@ -6,7 +6,7 @@ use syn::{ItemMod, UseName, UseRename, UseTree};
 
 use super::{File, Node, ScopeError, ScopeGraph};
 use crate::error::{
-    GlobAtEntryError, GlobalPathCannotHaveSpecialIdentError, PathDisambiguationError,
+    DisambiguationError, GlobAtEntryError, GlobalPathCannotHaveSpecialIdentError,
     SelfNameNotInGroupError, SpecialIdentNotAtStartOfPathError, TooManySupersError,
     UnresolvedImportError, VisibilityError,
 };
@@ -181,8 +181,23 @@ fn trace_use<'a, 'ast>(
                             .externals(Direction::Incoming)
                             .find(same_ident_finder)
                     } else if is_entry {
-                        // TODO: path disambiguation error
-                        ctx.scope_graph.neighbors(scope).find(same_ident_finder)
+                        let global_child = ctx
+                            .scope_graph
+                            .externals(Direction::Incoming)
+                            .find(same_ident_finder);
+                        let local_child = ctx.scope_graph.neighbors(scope).find(same_ident_finder);
+
+                        if let (Some(_gc), Some(_lc)) = (global_child, local_child) {
+                            ctx.errors.push(
+                                DisambiguationError {
+                                    file: ctx.file.clone(),
+                                    ident: path.ident.clone(),
+                                }
+                                .into(),
+                            );
+                            return;
+                        }
+                        global_child.or(local_child)
                     } else {
                         ctx.scope_graph.neighbors(scope).find(same_ident_finder)
                     };
@@ -272,10 +287,23 @@ fn trace_use<'a, 'ast>(
                     ctx.scope_graph.externals(Direction::Incoming).find(finder)
                 } else if is_entry {
                     // todo: disambiguation error
-                    ctx.scope_graph
+                    let global_child = ctx.scope_graph.externals(Direction::Incoming).find(finder);
+                    let local_child = ctx
+                        .scope_graph
                         .neighbors(scope)
                         .filter(|child| *child != ctx.dest)
-                        .find(finder)
+                        .find(finder);
+                    if let (Some(_gc), Some(_lc)) = (global_child, local_child) {
+                        ctx.errors.push(
+                            DisambiguationError {
+                                file: ctx.file.clone(),
+                                ident: ident.clone(),
+                            }
+                            .into(),
+                        );
+                        return;
+                    }
+                    global_child.or(local_child)
                 } else {
                     // todo: unwrap_or_else look for glob implicit imports
                     ctx.scope_graph
