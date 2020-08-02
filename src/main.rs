@@ -62,60 +62,42 @@ fn entry(src: resolve::ResolutionSource) -> String {
 mod test {
     #[test]
     fn compile_fail_file_resolution() {
-        use pretty_assertions::assert_eq;
-        use std::fs;
-
-        for test in fs::read_dir("./test/compile-fail/file-resolution").unwrap() {
-            let test = test.unwrap();
-            let input = test.path().join("top.rhdl");
-            dbg!(input.to_string_lossy());
-            let expected = fs::read_to_string(test.path().join("expected.txt")).unwrap();
-            let output = super::entry(crate::resolve::ResolutionSource::File(input));
-            assert_eq!(output, expected);
-        }
+        test_looper("./test/compile-fail/file-resolution");
     }
 
     #[test]
     fn compile_fail_scope() {
-        use pretty_assertions::assert_eq;
-        use std::fs;
-
-        for test in fs::read_dir("./test/compile-fail/scope").unwrap() {
-            let test = test.unwrap();
-            let input = test.path().join("top.rhdl");
-            dbg!(input.to_string_lossy());
-            let expected = fs::read_to_string(test.path().join("expected.txt")).unwrap();
-            let output = super::entry(crate::resolve::ResolutionSource::File(input));
-            assert_eq!(output, expected);
-        }
+        test_looper("./test/compile-fail/scope");
     }
 
     #[test]
     fn compile_fail_identifier() {
-        use pretty_assertions::assert_eq;
-        use std::fs;
-
-        for test in fs::read_dir("./test/compile-fail/identifier").unwrap() {
-            let test = test.unwrap();
-            let input = test.path().join("top.rhdl");
-            dbg!(input.to_string_lossy());
-            let expected = fs::read_to_string(test.path().join("expected.txt")).unwrap();
-            let output = super::entry(crate::resolve::ResolutionSource::File(input));
-            assert_eq!(output, expected);
-        }
+        test_looper("./test/compile-fail/identifier");
     }
 
     #[test]
     fn compile_fail_parse() {
+        test_looper("./test/compile-fail/parse");
+    }
+
+    fn test_looper(dir: &str) {
         use pretty_assertions::assert_eq;
         use std::fs;
-
-        for test in fs::read_dir("./test/compile-fail/parse").unwrap() {
+        use std::io::Write;
+        for test in fs::read_dir(dir).unwrap() {
             let test = test.unwrap();
             let input = test.path().join("top.rhdl");
             dbg!(input.to_string_lossy());
             let expected = fs::read_to_string(test.path().join("expected.txt")).unwrap();
             let output = super::entry(crate::resolve::ResolutionSource::File(input));
+            std::io::stderr()
+                .flush()
+                .ok()
+                .expect("Could not flush stderr");
+            std::io::stdout()
+                .flush()
+                .ok()
+                .expect("Could not flush stdout");
             assert_eq!(output, expected);
         }
     }
