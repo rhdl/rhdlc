@@ -48,22 +48,26 @@ The compiler for RHDL that finds errors/warnings before transpiling to the targe
 
 ### Concepts
 
-#### Resolver
+#### File Finder
 
 Finds code for modules in separate files from the top-level module.
 
-#### Scope Builder
+#### Resolver
 
 Builds a scope tree and checks it for scope-related errors, like missing types, duplicate names, bad imports, bad pubs, etc.
 
-The scope checker, applied to `rhdlc` itself:
+The scope tree of `rhdlc` itself:
 
-![Scope graph](scope.svg)
+![Scope tree](scope.svg)
 
 #### Type Checker (TODO)
 
 WIP
 
-## rhdl commons
+#### VHDL IR
+
+Use VHDL as an intermediate representation, since it is strongly typed and thus it's easier to avoid ambiguity-related synthesis errors.
+
+## rhdl "standard library"
 
 WIP
