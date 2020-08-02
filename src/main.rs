@@ -64,22 +64,27 @@ fn entry(src: FileContentSource) -> String {
 mod test {
     #[test]
     fn compile_fail_file_resolution() {
-        test_looper("./test/compile-fail/find-file");
+        test_looper("./test/compile-fail/find-file")
     }
 
     #[test]
     fn compile_fail_scope() {
-        test_looper("./test/compile-fail/resolution");
+        test_looper("./test/compile-fail/resolution")
     }
 
     #[test]
     fn compile_fail_identifier() {
-        test_looper("./test/compile-fail/identifier");
+        test_looper("./test/compile-fail/identifier")
     }
 
     #[test]
     fn compile_fail_parse() {
-        test_looper("./test/compile-fail/parse");
+        test_looper("./test/compile-fail/parse")
+    }
+
+    #[test]
+    fn compile_fail_unsupported() {
+        test_looper("./test/compile-fail/unsupported")
     }
 
     fn test_looper(dir: &str) {
