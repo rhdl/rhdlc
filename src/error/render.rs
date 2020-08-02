@@ -6,7 +6,7 @@ use std::path::Path;
 use colored::Colorize;
 use proc_macro2::Span;
 
-use crate::resolve::ResolutionSource;
+use crate::find_file::FileContentSource;
 
 const MOD_FILE_STEM: &str = "mod";
 const UNKNOWN_FILE: &str = "???.rhdl";
@@ -26,14 +26,14 @@ pub fn render_location<'a, C>(
     cause: C,
     main_reference: (Reference, &'a str, Span),
     mut references: Vec<(Reference, &'a str, Span)>,
-    source: &ResolutionSource,
+    src: &FileContentSource,
     code: &str,
 ) -> fmt::Result
 where
     C: Display,
 {
-    let filepath = match source {
-        ResolutionSource::File(path) => {
+    let filepath = match src {
+        FileContentSource::File(path) => {
             let filename = path
                 .file_name()
                 .map(OsStr::to_string_lossy)
@@ -55,7 +55,7 @@ where
                 filename
             }
         }
-        ResolutionSource::Stdin => "<stdin>".into(),
+        FileContentSource::Stdin => "<stdin>".into(),
     };
 
     let main_max_line = main_reference.2.start().max(main_reference.2.end());

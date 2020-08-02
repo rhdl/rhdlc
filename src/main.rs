@@ -6,9 +6,11 @@ use petgraph::dot::Dot;
 use std::env;
 
 mod error;
+mod find_file;
 mod ident;
-mod resolve;
 mod scope;
+
+use find_file::{FileContentSource, FileFinder};
 
 fn main() {
     if env::var("RUST_LOG").is_err() {
@@ -24,26 +26,26 @@ fn main() {
     .get_matches();
 
     let src = match matches.value_of("FILE") {
-        Some("-") | None => resolve::ResolutionSource::Stdin,
-        Some(path) => resolve::ResolutionSource::File(path.into()),
+        Some("-") | None => FileContentSource::Stdin,
+        Some(path) => FileContentSource::File(path.into()),
     };
 
     let out = entry(src);
     eprint!("{}", out);
 }
 
-fn entry(src: resolve::ResolutionSource) -> String {
+fn entry(src: FileContentSource) -> String {
     let mut acc = String::default();
 
-    let mut resolver = resolve::Resolver::default();
-    resolver.resolve_tree(src);
-    resolver
+    let mut finder = FileFinder::default();
+    finder.find_tree(src);
+    finder
         .errors
         .iter()
         .map(|err| format!("{}", err))
         .for_each(|err| acc += &err);
 
-    let mut scope_builder = scope::ScopeBuilder::from(&resolver.file_graph);
+    let mut scope_builder = scope::ScopeBuilder::from(&finder.file_graph);
     scope_builder.build_graph();
     scope_builder.check_graph();
     scope_builder
@@ -89,7 +91,7 @@ mod test {
             let input = test.path().join("top.rhdl");
             dbg!(input.to_string_lossy());
             let expected = fs::read_to_string(test.path().join("expected.txt")).unwrap();
-            let output = super::entry(crate::resolve::ResolutionSource::File(input));
+            let output = super::entry(crate::find_file::FileContentSource::File(input));
             std::io::stderr()
                 .flush()
                 .ok()

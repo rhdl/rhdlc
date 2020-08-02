@@ -40,7 +40,7 @@ use petgraph::{graph::NodeIndex, visit::EdgeRef, Direction, Graph};
 use syn::{spanned::Spanned, Ident, Item, ItemImpl, ItemMod, ItemUse};
 
 use crate::error::{InvalidRawIdentifierError, MultipleDefinitionError, ScopeError};
-use crate::resolve::{File, FileGraph};
+use crate::find_file::{File, FileGraph};
 
 mod name;
 use name::Name;

@@ -6,7 +6,7 @@ use std::rc::Rc;
 use colored::Colorize;
 use proc_macro2::Span;
 
-use crate::resolve::{File, ResolutionSource};
+use crate::file::{File, FileContentSource};
 
 mod render;
 use render::*;
@@ -47,22 +47,22 @@ macro_rules! error {
 #[derive(Debug)]
 pub struct PreciseSynParseError {
     pub cause: syn::Error,
-    pub res: ResolutionSource,
+    pub src: FileContentSource,
     pub code: String,
 }
 
 impl Display for PreciseSynParseError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let msg = match &self.res {
-            ResolutionSource::File(_) => "could not parse file",
-            ResolutionSource::Stdin => "could not parse stdin",
+        let msg = match &self.src {
+            FileContentSource::File(_) => "could not parse file",
+            FileContentSource::Stdin => "could not parse stdin",
         };
         render_location(
             f,
             msg,
             (Reference::Error, &self.cause.to_string(), self.cause.span()),
             vec![],
-            &self.res,
+            &self.src,
             &self.code,
         )
     }
@@ -95,7 +95,7 @@ impl Display for DuplicateError {
             ),
             (Reference::Error, "", self.span.span),
             vec![],
-            &self.span.file.source,
+            &self.span.file.src,
             &self.span.file.content,
         )
     }
@@ -124,7 +124,7 @@ impl Display for WorkingDirectoryError {
 #[derive(Debug)]
 pub struct WrappedIoError {
     pub cause: std::io::Error,
-    pub res: ResolutionSource,
+    pub src: FileContentSource,
     pub span: Option<SpanSource>,
 }
 impl Display for WrappedIoError {
@@ -133,9 +133,9 @@ impl Display for WrappedIoError {
             Some(span) => {
                 let ident = span.ident_path.last().unwrap();
 
-                let source = match &self.res {
-                    ResolutionSource::Stdin => "<stdin>".to_string().into(),
-                    ResolutionSource::File(path) => path.to_string_lossy(),
+                let source = match &self.src {
+                    FileContentSource::Stdin => "<stdin>".to_string().into(),
+                    FileContentSource::File(path) => path.to_string_lossy(),
                 };
                 render_location(
                     f,
@@ -146,14 +146,14 @@ impl Display for WrappedIoError {
                         span.span,
                     ),
                     vec![],
-                    &span.file.source,
+                    &span.file.src,
                     &span.file.content,
                 )
             }
             None => {
-                let path = match &self.res {
-                    ResolutionSource::File(path) => path.to_string_lossy().into(),
-                    ResolutionSource::Stdin => "<stdin>".to_string(),
+                let path = match &self.src {
+                    FileContentSource::File(path) => path.to_string_lossy().into(),
+                    FileContentSource::Stdin => "<stdin>".to_string(),
                 };
                 writeln!(
                     f,
@@ -166,7 +166,7 @@ impl Display for WrappedIoError {
     }
 }
 
-error!(ResolveError {
+error!(FileFindingError {
     IoError => WrappedIoError,
     ParseError => PreciseSynParseError,
     WorkingDirectoryError => WorkingDirectoryError,
@@ -196,7 +196,7 @@ impl Display for MultipleDefinitionError {
                 &format!("`{}` redefined here", self.name),
                 self.duplicate,
             )],
-            &self.file.source,
+            &self.file.src,
             &self.file.content,
         )
     }
@@ -225,7 +225,7 @@ impl Display for SpecialIdentNotAtStartOfPathError {
                 self.path_ident.span(),
             ),
             vec![],
-            &self.file.source,
+            &self.file.src,
             &self.file.content,
         )
     }
@@ -247,7 +247,7 @@ impl Display for DisambiguationError {
             ),
             (Reference::Error, "ambiguous name", self.ident.span()),
             vec![],
-            &self.file.source,
+            &self.file.src,
             &self.file.content,
         )
     }
@@ -290,7 +290,7 @@ impl Display for UnresolvedImportError {
             format!("unresolved import `{}`", self.unresolved_ident),
             (Reference::Error, &reference_msg, reference_span),
             vec![],
-            &self.file.source,
+            &self.file.src,
             &self.file.content,
         )
     }
@@ -312,7 +312,7 @@ impl Display for SelfNameNotInGroupError {
             ),
             (Reference::Error, "", self.name_ident.span()),
             vec![],
-            &self.file.source,
+            &self.file.src,
             &self.file.content,
         )
     }
@@ -335,7 +335,7 @@ impl Display for TooManySupersError {
                 self.ident.span(),
             ),
             vec![],
-            &self.file.source,
+            &self.file.src,
             &self.file.content,
         )
     }
@@ -362,7 +362,7 @@ impl Display for VisibilityError {
                 self.name_ident.span(),
             ),
             vec![],
-            &self.name_file.source,
+            &self.name_file.src,
             &self.name_file.content,
         )
     }
@@ -381,7 +381,7 @@ impl Display for InvalidRawIdentifierError {
             format!("`{}` cannot be a raw identifier", self.ident),
             (Reference::Error, "", self.ident.span()),
             vec![],
-            &self.file.source,
+            &self.file.src,
             &self.file.content,
         )
     }
@@ -404,7 +404,7 @@ impl Display for GlobalPathCannotHaveSpecialIdentError {
                 self.path_ident.span(),
             ),
             vec![],
-            &self.file.source,
+            &self.file.src,
             &self.file.content,
         )
     }
@@ -432,7 +432,7 @@ impl Display for GlobAtEntryError {
                 self.star_span,
             ),
             vec![],
-            &self.file.source,
+            &self.file.src,
             &self.file.content,
         )
     }
@@ -455,7 +455,7 @@ impl Display for IncorrectVisibilityError {
                 self.vis_span,
             ),
             vec![],
-            &self.file.source,
+            &self.file.src,
             &self.file.content,
         )
     }
