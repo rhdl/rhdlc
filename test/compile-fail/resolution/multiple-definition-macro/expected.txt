@@ -1,0 +1,7 @@
+error: the name `a` is defined multiple times
+ --> top.rhdl:6:13
+  |
+1 | macro_rules! a {
+  |              - previous definition of the type `a` here
+6 | macro_rules! a {
+  |              ^ `a` redefined here
