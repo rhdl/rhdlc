@@ -368,7 +368,6 @@ impl<'ast> ScopeBuilder<'ast> {
             | Struct(ItemStruct { ident, .. })
             | Enum(ItemEnum { ident, .. })
             | Trait(ItemTrait { ident, .. })
-            | TraitAlias(ItemTraitAlias { ident, .. })
              => {
                 let item_idx = self.scope_graph.add_node(Node::Type {
                     item,
@@ -405,9 +404,16 @@ impl<'ast> ScopeBuilder<'ast> {
                 self.errors.push(UnsupportedError {
                     file: self.file_graph[*self.file_ancestry.last().unwrap()].clone(),
                     span: ident.span(),
-                    reason: "RHDL cannot support unions or other unsafe code"
+                    reason: "RHDL cannot support unions and other unsafe code: safety is not yet formally defined"
                 }.into());
             },
+            TraitAlias(ItemTraitAlias { ident, .. }) => {
+                self.errors.push(UnsupportedError {
+                    file: self.file_graph[*self.file_ancestry.last().unwrap()].clone(),
+                    span: ident.span(),
+                    reason: "RHDL does not support trait aliases as they are still experimental in Rust"
+                }.into());
+            }
             ExternCrate(ItemExternCrate { ident, .. }) => {
                 self.errors.push(UnsupportedError {
                     file: self.file_graph[*self.file_ancestry.last().unwrap()].clone(),
@@ -462,7 +468,7 @@ pub enum Node<'ast> {
         file: Rc<File>,
     },
     Type {
-        /// An enum, struct, trait, trait alias, type, or union
+        /// An enum, struct, trait, or type
         item: &'ast Item,
         ident: &'ast Ident,
         file: Rc<File>,
