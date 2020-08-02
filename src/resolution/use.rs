@@ -5,7 +5,7 @@ use log::error;
 use petgraph::{graph::NodeIndex, Direction};
 use syn::{ItemMod, ItemUse, UseName, UseRename, UseTree};
 
-use super::{File, Node, ScopeError, ScopeGraph};
+use super::{File, Node, ResolutionError, ScopeGraph};
 use crate::error::{
     DisambiguationError, GlobAtEntryError, GlobalPathCannotHaveSpecialIdentError,
     SelfNameNotInGroupError, SpecialIdentNotAtStartOfPathError, TooManySupersError,
@@ -30,7 +30,7 @@ pub enum UseType<'ast> {
 
 struct TracingContext<'a, 'ast> {
     scope_graph: &'a mut ScopeGraph<'ast>,
-    errors: &'a mut Vec<ScopeError>,
+    errors: &'a mut Vec<ResolutionError>,
     file: Rc<File>,
     dest: NodeIndex,
     previous_idents: Vec<syn::Ident>,
@@ -40,7 +40,7 @@ struct TracingContext<'a, 'ast> {
 
 pub fn trace_use_entry<'a, 'ast>(
     scope_graph: &'a mut ScopeGraph<'ast>,
-    errors: &mut Vec<ScopeError>,
+    errors: &mut Vec<ResolutionError>,
     dest: NodeIndex,
 ) {
     let (tree, file, has_leading_colon) = match &scope_graph[dest] {

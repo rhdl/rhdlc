@@ -6,14 +6,14 @@ use petgraph::{graph::NodeIndex, Direction};
 use syn::{spanned::Spanned, Visibility};
 
 use super::{Node, ScopeGraph};
-use crate::error::{IncorrectVisibilityError, ScopeError};
+use crate::error::{IncorrectVisibilityError, ResolutionError};
 
 /// If a node overrides its own visibility, make a note of it in the parent node(s) as an "export".
 /// TODO: pub in enum: "not allowed because it is implied"
 pub fn apply_visibility<'ast>(
     scope_graph: &mut ScopeGraph<'ast>,
     node: NodeIndex,
-) -> Result<(), ScopeError> {
+) -> Result<(), ResolutionError> {
     use syn::Item::*;
     use syn::*;
     let vis_and_file = match &scope_graph[node] {
@@ -89,7 +89,7 @@ pub fn apply_visibility<'ast>(
 fn apply_visibility_pub<'ast>(
     scope_graph: &mut ScopeGraph<'ast>,
     node: NodeIndex,
-) -> Result<(), ScopeError> {
+) -> Result<(), ResolutionError> {
     let parents: Vec<NodeIndex> = scope_graph
         .neighbors_directed(node, Direction::Incoming)
         .collect();
@@ -118,7 +118,7 @@ fn apply_visibility_pub<'ast>(
 fn apply_visibility_crate<'ast>(
     scope_graph: &mut ScopeGraph<'ast>,
     node: NodeIndex,
-) -> Result<(), ScopeError> {
+) -> Result<(), ResolutionError> {
     let parents: Vec<NodeIndex> = scope_graph
         .neighbors_directed(node, Direction::Incoming)
         .collect();

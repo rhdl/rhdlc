@@ -242,7 +242,7 @@ impl Display for DisambiguationError {
         render_location(
             f,
             format!(
-                "`{}` is ambiguous (name versus other names found during scoping)",
+                "`{}` is ambiguous (name versus other names found during resolution)",
                 self.ident
             ),
             (Reference::Error, "ambiguous name", self.ident.span()),
@@ -461,7 +461,7 @@ impl Display for IncorrectVisibilityError {
     }
 }
 
-error!(ScopeError {
+error!(ResolutionError {
     MultipleDefinitionError => MultipleDefinitionError,
     DisambiguationError => DisambiguationError,
     SpecialIdentNotAtStartOfPathError => SpecialIdentNotAtStartOfPathError,

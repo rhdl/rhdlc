@@ -39,7 +39,7 @@ use std::rc::Rc;
 use petgraph::{graph::NodeIndex, visit::EdgeRef, Direction, Graph};
 use syn::{spanned::Spanned, Ident, Item, ItemImpl, ItemMod, ItemUse};
 
-use crate::error::{InvalidRawIdentifierError, MultipleDefinitionError, ScopeError};
+use crate::error::{InvalidRawIdentifierError, MultipleDefinitionError, ResolutionError};
 use crate::find_file::{File, FileGraph};
 
 mod name;
@@ -56,7 +56,7 @@ pub type ScopeGraph<'ast> = Graph<Node<'ast>, String>;
 pub struct ScopeBuilder<'ast> {
     pub file_graph: &'ast FileGraph,
     pub scope_graph: ScopeGraph<'ast>,
-    pub errors: Vec<ScopeError>,
+    pub errors: Vec<ResolutionError>,
     scope_ancestry: Vec<NodeIndex>,
     file_ancestry: Vec<NodeIndex>,
 }
@@ -110,7 +110,7 @@ impl<'ast> ScopeBuilder<'ast> {
                     None
                 }
             })
-            .collect::<Vec<ScopeError>>();
+            .collect::<Vec<ResolutionError>>();
         self.errors.append(&mut visibility_errors);
 
         // Stage three: trace use nodes

@@ -8,9 +8,10 @@ use std::env;
 mod error;
 mod find_file;
 mod ident;
-mod scope;
+mod resolution;
 
 use find_file::{FileContentSource, FileFinder};
+use resolution::ScopeBuilder;
 
 fn main() {
     if env::var("RUST_LOG").is_err() {
@@ -45,7 +46,7 @@ fn entry(src: FileContentSource) -> String {
         .map(|err| format!("{}", err))
         .for_each(|err| acc += &err);
 
-    let mut scope_builder = scope::ScopeBuilder::from(&finder.file_graph);
+    let mut scope_builder = ScopeBuilder::from(&finder.file_graph);
     scope_builder.build_graph();
     scope_builder.check_graph();
     scope_builder
