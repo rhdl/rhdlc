@@ -170,6 +170,8 @@ fn trace_use<'a, 'ast>(
                 }
                 // Default case: enter the matching child scope
                 _ => {
+                    // TODO: check uses for same ident
+                    // i.e. use a::b; use b::c;
                     let same_ident_finder = |child: &NodeIndex| {
                         match &ctx.scope_graph[*child] {
                             Node::Mod { item_mod, .. } => item_mod.ident == path.ident.to_string(),
