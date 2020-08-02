@@ -1,7 +1,7 @@
 use std::convert::TryFrom;
 
 use log::{debug, error, warn};
-use syn::{Ident, Item, ItemMod, ItemFn};
+use syn::{Ident, ImplItem, Item, ItemFn, ItemMod};
 
 use super::r#use::UseType;
 
@@ -35,13 +35,11 @@ impl<'ast> Name<'ast> {
                 _ => false,
             },
             Type(_) => match other {
-                Fn(_) | Var(_) | Type(_) | Mod(_) | Crate(_) | UseName(_)
-                | UseRename(_) => true,
+                Fn(_) | Var(_) | Type(_) | Mod(_) | Crate(_) | UseName(_) | UseRename(_) => true,
                 Macro(_) => false,
             },
             UseName(_) | UseRename(_) => match other {
-                Fn(_) | Var(_) | Type(_) | Mod(_) | Crate(_) | UseName(_)
-                | UseRename(_) => true,
+                Fn(_) | Var(_) | Type(_) | Mod(_) | Crate(_) | UseName(_) | UseRename(_) => true,
                 Macro(_) => false,
             },
             Macro(_) => match other {
@@ -55,8 +53,8 @@ impl<'ast> Name<'ast> {
     pub fn has_same_ident(&self, other: &Name<'ast>) -> bool {
         use Name::*;
         match self {
-            Fn(ident) | Var(ident) | Macro(ident) | Type(ident) | Mod(ident)
-            | Crate(ident) | UseName(ident) | UseRename(ident) => match other {
+            Fn(ident) | Var(ident) | Macro(ident) | Type(ident) | Mod(ident) | Crate(ident)
+            | UseName(ident) | UseRename(ident) => match other {
                 Fn(other_ident)
                 | Var(other_ident)
                 | Macro(other_ident)
@@ -77,8 +75,8 @@ impl<'ast> Name<'ast> {
     pub fn ident(&self) -> &syn::Ident {
         use Name::*;
         match self {
-            Fn(ident) | Var(ident) | Macro(ident) | Type(ident) | Mod(ident)
-            | Crate(ident) | UseName(ident) | UseRename(ident) => ident,
+            Fn(ident) | Var(ident) | Macro(ident) | Type(ident) | Mod(ident) | Crate(ident)
+            | UseName(ident) | UseRename(ident) => ident,
         }
     }
 
@@ -122,6 +120,19 @@ impl<'ast> TryFrom<&UseType<'ast>> for Name<'ast> {
         match use_type {
             Name { name, .. } => Ok(Self::UseName(&name.ident)),
             Rename { rename, .. } => Ok(Self::UseRename(&rename.rename)),
+            _ => Err(()),
+        }
+    }
+}
+
+impl<'ast> TryFrom<&'ast ImplItem> for Name<'ast> {
+    type Error = ();
+    fn try_from(impl_item: &'ast ImplItem) -> Result<Self, Self::Error> {
+        use ImplItem::*;
+        match impl_item {
+            Const(r#const) => Ok(Self::Var(&r#const.ident)),
+            Method(r#fn) => Ok(Self::Fn(&r#fn.sig.ident)),
+            Type(r#type) => Ok(Self::Type(&r#type.ident)),
             _ => Err(()),
         }
     }

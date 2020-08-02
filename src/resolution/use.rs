@@ -316,6 +316,7 @@ fn trace_use<'a, 'ast>(
                     } => *ident == original_name_string,
                     Node::Root { name: Some(n), .. } => original_name_string == *n,
                     Node::Root { name: None, .. } => false,
+                    Node::Impl { .. } => false,
                     Node::Use {
                         imports: other_use_imports,
                         ..

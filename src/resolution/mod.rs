@@ -152,6 +152,14 @@ impl<'ast> ScopeBuilder<'ast> {
                     })
                     .flatten()
                     .collect::<Vec<(Name<'ast>, Rc<File>)>>(),
+                Node::Impl {
+                    item_impl: ItemImpl { items, .. },
+                    file,
+                    ..
+                } => items
+                    .iter()
+                    .filter_map(|item| Name::try_from(item).ok().map(|name| (name, file.clone())))
+                    .collect(),
             })
             .flatten()
             .filter(|(name, _)| !name.can_be_raw())
@@ -193,6 +201,17 @@ impl<'ast> ScopeBuilder<'ast> {
                                 ident_map.entry(name.to_string()).or_default().push(name);
                             }
                         });
+                    }
+                    Node::Impl {
+                        item_impl: ItemImpl { items, .. },
+                        ..
+                    } => {
+                        items
+                            .iter()
+                            .filter_map(|item| Name::try_from(item).ok())
+                            .for_each(|name| {
+                                ident_map.entry(name.to_string()).or_default().push(name);
+                            });
                     }
                     Node::Root { .. } => continue,
                 }
@@ -372,6 +391,16 @@ impl<'ast> ScopeBuilder<'ast> {
                     "use".to_string(),
                 );
             }
+            Impl(item_impl) => {
+                let impl_idx = self.scope_graph.add_node(Node::Impl {
+                    item_impl,
+                    file: self.file_graph[*self.file_ancestry.last().unwrap()].clone(),
+                    r#for: None,
+                });
+                let parent = self.scope_ancestry.last().unwrap();
+                self.scope_graph
+                    .add_edge(*parent, impl_idx, "impl".to_string());
+            }
             ExternCrate(ItemExternCrate { ident, .. }) => {
                 self.errors.push(UnsupportedError {
                     file: self.file_graph[*self.file_ancestry.last().unwrap()].clone(),
@@ -379,6 +408,7 @@ impl<'ast> ScopeBuilder<'ast> {
                     reason: "RHDL does not support Rust 2015 syntax, you can safely remove this. :)"
                 }.into());
             }
+
             other => {
                 self.errors.push(
                     UnsupportedError {
@@ -438,6 +468,13 @@ pub enum Node<'ast> {
         /// The file backing the content of this mod when content = None, if available
         content_file: Option<Rc<File>>,
     },
+    Impl {
+        item_impl: &'ast ItemImpl,
+        file: Rc<File>,
+        /// impl _ for **NodeIndex**
+        /// which cannot be resolved at first
+        r#for: Option<NodeIndex>,
+    },
     Use {
         item_use: &'ast ItemUse,
         /// Imports: (from root/mod to list of items)
@@ -456,6 +493,7 @@ impl<'ast> Display for Node<'ast> {
             Self::Var { ident, .. } => write!(f, "var {}", ident),
             Self::Type { ident, .. } => write!(f, "type {}", ident),
             Self::Mod { item_mod, .. } => write!(f, "mod {}", item_mod.ident),
+            Self::Impl { item_impl, .. } => write!(f, "impl"),
             Self::Use {
                 item_use, imports, ..
             } => {
