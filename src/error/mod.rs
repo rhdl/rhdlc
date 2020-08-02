@@ -438,6 +438,29 @@ impl Display for GlobAtEntryError {
     }
 }
 
+#[derive(Debug)]
+pub struct IncorrectVisibilityError {
+    pub file: Rc<File>,
+    pub vis_span: proc_macro2::Span,
+}
+
+impl Display for IncorrectVisibilityError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        render_location(
+            f,
+            "incorrect visibility",
+            (
+                Reference::Error,
+                "expected crate, super, or a path",
+                self.vis_span,
+            ),
+            vec![],
+            &self.file.source,
+            &self.file.content,
+        )
+    }
+}
+
 error!(ScopeError {
     MultipleDefinitionError => MultipleDefinitionError,
     DisambiguationError => DisambiguationError,
@@ -449,4 +472,5 @@ error!(ScopeError {
     InvalidRawIdentifierError => InvalidRawIdentifierError,
     GlobalPathCannotHaveSpecialIdentError => GlobalPathCannotHaveSpecialIdentError,
     GlobAtEntryError => GlobAtEntryError,
+    IncorrectVisibilityError => IncorrectVisibilityError,
 });

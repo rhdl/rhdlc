@@ -100,9 +100,18 @@ impl<'ast> ScopeBuilder<'ast> {
         }
 
         // Stage two: apply visibility
-        self.scope_graph
+        let mut visibility_errors = self
+            .scope_graph
             .node_indices()
-            .for_each(|i| visibility::apply_visibility(&mut self.scope_graph, i));
+            .filter_map(|i| {
+                if let Err(err) = visibility::apply_visibility(&mut self.scope_graph, i) {
+                    Some(err)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<ScopeError>>();
+        self.errors.append(&mut visibility_errors);
 
         // Stage three: trace use nodes
         self.scope_graph.node_indices().for_each(|i| {

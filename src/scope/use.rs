@@ -373,7 +373,7 @@ fn trace_use<'a, 'ast>(
                     }
                     global_child.or(local_child)
                 } else {
-                    // todo: unwrap_or_else look for glob implicit imports
+                    // todo: unwrap_or_else look for first glob implicit import
                     ctx.scope_graph
                         .neighbors(scope)
                         .filter(|child| *child != ctx.dest)

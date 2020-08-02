@@ -3,17 +3,21 @@
 
 use log::error;
 use petgraph::{graph::NodeIndex, Direction};
-use syn::Visibility;
+use syn::{spanned::Spanned, Visibility};
 
 use super::{Node, ScopeGraph};
+use crate::error::{IncorrectVisibilityError, ScopeError};
 
 /// If a node overrides its own visibility, make a note of it in the parent node(s) as an "export".
 /// TODO: pub in enum: "not allowed because it is implied"
-pub fn apply_visibility<'ast>(scope_graph: &mut ScopeGraph<'ast>, node: NodeIndex) {
+pub fn apply_visibility<'ast>(
+    scope_graph: &mut ScopeGraph<'ast>,
+    node: NodeIndex,
+) -> Result<(), ScopeError> {
     use syn::Item::*;
     use syn::*;
-    let vis = match scope_graph[node] {
-        Node::Item { item, .. } => match item {
+    let vis_and_file = match &scope_graph[node] {
+        Node::Item { item, file, .. } => match item {
             ExternCrate(ItemExternCrate { vis, .. })
             | Type(ItemType { vis, .. })
             | Static(ItemStatic { vis, .. })
@@ -28,21 +32,23 @@ pub fn apply_visibility<'ast>(scope_graph: &mut ScopeGraph<'ast>, node: NodeInde
             | Enum(ItemEnum { vis, .. })
             | Trait(ItemTrait { vis, .. })
             | TraitAlias(ItemTraitAlias { vis, .. })
-            | Union(ItemUnion { vis, .. }) => Some(vis),
+            | Union(ItemUnion { vis, .. }) => Some((vis, file.clone())),
             _ => None,
         },
         Node::Mod {
             item_mod: ItemMod { vis, .. },
+            file,
             ..
-        } => Some(vis),
+        } => Some((vis, file.clone())),
         Node::Use {
             item_use: ItemUse { vis, .. },
+            file,
             ..
-        } => Some(vis),
+        } => Some((vis, file.clone())),
         _ => None,
     };
 
-    if let Some(vis) = vis {
+    if let Some((vis, file)) = vis_and_file {
         use Visibility::*;
         match vis {
             Public(_) => apply_visibility_pub(scope_graph, node),
@@ -60,21 +66,30 @@ pub fn apply_visibility<'ast>(scope_graph: &mut ScopeGraph<'ast>, node: NodeInde
                         .as_str()
                     {
                         // No-op
-                        "self" => {}
+                        "self" => Ok(()),
                         // Same as crate pub
                         "crate" => apply_visibility_crate(scope_graph, node),
                         // Same as pub
                         "super" => apply_visibility_pub(scope_graph, node),
-                        _ => todo!("error if none of the above"),
+                        _other => Err(IncorrectVisibilityError {
+                            file: file,
+                            vis_span: r.span(),
+                        }
+                        .into()),
                     }
                 }
             }
-            Inherited => {}
+            Inherited => Ok(()),
         }
+    } else {
+        Ok(())
     }
 }
 
-fn apply_visibility_pub<'ast>(scope_graph: &mut ScopeGraph<'ast>, node: NodeIndex) {
+fn apply_visibility_pub<'ast>(
+    scope_graph: &mut ScopeGraph<'ast>,
+    node: NodeIndex,
+) -> Result<(), ScopeError> {
     let parents: Vec<NodeIndex> = scope_graph
         .neighbors_directed(node, Direction::Incoming)
         .collect();
@@ -94,12 +109,16 @@ fn apply_visibility_pub<'ast>(scope_graph: &mut ScopeGraph<'ast>, node: NodeInde
             }
         }
     }
+    Ok(())
 }
 
 /// https://github.com/rust-lang/rust/issues/53120
 /// TODO: check validity of a crate-level pub if this isn't a crate
 /// Bottom-up BFS
-fn apply_visibility_crate<'ast>(scope_graph: &mut ScopeGraph<'ast>, node: NodeIndex) {
+fn apply_visibility_crate<'ast>(
+    scope_graph: &mut ScopeGraph<'ast>,
+    node: NodeIndex,
+) -> Result<(), ScopeError> {
     let parents: Vec<NodeIndex> = scope_graph
         .neighbors_directed(node, Direction::Incoming)
         .collect();
@@ -130,6 +149,7 @@ fn apply_visibility_crate<'ast>(scope_graph: &mut ScopeGraph<'ast>, node: NodeIn
             }
         }
     }
+    Ok(())
 }
 
 pub fn is_target_visible<'ast>(
