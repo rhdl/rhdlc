@@ -181,7 +181,6 @@ pub fn is_target_visible<'ast>(
     {
         return Some(true);
     }
-    dbg!(dest_parent, dest, target_parent, target);
     let target_grandparent = scope_graph
         .neighbors_directed(target_parent, Direction::Incoming)
         .next();

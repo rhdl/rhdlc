@@ -1,5 +1,0 @@
-error: file not found for module `c`
- --> a/mod.rhdl:2:4
-  |
-2 |     mod c;
-  |     ^^^^^^ ./test/compile-fail/file-resolution/no-module-in-mod-dir/a/b/c.rhdl : No such file or directory (os error 2)

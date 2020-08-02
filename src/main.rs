@@ -64,12 +64,12 @@ fn entry(src: FileContentSource) -> String {
 mod test {
     #[test]
     fn compile_fail_file_resolution() {
-        test_looper("./test/compile-fail/file-resolution");
+        test_looper("./test/compile-fail/find-file");
     }
 
     #[test]
     fn compile_fail_scope() {
-        test_looper("./test/compile-fail/scope");
+        test_looper("./test/compile-fail/resolution");
     }
 
     #[test]
@@ -89,7 +89,6 @@ mod test {
         for test in fs::read_dir(dir).unwrap() {
             let test = test.unwrap();
             let input = test.path().join("top.rhdl");
-            dbg!(input.to_string_lossy());
             let expected = fs::read_to_string(test.path().join("expected.txt")).unwrap();
             let output = super::entry(crate::find_file::FileContentSource::File(input));
             std::io::stderr()

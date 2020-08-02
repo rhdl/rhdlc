@@ -1,5 +1,0 @@
-error: file not found for module `c`
- --> b/mod.rhdl:1:0
-  |
-1 | mod c;
-  | ^^^^^^ ./test/compile-fail/file-resolution/no-nested-module-file/a/b/c.rhdl : No such file or directory (os error 2)

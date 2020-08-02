@@ -1,0 +1,5 @@
+error: duplicates of module `a` were found at ./test/compile-fail/find-file/duplicate-module-files/a.rhdl and ./test/compile-fail/find-file/duplicate-module-files/a/mod.rhdl
+ --> top.rhdl:1:0
+  |
+1 | mod a;
+  | ^^^^^^ 
