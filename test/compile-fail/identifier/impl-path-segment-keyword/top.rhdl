@@ -1,0 +1,4 @@
+struct a {}
+impl a {
+    fn r#super() {}
+}

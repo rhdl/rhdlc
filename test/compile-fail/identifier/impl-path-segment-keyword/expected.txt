@@ -1,0 +1,5 @@
+error: `r#super` cannot be a raw identifier
+ --> top.rhdl:3:7
+  |
+3 |     fn r#super() {}
+  |        ^^^^^^^ 

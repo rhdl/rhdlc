@@ -1,0 +1,5 @@
+struct a {}
+impl a {
+    fn b () {}
+    const b: bool = false;
+}
