@@ -8,7 +8,7 @@ use petgraph::{graph::NodeIndex, Graph};
 use syn::{spanned::Spanned, Ident, Item, ItemMod};
 
 use crate::error::{
-    DuplicateError, PreciseSynParseError, FileFindingError, SpanSource, WorkingDirectoryError,
+    DuplicateError, FileFindingError, PreciseSynParseError, SpanSource, WorkingDirectoryError,
     WrappedIoError,
 };
 
@@ -276,11 +276,7 @@ impl FileFinder {
                 src,
             }
             .into()),
-            Ok(syn) => Ok(File {
-                src,
-                content,
-                syn,
-            }),
+            Ok(syn) => Ok(File { src, content, syn }),
         }
     }
 }

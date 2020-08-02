@@ -7,7 +7,6 @@ use std::env;
 
 mod error;
 mod find_file;
-mod ident;
 mod resolution;
 
 use find_file::{FileContentSource, FileFinder};
