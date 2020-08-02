@@ -74,20 +74,32 @@ impl<'ast> Name<'ast> {
         self.in_same_name_class(other) && self.has_same_ident(other)
     }
 
-    pub fn to_string(&self) -> String {
+    pub fn ident(&self) -> &syn::Ident {
         use Name::*;
         match self {
             Function(ident) | Variable(ident) | Macro(ident) | Type(ident) | Mod(ident)
-            | Crate(ident) | UseName(ident) | UseRename(ident) => ident.to_string(),
+            | Crate(ident) | UseName(ident) | UseRename(ident) => ident,
         }
     }
 
+    pub fn to_string(&self) -> String {
+        self.ident().to_string()
+    }
+
     pub fn span(&self) -> proc_macro2::Span {
-        use Name::*;
-        match self {
-            Function(ident) | Variable(ident) | Macro(ident) | Type(ident) | Mod(ident)
-            | Crate(ident) | UseName(ident) | UseRename(ident) => ident.span(),
-        }
+        self.ident().span()
+    }
+
+    /// https://github.com/rust-lang/rust/blob/5ef299eb9805b4c86b227b718b39084e8bf24454/src/librustc_span/symbol.rs#L1592
+    pub fn can_be_raw(&self) -> bool {
+        let ident = self.ident();
+        ident != "r#_" && ident != "r#" && !self.is_path_segment_keyword()
+    }
+
+    /// https://github.com/rust-lang/rust/blob/5ef299eb9805b4c86b227b718b39084e8bf24454/src/librustc_span/symbol.rs#L1577
+    pub fn is_path_segment_keyword(&self) -> bool {
+        let ident = self.ident();
+        ident == "r#super" || ident == "r#self" || ident == "r#Self" || ident == "r#crate"
     }
 }
 

@@ -127,85 +127,34 @@ impl<'ast> ScopeBuilder<'ast> {
     }
 
     pub fn find_invalid_names(&mut self) {
-        use crate::ident::*;
-        for node in self.scope_graph.node_indices() {
-            match &self.scope_graph[node] {
-                Node::Root { name, file, .. } => {}
-                Node::Item { ident, file, .. } => {
-                    if !can_be_raw(ident) {
-                        self.errors.push(
-                            InvalidRawIdentifierError {
-                                file: file.clone(),
-                                ident: (*ident).clone(),
-                            }
-                            .into(),
-                        );
-                    }
-                }
-                Node::Mod {
-                    item_mod: ItemMod { ident, .. },
-                    file,
-                    ..
-                } => {
-                    if !can_be_raw(ident) {
-                        self.errors.push(
-                            InvalidRawIdentifierError {
-                                file: file.clone(),
-                                ident: ident.clone(),
-                            }
-                            .into(),
-                        );
-                    }
-                }
-                Node::Use { imports, file, .. } => {
-                    for (_, uses) in imports.iter() {
-                        for r#use in uses.iter() {
-                            use r#use::UseType::*;
-                            use syn::{UseName, UseRename};
-                            match r#use {
-                                Name {
-                                    name: UseName { ident, .. },
-                                    ..
-                                } => {
-                                    if !can_be_raw(ident) {
-                                        self.errors.push(
-                                            InvalidRawIdentifierError {
-                                                file: file.clone(),
-                                                ident: (*ident).clone(),
-                                            }
-                                            .into(),
-                                        );
-                                    }
-                                }
-                                Rename {
-                                    rename: UseRename { ident, rename, .. },
-                                    ..
-                                } => {
-                                    if !can_be_raw(ident) {
-                                        self.errors.push(
-                                            InvalidRawIdentifierError {
-                                                file: file.clone(),
-                                                ident: (*ident).clone(),
-                                            }
-                                            .into(),
-                                        );
-                                    }
-                                    if !can_be_raw(rename) {
-                                        self.errors.push(
-                                            InvalidRawIdentifierError {
-                                                file: file.clone(),
-                                                ident: (*rename).clone(),
-                                            }
-                                            .into(),
-                                        );
-                                    }
-                                }
-                                _ => {}
-                            }
-                        }
-                    }
-                }
-            }
+        let invalid_names = self
+            .scope_graph
+            .node_indices()
+            .map(|node| match &self.scope_graph[node] {
+                // TODO: handle invalid name roots
+                Node::Root { .. } => vec![],
+                Node::Item { item, file, .. } => Name::try_from(*item)
+                    .ok()
+                    .map(|n| vec![(n, file.clone())])
+                    .unwrap_or_default(),
+                Node::Mod { item_mod, file, .. } => vec![(Name::from(*item_mod), file.clone())],
+                Node::Use { imports, file, .. } => imports
+                    .values()
+                    .map(|uses| {
+                        uses.iter().filter_map(|r#use| {
+                            Name::try_from(r#use).ok().map(|name| (name, file.clone()))
+                        })
+                    })
+                    .flatten()
+                    .collect::<Vec<(Name<'ast>, Rc<File>)>>(),
+            })
+            .flatten()
+            .filter(|(name, _)| !name.can_be_raw())
+            .map(|(name, file)| (name.ident().clone(), file))
+            .collect::<Vec<(syn::Ident, Rc<File>)>>();
+        for (ident, file) in invalid_names {
+            self.errors
+                .push(InvalidRawIdentifierError { file, ident }.into());
         }
     }
 

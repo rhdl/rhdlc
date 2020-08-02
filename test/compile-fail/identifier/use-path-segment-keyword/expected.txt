@@ -8,8 +8,3 @@ error: `r#self` cannot be a raw identifier
   |
 5 | use a::r#self;
   |        ^^^^^^ 
-error: `r#self` cannot be a raw identifier
- --> top.rhdl:6:7
-  |
-6 | use a::r#self as selfie;
-  |        ^^^^^^ 
