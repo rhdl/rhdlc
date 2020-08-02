@@ -1,8 +1,9 @@
+use std::collections::HashSet;
 use std::rc::Rc;
 
 use log::error;
 use petgraph::{graph::NodeIndex, Direction};
-use syn::{ItemMod, UseName, UseRename, UseTree};
+use syn::{ItemMod, ItemUse, UseName, UseRename, UseTree};
 
 use super::{File, Node, ScopeError, ScopeGraph};
 use crate::error::{
@@ -34,44 +35,61 @@ struct TracingContext<'a, 'ast> {
     dest: NodeIndex,
     previous_idents: Vec<syn::Ident>,
     has_leading_colon: bool,
+    reentrancy: &'a mut HashSet<NodeIndex>,
 }
 
-/// TODO: Disambiguation errors can be done at this point instead of during tracing
 pub fn trace_use_entry<'a, 'ast>(
     scope_graph: &'a mut ScopeGraph<'ast>,
     errors: &mut Vec<ScopeError>,
     dest: NodeIndex,
 ) {
     let (tree, file, has_leading_colon) = match &scope_graph[dest] {
-        Node::Use { item_use, file, .. } => (
-            &item_use.tree,
-            file.clone(),
-            item_use.leading_colon.is_some(),
-        ),
+        Node::Use {
+            imports,
+            item_use,
+            file,
+            ..
+        } => {
+            if !imports.is_empty() {
+                return;
+            }
+            (
+                &item_use.tree,
+                file.clone(),
+                item_use.leading_colon.is_some(),
+            )
+        }
         _ => return,
     };
 
-    let scope = if has_leading_colon {
+    let mut reentrancy = HashSet::default();
+
+    trace_use_entry_reenterable(
+        &mut TracingContext {
+            scope_graph,
+            errors,
+            file: file,
+            dest,
+            previous_idents: vec![],
+            has_leading_colon,
+            reentrancy: &mut reentrancy,
+        },
+        tree,
+    );
+}
+
+fn trace_use_entry_reenterable<'a, 'ast>(ctx: &mut TracingContext<'a, 'ast>, tree: &'ast UseTree) {
+    ctx.reentrancy.insert(ctx.dest);
+    let scope = if ctx.has_leading_colon {
         // just give any old dummy node because it'll have to be ignored in path/name finding
         NodeIndex::new(0)
     } else {
-        scope_graph
-            .neighbors_directed(dest, Direction::Incoming)
+        ctx.scope_graph
+            .neighbors_directed(ctx.dest, Direction::Incoming)
             .next()
             .unwrap()
     };
-
-    let mut ctx = TracingContext {
-        scope_graph,
-        errors,
-        file: file,
-        dest,
-        previous_idents: vec![],
-        has_leading_colon,
-    }
-    .into();
-
-    trace_use(&mut ctx, scope, tree, false);
+    trace_use(ctx, scope, tree, false);
 }
 
 /// Trace usages
@@ -254,7 +272,53 @@ fn trace_use<'a, 'ast>(
                 }
                 Some(scope)
             } else {
-                let finder = |child: &NodeIndex| match &ctx.scope_graph[*child] {
+                // reentrancy behavior
+                if !(is_entry && ctx.has_leading_colon) {
+                    for reentrant in ctx
+                        .scope_graph
+                        .neighbors(scope)
+                        .filter(|candidate| *candidate != ctx.dest)
+                        .filter(|candidate| !ctx.reentrancy.contains(&candidate))
+                        .filter(|candidate: &NodeIndex| match &ctx.scope_graph[*candidate] {
+                            Node::Use {
+                                imports: other_use_imports,
+                                ..
+                            } => other_use_imports.is_empty(),
+                            _ => false,
+                        })
+                        .collect::<Vec<NodeIndex>>()
+                    {
+                        let (other_use_tree, other_use_file, other_use_has_leading_colon) =
+                            match &ctx.scope_graph[reentrant] {
+                                Node::Use {
+                                    item_use:
+                                        ItemUse {
+                                            tree: other_use_tree,
+                                            leading_colon,
+                                            ..
+                                        },
+                                    file: other_use_file,
+                                    ..
+                                } => (
+                                    other_use_tree,
+                                    other_use_file.clone(),
+                                    leading_colon.is_some(),
+                                ),
+                                _ => continue,
+                            };
+                        let mut rebuilt_ctx = TracingContext {
+                            scope_graph: ctx.scope_graph,
+                            errors: ctx.errors,
+                            file: other_use_file,
+                            dest: reentrant,
+                            previous_idents: vec![],
+                            has_leading_colon: other_use_has_leading_colon,
+                            reentrancy: ctx.reentrancy,
+                        };
+                        trace_use_entry_reenterable(&mut rebuilt_ctx, other_use_tree);
+                    }
+                }
+                let child_finder = |child: &NodeIndex| match &ctx.scope_graph[*child] {
                     Node::Item { ident, .. } => **ident == original_name_string,
                     Node::Mod {
                         item_mod: ItemMod { ident, .. },
@@ -284,15 +348,19 @@ fn trace_use<'a, 'ast>(
 
                 let child = if is_entry && ctx.has_leading_colon {
                     // special resolution required
-                    ctx.scope_graph.externals(Direction::Incoming).find(finder)
+                    ctx.scope_graph
+                        .externals(Direction::Incoming)
+                        .find(child_finder)
                 } else if is_entry {
-                    // todo: disambiguation error
-                    let global_child = ctx.scope_graph.externals(Direction::Incoming).find(finder);
+                    let global_child = ctx
+                        .scope_graph
+                        .externals(Direction::Incoming)
+                        .find(child_finder);
                     let local_child = ctx
                         .scope_graph
                         .neighbors(scope)
                         .filter(|child| *child != ctx.dest)
-                        .find(finder);
+                        .find(child_finder);
                     if let (Some(_gc), Some(_lc)) = (global_child, local_child) {
                         ctx.errors.push(
                             DisambiguationError {
@@ -309,7 +377,7 @@ fn trace_use<'a, 'ast>(
                     ctx.scope_graph
                         .neighbors(scope)
                         .filter(|child| *child != ctx.dest)
-                        .find(finder)
+                        .find(child_finder)
                 };
                 child
             };
