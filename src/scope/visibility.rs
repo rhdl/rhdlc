@@ -160,7 +160,6 @@ fn apply_visibility_crate<'ast>(
 /// * target == target_parent (use a::{self, b}, always visible)
 /// * target is actually a parent of target_parent (use super::super::b, always visible)
 /// * target_parent is a parent of dest_parent (use super::a, always visible)
-/// TODO: try to move special cases like supers & selfs here
 pub fn is_target_visible<'ast>(
     scope_graph: &mut ScopeGraph,
     dest: NodeIndex,
