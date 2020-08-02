@@ -6,7 +6,7 @@ use petgraph::{graph::NodeIndex, Direction};
 use syn::{spanned::Spanned, Visibility};
 
 use super::{Node, ScopeGraph};
-use crate::error::{IncorrectVisibilityError, ResolutionError};
+use crate::error::{IncorrectVisibilityError, ResolutionError, UnsupportedError};
 
 /// If a node overrides its own visibility, make a note of it in the parent node(s) as an "export".
 /// TODO: pub in enum: "not allowed because it is implied"
@@ -55,7 +55,12 @@ pub fn apply_visibility<'ast>(
             Crate(_) => apply_visibility_crate(scope_graph, node),
             Restricted(r) => {
                 if let Some(_in) = r.in_token {
-                    todo!("restricted visibility in paths is not implemented yet");
+                    Err(UnsupportedError {
+                        file: file,
+                        span: r.path.span(),
+                        reason: "restricted visibility in paths is not implemented yet",
+                    }
+                    .into())
                 // Edition Differences: Starting with the 2018 edition, paths for pub(in path) must start with crate, self, or super. The 2015 edition may also use paths starting with :: or modules from the crate root.
                 } else {
                     match r

@@ -461,6 +461,30 @@ impl Display for IncorrectVisibilityError {
     }
 }
 
+#[derive(Debug)]
+pub struct UnsupportedError {
+    pub file: Rc<File>,
+    pub span: proc_macro2::Span,
+    pub reason: &'static str,
+}
+
+impl Display for UnsupportedError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        render_location(
+            f,
+            "unsupported feature",
+            (
+                Reference::Error,
+                self.reason,
+                self.span,
+            ),
+            vec![],
+            &self.file.src,
+            &self.file.content,
+        )
+    }
+}
+
 error!(ResolutionError {
     MultipleDefinitionError => MultipleDefinitionError,
     DisambiguationError => DisambiguationError,
@@ -473,4 +497,5 @@ error!(ResolutionError {
     GlobalPathCannotHaveSpecialIdentError => GlobalPathCannotHaveSpecialIdentError,
     GlobAtEntryError => GlobAtEntryError,
     IncorrectVisibilityError => IncorrectVisibilityError,
+    UnsupportedError => UnsupportedError,
 });
