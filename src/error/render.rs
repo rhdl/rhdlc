@@ -45,17 +45,19 @@ where
                 .map(|stem| stem == MOD_FILE_STEM)
                 .unwrap_or(false)
             {
-                path.parent()
+                (path
+                    .parent()
                     .and_then(Path::file_stem)
                     .map(OsStr::to_string_lossy)
                     .unwrap_or_else(|| UNKNOWN_DIRECTORY.into())
                     + "/"
-                    + filename
+                    + filename)
+                    .to_string()
             } else {
-                filename
+                filename.to_string()
             }
         }
-        FileContentSource::Stdin => "<stdin>".into(),
+        FileContentSource::Reader(name, _) => format!("<{}>", name),
     };
 
     let main_max_line = main_reference.2.start().max(main_reference.2.end());

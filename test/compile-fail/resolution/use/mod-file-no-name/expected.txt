@@ -1,4 +1,4 @@
-error: unresolved import `b`
+error: unresolved item `b`
  --> top.rhdl:2:7
   |
 2 | use a::b;

@@ -9,7 +9,7 @@ use super::{File, Node, ResolutionError, ScopeGraph};
 use crate::error::{
     DisambiguationError, GlobAtEntryError, GlobalPathCannotHaveSpecialIdentError,
     SelfNameNotInGroupError, SpecialIdentNotAtStartOfPathError, TooManySupersError,
-    UnresolvedImportError, VisibilityError,
+    UnresolvedItemError, VisibilityError,
 };
 
 #[derive(Debug)]
@@ -219,7 +219,7 @@ fn trace_use<'a, 'ast>(
                     };
                     if child.is_none() {
                         ctx.errors.push(
-                            UnresolvedImportError {
+                            UnresolvedItemError {
                                 file: ctx.file.clone(),
                                 previous_idents: ctx.previous_idents.clone(),
                                 unresolved_ident: path.ident.clone(),
@@ -380,7 +380,7 @@ fn trace_use<'a, 'ast>(
                 index
             } else {
                 ctx.errors.push(
-                    UnresolvedImportError {
+                    UnresolvedItemError {
                         file: ctx.file.clone(),
                         previous_idents: ctx.previous_idents.clone(),
                         unresolved_ident: ident.clone(),

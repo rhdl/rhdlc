@@ -26,7 +26,9 @@ fn main() {
     .get_matches();
 
     let src = match matches.value_of("FILE") {
-        Some("-") | None => FileContentSource::Stdin,
+        Some("-") | None => {
+            FileContentSource::Reader("stdin".to_string(), Box::new(std::io::stdin()))
+        }
         Some(path) => FileContentSource::File(path.into()),
     };
 
@@ -95,6 +97,14 @@ mod test {
     #[test]
     fn compile_pass_resolution_use() {
         success_test_looper("./test/compile-pass/resolution/use")
+    }
+
+    #[test]
+    fn compile_pass_stdin() {
+        let output = super::entry(crate::find_file::FileContentSource::Reader(
+            "string".to_string(),
+            Box::new("struct a {}".as_bytes()),
+        ));
     }
 
     fn fail_test_looper(dir: &str) {

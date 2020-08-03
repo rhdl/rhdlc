@@ -1,12 +1,18 @@
 //! Note that the parent(s) iteration is overkill so no unwrap()s are done.
 //! Ideally, the scope graph is a tree and there cannot be multiple parents.
 
+use std::rc::Rc;
+
 use log::error;
 use petgraph::{graph::NodeIndex, Direction};
 use syn::{spanned::Spanned, Visibility};
 
 use super::{Node, ScopeGraph};
-use crate::error::{IncorrectVisibilityError, ResolutionError, UnsupportedError};
+use crate::error::{
+    IncorrectVisibilityError, ResolutionError, SpecialIdentNotAtStartOfPathError,
+    TooManySupersError, UnresolvedItemError,
+};
+use crate::find_file::File;
 
 /// If a node overrides its own visibility, make a note of it in the parent node(s) as an "export".
 /// TODO: pub in enum: "not allowed because it is implied"
@@ -61,35 +67,7 @@ pub fn apply_visibility<'ast>(
             Public(_) => apply_visibility_pub(scope_graph, node),
             Crate(_) => apply_visibility_crate(scope_graph, node),
             Restricted(r) => {
-                if let Some(_in) = r.in_token {
-                    Err(UnsupportedError {
-                        file: file,
-                        span: r.path.span(),
-                        reason: "restricted visibility in paths is not implemented yet",
-                    }
-                    .into())
-                // Edition Differences: Starting with the 2018 edition, paths for pub(in path) must start with crate, self, or super. The 2015 edition may also use paths starting with :: or modules from the crate root.
-                } else {
-                    match r
-                        .path
-                        .get_ident()
-                        .map(|ident| ident.to_string())
-                        .expect("error if the path is not an ident")
-                        .as_str()
-                    {
-                        // No-op
-                        "self" => Ok(()),
-                        // Same as crate pub
-                        "crate" => apply_visibility_crate(scope_graph, node),
-                        // Same as pub
-                        "super" => apply_visibility_pub(scope_graph, node),
-                        _other => Err(IncorrectVisibilityError {
-                            file: file,
-                            vis_span: r.span(),
-                        }
-                        .into()),
-                    }
-                }
+                apply_visibility_in(scope_graph, node, &file, r.in_token.is_some(), &r.path)
             }
             Inherited => Ok(()),
         }
@@ -98,16 +76,122 @@ pub fn apply_visibility<'ast>(
     }
 }
 
+fn apply_visibility_in<'ast>(
+    scope_graph: &mut ScopeGraph<'ast>,
+    node: NodeIndex,
+    file: &Rc<File>,
+    has_in_token: bool,
+    path: &syn::Path,
+) -> Result<(), ResolutionError> {
+    if !has_in_token && path.segments.len() > 1 {
+        todo!("wacky pub")
+    }
+    if path.leading_colon.is_some() {
+        todo!("2015 syntax unsupported")
+    }
+    let parents = collect_parents(scope_graph, node);
+
+    let first_segment = path
+        .segments
+        .first()
+        .expect("error if no first segment, this should never happen");
+    let mut export_entries: Vec<NodeIndex> = if first_segment.ident == "crate" {
+        collect_roots(scope_graph, node)
+    } else if first_segment.ident == "super" {
+        parents
+            .iter()
+            .map(|parent| collect_parents(scope_graph, *parent))
+            .flatten()
+            .collect()
+    } else if first_segment.ident == "self" {
+        if path.segments.len() > 1 {
+            todo!("in must be an ancestor scope");
+        }
+        return Ok(());
+    } else {
+        todo!("error if not crate/super/self")
+    };
+    for (prev_segment, segment) in path.segments.iter().zip(path.segments.iter().skip(1)) {
+        if segment.ident == "crate"
+            || segment.ident == "self"
+            || (prev_segment.ident != "super" && segment.ident == "super")
+        {
+            return Err(SpecialIdentNotAtStartOfPathError {
+                file: file.clone(),
+                path_ident: segment.ident.clone(),
+            }
+            .into());
+        }
+        let mut next_export_entries = Vec::with_capacity(export_entries.len());
+
+        if segment.ident == "super" {
+            for entry in &export_entries {
+                let mut parents = collect_parents(scope_graph, *entry);
+                if parents.is_empty() {
+                    return Err(TooManySupersError {
+                        file: file.clone(),
+                        ident: segment.ident.clone(),
+                    }
+                    .into());
+                }
+                next_export_entries.append(&mut parents);
+            }
+        } else {
+            let segment_ident_string = segment.ident.to_string();
+            for entry in &export_entries {
+                let mut next = scope_graph
+                    .neighbors(*entry)
+                    .filter(|child| match &scope_graph[*child] {
+                        Node::Mod { item_mod, .. } => item_mod.ident == segment_ident_string,
+                        Node::Root {
+                            name: Some(name), ..
+                        } => *name == segment_ident_string,
+                        _ => false,
+                    })
+                    .collect::<Vec<NodeIndex>>();
+                if next.is_empty() {
+                    return Err(UnresolvedItemError {
+                        file: file.clone(),
+                        previous_idents: path
+                            .segments
+                            .iter()
+                            .map(|segment| segment.ident.clone())
+                            .collect(),
+                        unresolved_ident: segment.ident.clone(),
+                        has_leading_colon: false,
+                    }
+                    .into());
+                }
+                next_export_entries.append(&mut next);
+            }
+        }
+        export_entries = next_export_entries;
+    }
+
+    // TODO: check ancestry of the exports & that it is not violating publicity (its containers are visible where it is exported)
+    for parent in parents {
+        match &mut scope_graph[parent] {
+            // export node to grandparents
+            Node::Mod { exports, .. } => exports.entry(node).or_default().extend(&export_entries),
+            // export node to root
+            Node::Root { exports, .. } => exports.push(node),
+            other => {
+                error!("parent is not a mod or root {:?}", other);
+            }
+        }
+    }
+
+    Ok(())
+}
+
 fn apply_visibility_pub<'ast>(
     scope_graph: &mut ScopeGraph<'ast>,
     node: NodeIndex,
 ) -> Result<(), ResolutionError> {
-    let parents: Vec<NodeIndex> = scope_graph
-        .neighbors_directed(node, Direction::Incoming)
-        .collect();
+    let parents = collect_parents(scope_graph, node);
     let grandparents: Vec<NodeIndex> = parents
         .iter()
-        .map(|parent| scope_graph.neighbors_directed(*parent, Direction::Incoming))
+        .map(|parent| collect_parents(scope_graph, *parent))
         .flatten()
         .collect();
     for parent in parents {
@@ -124,6 +208,29 @@ fn apply_visibility_pub<'ast>(
     Ok(())
 }
 
+fn collect_parents<'ast>(scope_graph: &mut ScopeGraph<'ast>, node: NodeIndex) -> Vec<NodeIndex> {
+    scope_graph
+        .neighbors_directed(node, Direction::Incoming)
+        .collect()
+}
+
+fn collect_roots<'ast>(scope_graph: &mut ScopeGraph<'ast>, node: NodeIndex) -> Vec<NodeIndex> {
+    let mut roots: Vec<NodeIndex> = vec![];
+    let mut level: Vec<NodeIndex> = vec![];
+    let mut next: Vec<NodeIndex> = vec![node];
+    while !next.is_empty() {
+        level.append(&mut next);
+        level.iter().for_each(|n| {
+            if let Node::Root { .. } = scope_graph[*n] {
+                roots.push(*n);
+            } else {
+                next.append(&mut collect_parents(scope_graph, *n));
+            }
+        });
+    }
+    roots
+}
+
 /// https://github.com/rust-lang/rust/issues/53120
 /// TODO: check validity of a crate-level pub if this isn't a crate
 /// Bottom-up BFS
@@ -131,25 +238,8 @@ fn apply_visibility_crate<'ast>(
     scope_graph: &mut ScopeGraph<'ast>,
     node: NodeIndex,
 ) -> Result<(), ResolutionError> {
-    let parents: Vec<NodeIndex> = scope_graph
-        .neighbors_directed(node, Direction::Incoming)
-        .collect();
-    let roots = {
-        let mut roots: Vec<NodeIndex> = vec![];
-        let mut level: Vec<NodeIndex> = vec![];
-        let mut next: Vec<NodeIndex> = vec![node];
-        while !next.is_empty() {
-            level.append(&mut next);
-            level.iter().for_each(|n| {
-                if let Node::Root { .. } = scope_graph[*n] {
-                    roots.push(*n);
-                } else {
-                    next.extend(scope_graph.neighbors_directed(*n, Direction::Incoming));
-                }
-            });
-        }
-        roots
-    };
+    let parents: Vec<NodeIndex> = collect_parents(scope_graph, node);
+    let roots = collect_roots(scope_graph, node);
     for parent in parents {
         match &mut scope_graph[parent] {
             // export node to roots

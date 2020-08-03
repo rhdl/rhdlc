@@ -1,4 +1,4 @@
-error: unresolved import `crate`
+error: unresolved item `crate`
  --> top.rhdl:2:7
   |
 2 | use a::crate;

@@ -1,4 +1,4 @@
-error: unresolved import `a`
+error: unresolved item `a`
  --> top.rhdl:1:11
   |
 1 | use crate::a;

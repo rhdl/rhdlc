@@ -54,12 +54,12 @@ pub struct PreciseSynParseError {
 impl Display for PreciseSynParseError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let msg = match &self.src {
-            FileContentSource::File(_) => "could not parse file",
-            FileContentSource::Stdin => "could not parse stdin",
+            FileContentSource::File(_) => "could not parse file".to_string(),
+            FileContentSource::Reader(name, _) => format!("could not parse {}", name),
         };
         render_location(
             f,
-            msg,
+            &msg,
             (Reference::Error, &self.cause.to_string(), self.cause.span()),
             vec![],
             &self.src,
@@ -134,7 +134,7 @@ impl Display for WrappedIoError {
                 let ident = span.ident_path.last().unwrap();
 
                 let source = match &self.src {
-                    FileContentSource::Stdin => "<stdin>".to_string().into(),
+                    FileContentSource::Reader(name, _) => format!("<{}>", name).into(),
                     FileContentSource::File(path) => path.to_string_lossy(),
                 };
                 render_location(
@@ -153,7 +153,7 @@ impl Display for WrappedIoError {
             None => {
                 let path = match &self.src {
                     FileContentSource::File(path) => path.to_string_lossy().into(),
-                    FileContentSource::Stdin => "<stdin>".to_string(),
+                    FileContentSource::Reader(name, _) => format!("<{}>", name),
                 };
                 writeln!(
                     f,
@@ -254,14 +254,14 @@ impl Display for DisambiguationError {
 }
 
 #[derive(Debug)]
-pub struct UnresolvedImportError {
+pub struct UnresolvedItemError {
     pub file: Rc<File>,
     pub previous_idents: Vec<syn::Ident>,
     pub has_leading_colon: bool,
     pub unresolved_ident: syn::Ident,
 }
 
-impl Display for UnresolvedImportError {
+impl Display for UnresolvedItemError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
         let (reference_msg, reference_span) =
             match (self.previous_idents.len(), self.has_leading_colon) {
@@ -287,7 +287,7 @@ impl Display for UnresolvedImportError {
             };
         render_location(
             f,
-            format!("unresolved import `{}`", self.unresolved_ident),
+            format!("unresolved item `{}`", self.unresolved_ident),
             (Reference::Error, &reference_msg, reference_span),
             vec![],
             &self.file.src,
@@ -486,7 +486,7 @@ error!(ResolutionError {
     DisambiguationError => DisambiguationError,
     SpecialIdentNotAtStartOfPathError => SpecialIdentNotAtStartOfPathError,
     SelfNameNotInGroupError => SelfNameNotInGroupError,
-    UnresolvedImportError => UnresolvedImportError,
+    UnresolvedItemError => UnresolvedItemError,
     TooManySupersError => TooManySupersError,
     VisibilityError => VisibilityError,
     InvalidRawIdentifierError => InvalidRawIdentifierError,

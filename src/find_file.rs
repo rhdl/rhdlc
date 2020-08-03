@@ -12,7 +12,7 @@ use crate::error::{
     WrappedIoError,
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct File {
     pub content: String,
     pub syn: syn::File,
@@ -35,10 +35,19 @@ pub struct FileFinder {
     extension: String,
 }
 
-#[derive(Debug, Clone)]
 pub enum FileContentSource {
     File(PathBuf),
-    Stdin,
+    Reader(String, Box<dyn Read>),
+}
+
+impl std::fmt::Debug for FileContentSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use FileContentSource::*;
+        match self {
+            File(path) => f.debug_tuple("FileContentSource").field(&path).finish(),
+            Reader(name, _) => f.debug_tuple("FileContentSource").field(&name).finish(),
+        }
+    }
 }
 
 impl FileFinder {
@@ -151,14 +160,35 @@ impl FileFinder {
                 found_file
             }
             (Err(err1), Err(err2)) => {
-                self.errors.push(err1);
-                if let FileFindingError::IoError(wrapped_io_error) = &err2 {
-                    // Only give error 2 if it's NOT file not found
-                    if wrapped_io_error.cause.kind() != std::io::ErrorKind::NotFound {
+                match (err1, err2) {
+                    (FileFindingError::IoError(wrapped_io_error1), FileFindingError::IoError(wrapped_io_error2)) => {
+
+                    },
+                    (err1, FileFindingError::IoError(wrapped_io_error2)) => {
+                        self.errors.push(err1);
+                        if wrapped_io_error2.cause.kind() != std::io::ErrorKind::NotFound {
+                            self.errors.push(wrapped_io_error2.into());
+                        }
+                    },
+                    (FileFindingError::IoError(wrapped_io_error1), err2) => {
+                        if wrapped_io_error1.cause.kind() != std::io::ErrorKind::NotFound {
+                            self.errors.push(wrapped_io_error1.into());
+                        }
                         self.errors.push(err2);
+                    },
+                    (err1, err2) => {
+                        // Non IO errors indicate parsing + duplicate error...
+                        self.errors.push(err1);
+                        self.errors.push(err2);
+                        self.errors.push(
+                            DuplicateError {
+                                file_path: mod_file_path,
+                                folder_path: mod_folder_file_path,
+                                span: span.clone(),
+                            }
+                            .into(),
+                        );
                     }
-                } else {
-                    self.errors.push(err2);
                 }
                 return;
             }
@@ -239,44 +269,32 @@ impl FileFinder {
         }
     }
 
-    fn find(src: FileContentSource, span: Option<SpanSource>) -> Result<File, FileFindingError> {
-        let content = match &src {
-            FileContentSource::File(path) => {
-                let mut f = fs::File::open(&path).map_err(|cause| WrappedIoError {
-                    src: src.clone(),
-                    cause,
-                    span: span.clone(),
-                })?;
+    fn find(
+        mut src: FileContentSource,
+        span: Option<SpanSource>,
+    ) -> Result<File, FileFindingError> {
+        let content = match &mut src {
+            FileContentSource::File(path) => fs::File::open(&path).and_then(|mut f| {
                 let mut content = String::new();
-                f.read_to_string(&mut content)
-                    .map_err(|cause| WrappedIoError {
-                        src: src.clone(),
-                        cause,
-                        span: span.clone(),
-                    })?;
-                content
-            }
-            FileContentSource::Stdin => {
-                let mut stdin = std::io::stdin();
-                let mut content = String::new();
-                stdin
-                    .read_to_string(&mut content)
-                    .map_err(|cause| WrappedIoError {
-                        src: src.clone(),
-                        cause,
-                        span,
-                    })?;
-                content
-            }
+                f.read_to_string(&mut content)?;
+                Ok(content)
+            }),
+            FileContentSource::Reader(_, reader) => Ok(String::new()).and_then(|mut content| {
+                reader.read_to_string(&mut content)?;
+                Ok(content)
+            }),
         };
-        match syn::parse_file(&content) {
-            Err(err) => Err(PreciseSynParseError {
-                cause: err,
-                code: content,
-                src,
-            }
-            .into()),
-            Ok(syn) => Ok(File { src, content, syn }),
+        match content {
+            Ok(content) => match syn::parse_file(&content) {
+                Err(err) => Err(PreciseSynParseError {
+                    cause: err,
+                    code: content,
+                    src,
+                }
+                .into()),
+                Ok(syn) => Ok(File { src, content, syn }),
+            },
+            Err(cause) => Err(WrappedIoError { cause, src, span }.into()),
         }
     }
 }
