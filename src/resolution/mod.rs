@@ -174,7 +174,7 @@ impl<'ast> ScopeBuilder<'ast> {
     fn find_name_conflicts(&mut self) {
         for node in self.scope_graph.node_indices() {
             let file = match &self.scope_graph[node] {
-                Node::Root { file, .. } | Node::Mod { file, .. } => file,
+                Node::Root { file, .. } | Node::Mod { file, .. } | Node::Impl { file, .. } => file,
                 _ => continue,
             };
 
@@ -202,18 +202,7 @@ impl<'ast> ScopeBuilder<'ast> {
                             }
                         });
                     }
-                    Node::Impl {
-                        item_impl: ItemImpl { items, .. },
-                        ..
-                    } => {
-                        items
-                            .iter()
-                            .filter_map(|item| Name::try_from(item).ok())
-                            .for_each(|name| {
-                                ident_map.entry(name.to_string()).or_default().push(name);
-                            });
-                    }
-                    Node::Root { .. } => continue,
+                    Node::Impl { .. } | Node::Root { .. } => continue,
                 }
             }
             for (ident, names) in ident_map.iter() {

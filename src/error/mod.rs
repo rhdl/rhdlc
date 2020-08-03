@@ -26,6 +26,16 @@ macro_rules! error {
             }
         )*
 
+        impl $name {
+            pub fn name(&self) -> String {
+                match self {
+                    $(
+                        Self::$err(_) => stringify!($err).to_string(),
+                    )*
+                }
+            }
+        }
+
         impl Display for $name {
             fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
                 match self {
