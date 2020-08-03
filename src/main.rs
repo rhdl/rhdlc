@@ -63,14 +63,20 @@ fn entry(src: FileContentSource) -> String {
 #[cfg(test)]
 mod test {
     #[test]
-    fn compile_fail_file_resolution() {
+    fn compile_fail_find_file() {
         test_looper("./test/compile-fail/find-file")
     }
 
     #[test]
-    fn compile_fail_scope() {
-        test_looper("./test/compile-fail/resolution")
+    fn compile_fail_resolution_use() {
+        test_looper("./test/compile-fail/resolution/use")
     }
+
+    #[test]
+    fn compile_fail_resolution_redefinition() {
+        test_looper("./test/compile-fail/resolution/redefinition")
+    }
+
 
     #[test]
     fn compile_fail_identifier() {
