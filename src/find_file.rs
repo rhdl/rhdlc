@@ -161,21 +161,36 @@ impl FileFinder {
             }
             (Err(err1), Err(err2)) => {
                 match (err1, err2) {
-                    (FileFindingError::IoError(wrapped_io_error1), FileFindingError::IoError(wrapped_io_error2)) => {
-
-                    },
+                    (
+                        FileFindingError::IoError(wrapped_io_error1),
+                        FileFindingError::IoError(wrapped_io_error2),
+                    ) => {
+                        // refinement: only give not found for the name.rhdl file
+                        if wrapped_io_error1.cause.kind() == std::io::ErrorKind::NotFound
+                            && wrapped_io_error2.cause.kind() == std::io::ErrorKind::NotFound
+                        {
+                            self.errors.push(wrapped_io_error1.into());
+                        } else if wrapped_io_error1.cause.kind() != std::io::ErrorKind::NotFound {
+                            self.errors.push(wrapped_io_error1.into());
+                        } else if wrapped_io_error2.cause.kind() != std::io::ErrorKind::NotFound {
+                            self.errors.push(wrapped_io_error2.into());
+                        } else {
+                            self.errors.push(wrapped_io_error1.into());
+                            self.errors.push(wrapped_io_error2.into());
+                        }
+                    }
                     (err1, FileFindingError::IoError(wrapped_io_error2)) => {
                         self.errors.push(err1);
                         if wrapped_io_error2.cause.kind() != std::io::ErrorKind::NotFound {
                             self.errors.push(wrapped_io_error2.into());
                         }
-                    },
+                    }
                     (FileFindingError::IoError(wrapped_io_error1), err2) => {
                         if wrapped_io_error1.cause.kind() != std::io::ErrorKind::NotFound {
                             self.errors.push(wrapped_io_error1.into());
                         }
                         self.errors.push(err2);
-                    },
+                    }
                     (err1, err2) => {
                         // Non IO errors indicate parsing + duplicate error...
                         self.errors.push(err1);
