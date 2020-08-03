@@ -79,6 +79,9 @@ pub fn trace_use_entry<'a, 'ast>(
 }
 
 fn trace_use_entry_reenterable<'a, 'ast>(ctx: &mut TracingContext<'a, 'ast>, tree: &'ast UseTree) {
+    if ctx.reentrancy.contains(&ctx.dest) {
+        return;
+    }
     ctx.reentrancy.insert(ctx.dest);
     let scope = if ctx.has_leading_colon {
         // just give any old dummy node because it'll have to be ignored in path/name finding
