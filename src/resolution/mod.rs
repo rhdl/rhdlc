@@ -470,7 +470,7 @@ pub enum Node<'ast> {
     Mod {
         item_mod: &'ast ItemMod,
         /// Exports: (from item, to list of roots/mods) aka pubs
-        exports: HashMap<NodeIndex, Vec<NodeIndex>>,
+        exports: HashMap<NodeIndex, NodeIndex>,
         file: Rc<File>,
         /// The file backing the content of this mod when content = None, if available
         content_file: Option<Rc<File>>,
