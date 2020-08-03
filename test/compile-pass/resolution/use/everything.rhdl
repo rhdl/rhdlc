@@ -12,6 +12,10 @@ pub mod a {
                     mod k {
                         use crate::*;
                     }
+                    pub(in super::super) fn n() {}
+                    pub(in crate::a) enum o {}
+                    pub(super) struct p {}
+                    pub(crate) fn q() {}
                 }
                 pub struct f {}
                 impl f {
@@ -22,11 +26,15 @@ pub mod a {
                 pub mod g {}
                 fn j() {}
                 type m = bool;
+                use e::p;
             }
             pub fn h() {}
+            use d::e::n;
         }
     }
     pub fn i() {}
+    use b::c::d::e::o;
+    use b::c::d::e::q;
 }
 
 use a::b::c::d::e;
@@ -36,3 +44,4 @@ use a::b::c::d::g;
 use a::b::c::h;
 use crate::a::b::c::{h as H, d as D};
 use a as A;
+use a::b::c::d::e::q;
