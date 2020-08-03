@@ -1,0 +1,26 @@
+mod a {
+    pub mod b {
+        pub mod c {
+            pub mod d {
+                pub mod e {
+                    use crate::a::i as I1;
+                    use super::super::super::super::i as I2;
+                    use super::j as J1;
+                    use crate::{a as A1, a as A2, self as Crate};
+                }
+                pub struct f {}
+                pub fn g() {}
+                fn j() {}
+            }
+            pub fn h() {}
+        }
+    }
+    pub fn i() {}
+}
+
+use a::b::c::d::e;
+use a::b::c::d::e as E;
+use a::b::c::d::f;
+use a::b::c::d::g;
+use a::b::c::h;
+use crate::a::b::c::{h as H, d as D};

@@ -64,36 +64,40 @@ fn entry(src: FileContentSource) -> String {
 mod test {
     #[test]
     fn compile_fail_find_file() {
-        test_looper("./test/compile-fail/find-file")
+        fail_test_looper("./test/compile-fail/find-file")
     }
 
     #[test]
     fn compile_fail_resolution_use() {
-        test_looper("./test/compile-fail/resolution/use")
+        fail_test_looper("./test/compile-fail/resolution/use")
     }
 
     #[test]
     fn compile_fail_resolution_redefinition() {
-        test_looper("./test/compile-fail/resolution/redefinition")
+        fail_test_looper("./test/compile-fail/resolution/redefinition")
     }
-
 
     #[test]
     fn compile_fail_identifier() {
-        test_looper("./test/compile-fail/identifier")
+        fail_test_looper("./test/compile-fail/identifier")
     }
 
     #[test]
     fn compile_fail_parse() {
-        test_looper("./test/compile-fail/parse")
+        fail_test_looper("./test/compile-fail/parse")
     }
 
     #[test]
     fn compile_fail_unsupported() {
-        test_looper("./test/compile-fail/unsupported")
+        fail_test_looper("./test/compile-fail/unsupported")
     }
 
-    fn test_looper(dir: &str) {
+    #[test]
+    fn compile_pass_resolution_use() {
+        success_test_looper("./test/compile-pass/resolution/use")
+    }
+
+    fn fail_test_looper(dir: &str) {
         use pretty_assertions::assert_eq;
         use std::fs;
         use std::io::Write;
@@ -113,6 +117,26 @@ mod test {
                 .ok()
                 .expect("Could not flush stdout");
             assert_eq!(output, expected);
+        }
+    }
+
+    fn success_test_looper(dir: &str) {
+        use pretty_assertions::assert_eq;
+        use std::fs;
+        use std::io::Write;
+        for test in fs::read_dir(dir).unwrap() {
+            let test = test.unwrap();
+            let output = super::entry(crate::find_file::FileContentSource::File(test.path()));
+            eprintln!("{}", test.path().to_string_lossy());
+            std::io::stderr()
+                .flush()
+                .ok()
+                .expect("Could not flush stderr");
+            std::io::stdout()
+                .flush()
+                .ok()
+                .expect("Could not flush stdout");
+            assert_eq!(output, "");
         }
     }
 }

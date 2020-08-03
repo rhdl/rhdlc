@@ -37,6 +37,11 @@ pub fn apply_visibility<'ast>(
             | Union(ItemUnion { vis, .. }) => Some((vis, file.clone())),
             _ => None,
         },
+        Node::Fn {
+            item_fn: ItemFn { vis, .. },
+            file,
+            ..
+        } => Some((vis, file.clone())),
         Node::Mod {
             item_mod: ItemMod { vis, .. },
             file,
@@ -47,7 +52,7 @@ pub fn apply_visibility<'ast>(
             file,
             ..
         } => Some((vis, file.clone())),
-        _ => None,
+        Node::Root { .. } | Node::Impl { .. } => None,
     };
 
     if let Some((vis, file)) = vis_and_file {

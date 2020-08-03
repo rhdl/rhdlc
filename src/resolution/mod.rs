@@ -250,11 +250,6 @@ impl<'ast> ScopeBuilder<'ast> {
         }
     }
 
-    /// Stage four
-    fn tie_impl(&mut self, item: &'ast Item) {
-        if let Item::Impl(ItemImpl { .. }) = item {}
-    }
-
     /// Stage one
     fn add_mod(&mut self, item: &'ast Item) {
         use syn::Item::*;
@@ -367,8 +362,7 @@ impl<'ast> ScopeBuilder<'ast> {
             Type(ItemType { ident, .. })
             | Struct(ItemStruct { ident, .. })
             | Enum(ItemEnum { ident, .. })
-            | Trait(ItemTrait { ident, .. })
-             => {
+            | Trait(ItemTrait { ident, .. }) => {
                 let item_idx = self.scope_graph.add_node(Node::Type {
                     item,
                     ident,
@@ -406,7 +400,7 @@ impl<'ast> ScopeBuilder<'ast> {
                     span: ident.span(),
                     reason: "RHDL cannot support unions and other unsafe code: safety is not yet formally defined"
                 }.into());
-            },
+            }
             TraitAlias(ItemTraitAlias { ident, .. }) => {
                 self.errors.push(UnsupportedError {
                     file: self.file_graph[*self.file_ancestry.last().unwrap()].clone(),

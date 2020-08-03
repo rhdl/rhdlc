@@ -100,6 +100,7 @@ fn trace_use_entry_reenterable<'a, 'ast>(ctx: &mut TracingContext<'a, 'ast>, tre
 /// }
 /// use a::b;
 /// ```
+/// TODO: crate root imports need to be explicitly named
 fn trace_use<'a, 'ast>(
     ctx: &mut TracingContext<'a, 'ast>,
     scope: NodeIndex,
