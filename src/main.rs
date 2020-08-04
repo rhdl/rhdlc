@@ -105,6 +105,7 @@ mod test {
             "string".to_string(),
             Box::new("struct a {}".as_bytes()),
         ));
+        assert_eq!(output, "");
     }
 
     fn fail_test_looper(dir: &str) {
