@@ -9,8 +9,8 @@ use syn::{spanned::Spanned, Visibility};
 
 use super::{Node, ScopeGraph};
 use crate::error::{
-    IncorrectVisibilityError, ResolutionError, SpecialIdentNotAtStartOfPathError,
-    TooManySupersError, UnresolvedItemError, UnsupportedError,
+    IncorrectVisibilityError, NonAncestralError, ResolutionError,
+    SpecialIdentNotAtStartOfPathError, TooManySupersError, UnresolvedItemError, UnsupportedError,
 };
 use crate::find_file::File;
 
@@ -90,7 +90,7 @@ fn apply_visibility_in<'ast>(
         return Err(UnsupportedError {
             file: file.clone(),
             span: path.leading_colon.span(),
-            reason: "Beginning with the 2018 edition of Rust, paths for pub(in path) must start with crate, self, or super. "
+            reason: "Beginning with the 2018 edition of Rust, paths for pub(in path) must start with crate, self, or super."
         }.into());
     }
     let parent = first_parent(scope_graph, node).unwrap();
@@ -114,7 +114,11 @@ fn apply_visibility_in<'ast>(
         }
     } else if first_segment.ident == "self" {
         if path.segments.len() > 1 {
-            todo!("in must be an ancestor scope");
+            return Err(NonAncestralError {
+                file: file.clone(),
+                segment_ident: first_segment.ident.clone(),
+            }
+            .into());
         }
         return Ok(());
     } else {
@@ -141,7 +145,11 @@ fn apply_visibility_in<'ast>(
             }
             .into());
         } else if prev_segment.ident == "super" && segment.ident != "super" {
-            todo!("you can only use chained supers in a pub path, going down would mean it's not an ancestor, or you have too many supers");
+            return Err(NonAncestralError {
+                file: file.clone(),
+                segment_ident: first_segment.ident.clone(),
+            }
+            .into());
         }
 
         export_dest = if segment.ident == "super" {
@@ -156,7 +164,7 @@ fn apply_visibility_in<'ast>(
             }
         } else {
             let segment_ident_string = segment.ident.to_string();
-            let export_dest_child = scope_graph
+            let export_dest_children: Vec<NodeIndex> = scope_graph
                 .neighbors(export_dest)
                 .filter(|child| match &scope_graph[*child] {
                     Node::Mod { item_mod, .. } => item_mod.ident == segment_ident_string,
@@ -165,10 +173,8 @@ fn apply_visibility_in<'ast>(
                     } => *name == segment_ident_string,
                     _ => false,
                 })
-                .find(|child| ancestry.contains(child));
-            if let Some(export_dest_child) = export_dest_child {
-                export_dest_child
-            } else {
+                .collect();
+            if export_dest_children.is_empty() {
                 return Err(UnresolvedItemError {
                     file: file.clone(),
                     previous_idents: path
@@ -179,6 +185,17 @@ fn apply_visibility_in<'ast>(
                         .collect(),
                     unresolved_ident: segment.ident.clone(),
                     has_leading_colon: false,
+                }
+                .into());
+            } else if let Some(export_dest_child) = export_dest_children
+                .iter()
+                .find(|child| ancestry.contains(child))
+            {
+                *export_dest_child
+            } else {
+                return Err(NonAncestralError {
+                    file: file.clone(),
+                    segment_ident: first_segment.ident.clone(),
                 }
                 .into());
             }

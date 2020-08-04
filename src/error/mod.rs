@@ -491,6 +491,29 @@ impl Display for UnsupportedError {
     }
 }
 
+#[derive(Debug)]
+pub struct NonAncestralError {
+    pub file: Rc<File>,
+    pub segment_ident: syn::Ident,
+}
+
+impl Display for NonAncestralError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        render_location(
+            f,
+            format!("`{}` is not an ancestor of this scope", self.segment_ident),
+            (
+                Reference::Error,
+                "not an ancestor",
+                self.segment_ident.span(),
+            ),
+            vec![],
+            &self.file.src,
+            &self.file.content,
+        )
+    }
+}
+
 error!(ResolutionError {
     MultipleDefinitionError => MultipleDefinitionError,
     DisambiguationError => DisambiguationError,
@@ -504,4 +527,5 @@ error!(ResolutionError {
     GlobAtEntryError => GlobAtEntryError,
     IncorrectVisibilityError => IncorrectVisibilityError,
     UnsupportedError => UnsupportedError,
+    NonAncestralError => NonAncestralError,
 });
