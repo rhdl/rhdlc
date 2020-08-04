@@ -10,7 +10,7 @@ use syn::{spanned::Spanned, Visibility};
 use super::{Node, ScopeGraph};
 use crate::error::{
     IncorrectVisibilityError, ResolutionError, SpecialIdentNotAtStartOfPathError,
-    TooManySupersError, UnresolvedItemError,
+    TooManySupersError, UnresolvedItemError, UnsupportedError,
 };
 use crate::find_file::File;
 
@@ -87,7 +87,11 @@ fn apply_visibility_in<'ast>(
         todo!("wacky pub")
     }
     if path.leading_colon.is_some() {
-        todo!("2015 syntax unsupported")
+        return Err(UnsupportedError {
+            file: file.clone(),
+            span: path.leading_colon.span(),
+            reason: "Beginning with the 2018 edition of Rust, paths for pub(in path) must start with crate, self, or super. "
+        }.into());
     }
     let parent = first_parent(scope_graph, node).unwrap();
     let ancestry = build_ancestry(scope_graph, node);
