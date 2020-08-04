@@ -17,6 +17,7 @@ use crate::find_file::File;
 
 /// If a node overrides its own visibility, make a note of it in the parent node(s) as an "export".
 /// TODO: pub in enum: "not allowed because it is implied"
+/// TODO: make this whole thing a visitor
 pub fn apply_visibility<'ast>(
     scope_graph: &mut ScopeGraph<'ast>,
     node: NodeIndex,
