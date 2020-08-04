@@ -327,7 +327,7 @@ fn trace_use<'a, 'ast>(
                         ..
                     } => {
                         if other_use_imports.is_empty() {
-                            error!("uses that aren't traced yet can't be resolved");
+                            error!("a use failed to resolve, or a recursive use was encountered");
                             return false;
                         }
                         other_use_imports.iter().any(|(_, use_types)| {
