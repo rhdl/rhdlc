@@ -232,7 +232,7 @@ fn trace_use<'a, 'ast>(
                     child.unwrap()
                 }
             };
-            if !super::visibility::is_target_visible(ctx.scope_graph, ctx.dest, scope, new_scope)
+            if !super::visibility::is_target_visible(ctx.scope_graph, ctx.dest, new_scope)
                 .unwrap()
             {
                 ctx.errors.push(
@@ -390,7 +390,7 @@ fn trace_use<'a, 'ast>(
                 );
                 return;
             };
-            if !super::visibility::is_target_visible(ctx.scope_graph, ctx.dest, scope, index)
+            if !super::visibility::is_target_visible(ctx.scope_graph, ctx.dest, index)
                 .unwrap()
             {
                 ctx.errors.push(

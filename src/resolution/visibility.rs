@@ -11,6 +11,7 @@ use super::{Node, ScopeGraph};
 use crate::error::{
     IncorrectVisibilityError, NonAncestralError, ResolutionError,
     SpecialIdentNotAtStartOfPathError, TooManySupersError, UnresolvedItemError, UnsupportedError,
+    VisibilityError,
 };
 use crate::find_file::File;
 
@@ -84,7 +85,12 @@ fn apply_visibility_in<'ast>(
     path: &syn::Path,
 ) -> Result<(), ResolutionError> {
     if !has_in_token && path.segments.len() > 1 {
-        todo!("wacky pub")
+        return Err(UnsupportedError {
+            file: file.clone(),
+            span: path.span(),
+            reason: "RHDL does not recognize this path, it should be pub(in path)",
+        }
+        .into());
     }
     if path.leading_colon.is_some() {
         return Err(UnsupportedError {
@@ -93,17 +99,17 @@ fn apply_visibility_in<'ast>(
             reason: "Beginning with the 2018 edition of Rust, paths for pub(in path) must start with crate, self, or super."
         }.into());
     }
-    let parent = first_parent(scope_graph, node).unwrap();
+    let node_parent = first_parent(scope_graph, node).unwrap();
     let ancestry = build_ancestry(scope_graph, node);
 
     let first_segment = path
         .segments
         .first()
         .expect("error if no first segment, this should never happen");
-    let mut export_dest: NodeIndex = if first_segment.ident == "crate" {
+    let mut export_dest = if first_segment.ident == "crate" {
         *build_ancestry(scope_graph, node).last().unwrap()
     } else if first_segment.ident == "super" {
-        if let Some(grandparent) = first_parent(scope_graph, parent) {
+        if let Some(grandparent) = first_parent(scope_graph, node_parent) {
             grandparent
         } else {
             return Err(TooManySupersError {
@@ -154,6 +160,13 @@ fn apply_visibility_in<'ast>(
 
         export_dest = if segment.ident == "super" {
             if let Some(export_dest_parent) = first_parent(scope_graph, export_dest) {
+                if !is_target_visible(scope_graph, export_dest_parent, node_parent).unwrap() {
+                    return Err(VisibilityError {
+                        name_file: file.clone(),
+                        name_ident: segment.ident.clone(),
+                    }
+                    .into());
+                }
                 export_dest_parent
             } else {
                 return Err(TooManySupersError {
@@ -191,6 +204,13 @@ fn apply_visibility_in<'ast>(
                 .iter()
                 .find(|child| ancestry.contains(child))
             {
+                if !is_target_visible(scope_graph, *export_dest_child, node_parent).unwrap() {
+                    return Err(VisibilityError {
+                        name_file: file.clone(),
+                        name_ident: segment.ident.clone(),
+                    }
+                    .into());
+                }
                 *export_dest_child
             } else {
                 return Err(NonAncestralError {
@@ -202,8 +222,7 @@ fn apply_visibility_in<'ast>(
         };
     }
 
-    // TODO: check ancestry of the exports & that it is not violating publicity (its containers are visible where it is exported)
-    match &mut scope_graph[parent] {
+    match &mut scope_graph[node_parent] {
         // export node to grandparents
         Node::Mod { exports, .. } => {
             exports.insert(node, export_dest);
@@ -283,9 +302,14 @@ fn apply_visibility_crate<'ast>(
 pub fn is_target_visible<'ast>(
     scope_graph: &mut ScopeGraph,
     dest: NodeIndex,
-    target_parent: NodeIndex,
     target: NodeIndex,
 ) -> Option<bool> {
+    let target_parent = if let Some(target_parent) = first_parent(scope_graph, target) {
+        target_parent
+    } else {
+        // this is necessarily a root
+        return Some(true);
+    };
     // self
     if target_parent == target {
         return Some(true);
