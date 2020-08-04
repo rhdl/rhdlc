@@ -30,6 +30,7 @@ pub enum UseType<'ast> {
     },
 }
 
+// TODO: make this whole thing a syn visitor
 struct TracingContext<'a, 'ast> {
     scope_graph: &'a mut ScopeGraph<'ast>,
     errors: &'a mut Vec<ResolutionError>,
