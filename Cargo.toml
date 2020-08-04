@@ -9,7 +9,7 @@ description = "Compiler for RHDL"
 
 [dependencies]
 syn = { version = "1", features = ["full", "extra-traits"] }
-colored = "1"
+colored = "2"
 paste = "0"
 proc-macro2 = { version = "1.0", features = ["span-locations"] }
 log = "0"
