@@ -301,7 +301,7 @@ fn trace_use<'a, 'ast>(
                         trace_use_entry_reenterable(&mut rebuilt_ctx, other_use_tree);
                     }
                 }
-                let child_matcher = |child: &NodeIndex| match &ctx.scope_graph[*child] {
+                let child_no_glob_matcher = |child: &NodeIndex| match &ctx.scope_graph[*child] {
                     Node::Var { ident, .. }
                     | Node::Macro { ident, .. }
                     | Node::Type { ident, .. } => **ident == original_name_string,
@@ -337,19 +337,19 @@ fn trace_use<'a, 'ast>(
                     // special resolution required
                     ctx.scope_graph
                         .externals(Direction::Incoming)
-                        .find(child_matcher)
+                        .find(child_no_glob_matcher)
                         .map(|child| vec![child])
                         .unwrap_or_default()
                 } else if is_entry {
                     let global_child = ctx
                         .scope_graph
                         .externals(Direction::Incoming)
-                        .find(child_matcher);
+                        .find(child_no_glob_matcher);
                     let local_children = ctx
                         .scope_graph
                         .neighbors(scope)
                         .filter(|child| *child != ctx.dest)
-                        .filter(child_matcher)
+                        .filter(child_no_glob_matcher)
                         .collect::<Vec<NodeIndex>>();
                     if let (Some(_gc), true) = (global_child, !local_children.is_empty()) {
                         ctx.errors.push(
@@ -363,14 +363,14 @@ fn trace_use<'a, 'ast>(
                     }
                     global_child.map(|gc| vec![gc]).unwrap_or(local_children)
                 } else {
-                    // todo: unwrap_or_else look for first glob implicit import
                     ctx.scope_graph
                         .neighbors(scope)
                         .filter(|child| *child != ctx.dest)
-                        .filter(child_matcher)
+                        .filter(child_no_glob_matcher)
                         .collect()
                 }
             };
+            // TODO: attempt to save by using matching glob children instead
             if found_children.is_empty() {
                 ctx.errors.push(
                     UnresolvedItemError {
