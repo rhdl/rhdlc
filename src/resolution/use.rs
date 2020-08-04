@@ -424,7 +424,7 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                     self.errors.push(
                         GlobAtEntryError {
                             file: ctx.file.clone(),
-                            star_span: glob.star_token.spans[0].clone(),
+                            star_span: glob.star_token.spans[0],
                             has_leading_colon: ctx.has_leading_colon,
                         }
                         .into(),

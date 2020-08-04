@@ -498,7 +498,7 @@ impl<'ast> Display for Node<'ast> {
             Self::Var { ident, .. } => write!(f, "var {}", ident),
             Self::Type { ident, .. } => write!(f, "type {}", ident),
             Self::Mod { item_mod, .. } => write!(f, "mod {}", item_mod.ident),
-            Self::Impl { item_impl, .. } => write!(f, "impl"),
+            Self::Impl { .. } => write!(f, "impl"),
             Self::Use {
                 item_use, imports, ..
             } => {

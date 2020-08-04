@@ -147,7 +147,7 @@ impl FileFinder {
             ),
         ) {
             (Ok(found_file), Err(_)) | (Err(_), Ok(found_file)) => found_file,
-            (Ok(found_file), Ok(found_mod_file)) => {
+            (Ok(found_file), Ok(_found_mod_file)) => {
                 self.errors.push(
                     DuplicateError {
                         file_path: mod_file_path,
@@ -170,13 +170,13 @@ impl FileFinder {
                             && wrapped_io_error2.cause.kind() == std::io::ErrorKind::NotFound
                         {
                             self.errors.push(wrapped_io_error1.into());
-                        } else if wrapped_io_error1.cause.kind() != std::io::ErrorKind::NotFound {
-                            self.errors.push(wrapped_io_error1.into());
-                        } else if wrapped_io_error2.cause.kind() != std::io::ErrorKind::NotFound {
-                            self.errors.push(wrapped_io_error2.into());
                         } else {
-                            self.errors.push(wrapped_io_error1.into());
-                            self.errors.push(wrapped_io_error2.into());
+                            if wrapped_io_error1.cause.kind() != std::io::ErrorKind::NotFound {
+                                self.errors.push(wrapped_io_error1.into());
+                            }
+                            if wrapped_io_error2.cause.kind() != std::io::ErrorKind::NotFound {
+                                self.errors.push(wrapped_io_error2.into());
+                            }
                         }
                     }
                     (err1, FileFindingError::IoError(wrapped_io_error2)) => {
@@ -199,7 +199,7 @@ impl FileFinder {
                             DuplicateError {
                                 file_path: mod_file_path,
                                 folder_path: mod_folder_file_path,
-                                span: span.clone(),
+                                span,
                             }
                             .into(),
                         );

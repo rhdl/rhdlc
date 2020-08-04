@@ -283,7 +283,7 @@ fn apply_visibility_crate<'ast>(
         Node::Mod { exports, .. } => {
             exports.insert(node, root);
         }
-        Node::Root { exports, .. } => {
+        Node::Root { .. } => {
             // NOP
         }
         other => error!("parent is not a mod or root {:?}", other),
@@ -300,7 +300,7 @@ fn apply_visibility_crate<'ast>(
 /// * target is actually a parent of target_parent (use super::super::b, always visible)
 /// * target_parent is a parent of dest_parent (use super::a, always visible)
 pub fn is_target_visible<'ast>(
-    scope_graph: &mut ScopeGraph,
+    scope_graph: &mut ScopeGraph<'ast>,
     dest: NodeIndex,
     target: NodeIndex,
 ) -> Option<bool> {
