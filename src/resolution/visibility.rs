@@ -271,8 +271,7 @@ fn build_ancestry<'ast>(scope_graph: &mut ScopeGraph<'ast>, node: NodeIndex) -> 
     ancestry
 }
 
-/// https://github.com/rust-lang/rust/issues/53120
-/// TODO: check validity of a crate-level pub if this isn't a crate
+/// TODO: https://github.com/rust-lang/rust/issues/53120
 fn apply_visibility_crate<'ast>(
     scope_graph: &mut ScopeGraph<'ast>,
     node: NodeIndex,
