@@ -97,15 +97,6 @@ fn trace_use_entry_reenterable<'a, 'ast>(ctx: &mut TracingContext<'a, 'ast>, tre
     trace_use(ctx, scope, tree, false);
 }
 /// Trace usages
-/// TODO: support ambiguous multi-uses like:
-/// ```
-/// mod a {
-///     pub mod b {}
-///     pub fn b() {}
-/// }
-/// use a::b;
-/// ```
-/// TODO: crate root imports need to be explicitly named
 fn trace_use<'a, 'ast>(
     ctx: &mut TracingContext<'a, 'ast>,
     scope: NodeIndex,
