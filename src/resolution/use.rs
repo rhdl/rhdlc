@@ -15,16 +15,18 @@ use crate::error::{
 #[derive(Debug)]
 pub enum UseType<'ast> {
     /// Pull a particular name into scope
+    /// Could be ambiguous
     Name {
         name: &'ast UseName,
-        index: NodeIndex,
+        indices: Vec<NodeIndex>,
     },
     /// Optionally include all items/mods from the scope
     Glob { scope: NodeIndex },
     /// Pull a particular name into scope, but give it a new name (so as to avoid any conflicts)
+    /// Could be ambiguous
     Rename {
         rename: &'ast UseRename,
-        index: NodeIndex,
+        indices: Vec<NodeIndex>,
     },
 }
 
@@ -232,8 +234,7 @@ fn trace_use<'a, 'ast>(
                     child.unwrap()
                 }
             };
-            if !super::visibility::is_target_visible(ctx.scope_graph, ctx.dest, new_scope)
-                .unwrap()
+            if !super::visibility::is_target_visible(ctx.scope_graph, ctx.dest, new_scope).unwrap()
             {
                 ctx.errors.push(
                     VisibilityError {
@@ -250,7 +251,7 @@ fn trace_use<'a, 'ast>(
         }
         Name(UseName { ident, .. }) | Rename(UseRename { ident, .. }) => {
             let original_name_string = ident.to_string();
-            let found_index = if original_name_string == "self" {
+            let found_children: Vec<NodeIndex> = if original_name_string == "self" {
                 if !in_group {
                     ctx.errors.push(
                         SelfNameNotInGroupError {
@@ -261,7 +262,7 @@ fn trace_use<'a, 'ast>(
                     );
                     return;
                 }
-                Some(scope)
+                vec![scope]
             } else {
                 // reentrancy behavior
                 if !(is_entry && ctx.has_leading_colon) {
@@ -309,7 +310,7 @@ fn trace_use<'a, 'ast>(
                         trace_use_entry_reenterable(&mut rebuilt_ctx, other_use_tree);
                     }
                 }
-                let child_finder = |child: &NodeIndex| match &ctx.scope_graph[*child] {
+                let child_matcher = |child: &NodeIndex| match &ctx.scope_graph[*child] {
                     Node::Var { ident, .. }
                     | Node::Macro { ident, .. }
                     | Node::Type { ident, .. } => **ident == original_name_string,
@@ -341,22 +342,25 @@ fn trace_use<'a, 'ast>(
                     }
                 };
 
-                let child = if is_entry && ctx.has_leading_colon {
+                if is_entry && ctx.has_leading_colon {
                     // special resolution required
                     ctx.scope_graph
                         .externals(Direction::Incoming)
-                        .find(child_finder)
+                        .find(child_matcher)
+                        .map(|child| vec![child])
+                        .unwrap_or_default()
                 } else if is_entry {
                     let global_child = ctx
                         .scope_graph
                         .externals(Direction::Incoming)
-                        .find(child_finder);
-                    let local_child = ctx
+                        .find(child_matcher);
+                    let local_children = ctx
                         .scope_graph
                         .neighbors(scope)
                         .filter(|child| *child != ctx.dest)
-                        .find(child_finder);
-                    if let (Some(_gc), Some(_lc)) = (global_child, local_child) {
+                        .filter(child_matcher)
+                        .collect::<Vec<NodeIndex>>();
+                    if let (Some(_gc), true) = (global_child, !local_children.is_empty()) {
                         ctx.errors.push(
                             DisambiguationError {
                                 file: ctx.file.clone(),
@@ -366,19 +370,17 @@ fn trace_use<'a, 'ast>(
                         );
                         return;
                     }
-                    global_child.or(local_child)
+                    global_child.map(|gc| vec![gc]).unwrap_or(local_children)
                 } else {
                     // todo: unwrap_or_else look for first glob implicit import
                     ctx.scope_graph
                         .neighbors(scope)
                         .filter(|child| *child != ctx.dest)
-                        .find(child_finder)
-                };
-                child
+                        .filter(child_matcher)
+                        .collect()
+                }
             };
-            let index = if let Some(index) = found_index {
-                index
-            } else {
+            if found_children.is_empty() {
                 ctx.errors.push(
                     UnresolvedItemError {
                         file: ctx.file.clone(),
@@ -390,9 +392,15 @@ fn trace_use<'a, 'ast>(
                 );
                 return;
             };
-            if !super::visibility::is_target_visible(ctx.scope_graph, ctx.dest, index)
-                .unwrap()
-            {
+            let found_children = found_children
+                .iter()
+                .filter(|index| {
+                    super::visibility::is_target_visible(ctx.scope_graph, ctx.dest, **index)
+                        .unwrap()
+                })
+                .cloned()
+                .collect::<Vec<NodeIndex>>();
+            if found_children.is_empty() {
                 ctx.errors.push(
                     VisibilityError {
                         name_file: ctx.file.clone(),
@@ -404,14 +412,14 @@ fn trace_use<'a, 'ast>(
             }
             if let Node::Use { imports, .. } = &mut ctx.scope_graph[ctx.dest] {
                 match tree {
-                    Name(name) => imports
-                        .entry(scope)
-                        .or_default()
-                        .push(UseType::Name { name, index }),
-                    Rename(rename) => imports
-                        .entry(scope)
-                        .or_default()
-                        .push(UseType::Rename { rename, index }),
+                    Name(name) => imports.entry(scope).or_default().push(UseType::Name {
+                        name,
+                        indices: found_children,
+                    }),
+                    Rename(rename) => imports.entry(scope).or_default().push(UseType::Rename {
+                        rename,
+                        indices: found_children,
+                    }),
                     _ => {}
                 }
             }

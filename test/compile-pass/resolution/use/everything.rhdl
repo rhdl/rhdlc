@@ -22,7 +22,6 @@ pub mod a {
                     fn l() {}
                 }
                 pub fn g() {}
-                // TODO: this will not actually be added to the use yet
                 pub mod g {}
                 fn j() {}
                 type m = bool;
