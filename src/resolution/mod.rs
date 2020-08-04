@@ -116,9 +116,18 @@ impl<'ast> ScopeBuilder<'ast> {
         self.errors.append(&mut visibility_errors);
 
         // Stage three: trace use nodes
-        self.scope_graph.node_indices().for_each(|i| {
-            r#use::trace_use_entry(&mut self.scope_graph, &mut self.errors, i);
-        });
+        let use_indices: Vec<NodeIndex> = self
+            .scope_graph
+            .node_indices()
+            .filter(|i| match self.scope_graph[*i] {
+                Node::Use { .. } => true,
+                _ => false,
+            })
+            .collect();
+        let mut use_resolver = r#use::UseResolver::new(&mut self.scope_graph, &mut self.errors);
+        for use_index in use_indices {
+            use_resolver.resolve_use(use_index);
+        }
 
         // Stage four: tie impls
     }
