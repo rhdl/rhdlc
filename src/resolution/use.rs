@@ -295,10 +295,6 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                             .filter(|candidate| !self.reentrancy.contains(&candidate))
                             .collect::<Vec<NodeIndex>>()
                         {
-                            // TODO: check if re-entrancy is actually needed in some cases:
-                            // could the other use lead to a matching ident?
-                            // * yes if tree contains name/rename with the same ident (UseVisitor)
-                            // * yes if there is a glob
                             let other_use_tree = match &self.scope_graph[reentrant] {
                                 Node::Use { item_use, .. } => &item_use.tree,
                                 _ => continue,
@@ -313,12 +309,12 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                         .scope_graph
                         .externals(Direction::Incoming)
                         .filter(|child| *child != ctx.root)
-                        .filter(|child| self.matches_no_glob(child, &original_name_string));
+                        .filter(|child| self.matches(child, &original_name_string, false));
                     let local_iterator = self
                         .scope_graph
                         .neighbors(scope)
                         .filter(|child| *child != ctx.dest)
-                        .filter(|child| self.matches_no_glob(child, &original_name_string));
+                        .filter(|child| self.matches(child, &original_name_string, false));
                     if is_entry {
                         let global = global_iterator.collect();
                         if ctx.has_leading_colon {
@@ -348,7 +344,7 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                             .scope_graph
                             .neighbors(scope)
                             .filter(|child| *child != ctx.dest)
-                            .filter(|child| self.matches_only_glob(child, &original_name_string))
+                            .filter(|child| self.matches(child, &original_name_string, true))
                             .collect();
                         if local_matched_globs.len() > 1 {
                             todo!("disambiguation between glob & glob error")
@@ -436,19 +432,17 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
         }
     }
 
-    fn matches_no_glob(&self, node: &NodeIndex, name_to_look_for: &str) -> bool {
+    fn matches(&self, node: &NodeIndex, name_to_look_for: &str, glob_only: bool) -> bool {
         match &self.scope_graph[*node] {
             Node::Var { ident, .. } | Node::Macro { ident, .. } | Node::Type { ident, .. } => {
-                *ident == name_to_look_for
+                !glob_only && *ident == name_to_look_for
             }
-            Node::Fn { item_fn, .. } => item_fn.sig.ident == name_to_look_for,
+            Node::Fn { item_fn, .. } => !glob_only && item_fn.sig.ident == name_to_look_for,
             Node::Mod {
                 item_mod: ItemMod { ident, .. },
                 ..
-            } => *ident == name_to_look_for,
-            Node::Root { name: Some(n), .. } => n == name_to_look_for,
-            Node::Root { name: None, .. } => false,
-            Node::Impl { .. } => false,
+            } => !glob_only && *ident == name_to_look_for,
+            Node::Root { name: Some(n), .. } => !glob_only && n == name_to_look_for,
             Node::Use {
                 imports: other_use_imports,
                 item_use,
@@ -471,50 +465,22 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                 }
                 other_use_imports.iter().any(|(_, use_types)| {
                     use_types.iter().any(|use_type| match use_type {
-                        UseType::Name { name, .. } => name.ident == name_to_look_for,
-                        UseType::Rename { rename, .. } => rename.rename == name_to_look_for,
-                        _ => false,
-                    })
-                })
-            }
-        }
-    }
-
-    // TODO: join this with the above method
-    fn matches_only_glob(&self, node: &NodeIndex, name_to_look_for: &str) -> bool {
-        match &self.scope_graph[*node] {
-            Node::Use {
-                imports: other_use_imports,item_use,
-                ..
-            } => {
-                if other_use_imports.is_empty() {
-                    if self.reentrancy.contains(node) {
-                        error!("a recursive use was encountered and cut off");
-                    } else if {
-                        let mut checker = ReentrancyNeededChecker {
-                            name_to_look_for,
-                            needed: false,
-                        };
-                        checker.visit_item_use(item_use);
-                        checker.needed
-                    } {
-                        error!("this use failed to resolve");
-                    }
-                    return false;
-                }
-                other_use_imports.iter().any(|(_, use_types)| {
-                    use_types.iter().any(|use_type| match use_type {
-                        UseType::Glob { scope } => {
-                            self.scope_graph.neighbors(*scope).any(|child| {
-                                self.matches_no_glob(&child, name_to_look_for)
-                                    || self.matches_only_glob(&child, name_to_look_for)
-                            })
+                        UseType::Name { name, .. } => !glob_only && name.ident == name_to_look_for,
+                        UseType::Rename { rename, .. } => {
+                            !glob_only && rename.rename == name_to_look_for
                         }
-                        _ => false,
+                        UseType::Glob { scope } => {
+                            glob_only
+                                && self.scope_graph.neighbors(*scope).any(|child| {
+                                    self.matches(&child, name_to_look_for, false)
+                                        || self.matches(&child, name_to_look_for, true)
+                                })
+                        }
                     })
                 })
             }
-            _ => false,
+            Node::Root { name: None, .. } => false,
+            Node::Impl { .. } => false,
         }
     }
 }
@@ -526,6 +492,7 @@ struct ReentrancyNeededChecker<'a> {
 
 impl<'a, 'ast> Visit<'ast> for ReentrancyNeededChecker<'a> {
     fn visit_use_name(&mut self, name: &'ast UseName) {
+        // todo: visit path segments to look for groups containing a self, where the last path ident == name to look for
         self.needed |= name.ident == self.name_to_look_for || name.ident == "self"
     }
 
