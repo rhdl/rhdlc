@@ -183,6 +183,9 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                                 }
                                 // this will work just fine since n is a string
                                 Node::Root { name: Some(n), .. } => path.ident == n,
+                                // Node::Use {imports, ..} => {
+
+                                // }
                                 _ => false,
                             }
                         };
@@ -292,62 +295,23 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                             self.trace_use_entry_reenterable(&mut rebuilt_ctx, other_use_tree);
                         }
                     }
-                    let child_no_glob_matcher = |child: &NodeIndex| match &self.scope_graph[*child]
-                    {
-                        Node::Var { ident, .. }
-                        | Node::Macro { ident, .. }
-                        | Node::Type { ident, .. } => **ident == original_name_string,
-                        Node::Fn { item_fn, .. } => item_fn.sig.ident == original_name_string,
-                        Node::Mod {
-                            item_mod: ItemMod { ident, .. },
-                            ..
-                        } => *ident == original_name_string,
-                        Node::Root { name: Some(n), .. } => original_name_string == *n,
-                        Node::Root { name: None, .. } => false,
-                        Node::Impl { .. } => false,
-                        Node::Use {
-                            imports: other_use_imports,
-                            ..
-                        } => {
-                            if other_use_imports.is_empty() {
-                                error!(
-                                    "a use failed to resolve, or a recursive use was encountered"
-                                );
-                                return false;
-                            }
-                            other_use_imports.iter().any(|(_, use_types)| {
-                                use_types.iter().any(|use_type| match use_type {
-                                    UseType::Name { name, .. } => {
-                                        name.ident == original_name_string
-                                    }
-                                    UseType::Rename { rename, .. } => {
-                                        rename.rename == original_name_string
-                                    }
-                                    _ => false,
-                                })
-                            })
-                        }
-                    };
 
+                    // TODO: exclude own root just in case
+                    let global_iterator = self
+                        .scope_graph
+                        .externals(Direction::Incoming)
+                        .filter(|child| self.matches_no_glob(child, &original_name_string));
+                    let local_iterator = self
+                        .scope_graph
+                        .neighbors(scope)
+                        .filter(|child| *child != ctx.dest)
+                        .filter(|child| self.matches_no_glob(child, &original_name_string));
                     if is_entry && ctx.has_leading_colon {
-                        // special resolution required
-                        self.scope_graph
-                            .externals(Direction::Incoming)
-                            .find(child_no_glob_matcher)
-                            .map(|child| vec![child])
-                            .unwrap_or_default()
+                        global_iterator.collect()
                     } else if is_entry {
-                        let global_child = self
-                            .scope_graph
-                            .externals(Direction::Incoming)
-                            .find(child_no_glob_matcher);
-                        let local_children = self
-                            .scope_graph
-                            .neighbors(scope)
-                            .filter(|child| *child != ctx.dest)
-                            .filter(child_no_glob_matcher)
-                            .collect::<Vec<NodeIndex>>();
-                        if let (Some(_gc), true) = (global_child, !local_children.is_empty()) {
+                        let global: Vec<NodeIndex> = global_iterator.collect();
+                        let local: Vec<NodeIndex> = local_iterator.collect();
+                        if !global.is_empty() && !local.is_empty() {
                             self.errors.push(
                                 DisambiguationError {
                                     file: ctx.file.clone(),
@@ -357,16 +321,28 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                             );
                             return;
                         }
-                        global_child.map(|gc| vec![gc]).unwrap_or(local_children)
+                        global.iter().chain(local.iter()).cloned().collect()
                     } else {
-                        self.scope_graph
-                            .neighbors(scope)
-                            .filter(|child| *child != ctx.dest)
-                            .filter(child_no_glob_matcher)
-                            .collect()
+                        local_iterator.collect()
                     }
                 };
-                // TODO: attempt to save by using matching glob children instead
+
+                let found_children = if found_children.is_empty() && !is_entry {
+                    // TODO: attempt to save by using matching glob children instead
+                    let local_matched_globs: Vec<NodeIndex> = self
+                        .scope_graph
+                        .neighbors(scope)
+                        .filter(|child| *child != ctx.dest)
+                        .filter(|child| self.matches_only_glob(child, &original_name_string))
+                        .collect();
+                    if local_matched_globs.len() > 1 {
+                        todo!("disambiguation between glob & glob error")
+                    } else {
+                        local_matched_globs
+                    }
+                } else {
+                    found_children
+                };
                 if found_children.is_empty() {
                     self.errors.push(
                         UnresolvedItemError {
@@ -378,7 +354,8 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                         .into(),
                     );
                     return;
-                };
+                }
+
                 let found_children = found_children
                     .iter()
                     .filter(|index| {
@@ -441,6 +418,64 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                 .items
                 .iter()
                 .for_each(|tree| self.trace_use(ctx, scope, tree, true)),
+        }
+    }
+
+    fn matches_no_glob(&self, node: &NodeIndex, name_to_look_for: &str) -> bool {
+        match &self.scope_graph[*node] {
+            Node::Var { ident, .. } | Node::Macro { ident, .. } | Node::Type { ident, .. } => {
+                *ident == name_to_look_for
+            }
+            Node::Fn { item_fn, .. } => item_fn.sig.ident == name_to_look_for,
+            Node::Mod {
+                item_mod: ItemMod { ident, .. },
+                ..
+            } => *ident == name_to_look_for,
+            Node::Root { name: Some(n), .. } => n == name_to_look_for,
+            Node::Root { name: None, .. } => false,
+            Node::Impl { .. } => false,
+            Node::Use {
+                imports: other_use_imports,
+                ..
+            } => {
+                if other_use_imports.is_empty() {
+                    error!("a use failed to resolve, or a recursive use was encountered");
+                    return false;
+                }
+                other_use_imports.iter().any(|(_, use_types)| {
+                    use_types.iter().any(|use_type| match use_type {
+                        UseType::Name { name, .. } => name.ident == name_to_look_for,
+                        UseType::Rename { rename, .. } => rename.rename == name_to_look_for,
+                        _ => false,
+                    })
+                })
+            }
+        }
+    }
+
+    fn matches_only_glob(&self, node: &NodeIndex, name_to_look_for: &str) -> bool {
+        match &self.scope_graph[*node] {
+            Node::Use {
+                imports: other_use_imports,
+                ..
+            } => {
+                if other_use_imports.is_empty() {
+                    error!("a use failed to resolve, or a recursive use was encountered");
+                    return false;
+                }
+                other_use_imports.iter().any(|(_, use_types)| {
+                    use_types.iter().any(|use_type| match use_type {
+                        UseType::Glob { scope } => {
+                            self.scope_graph.neighbors(*scope).any(|child| {
+                                self.matches_no_glob(&child, name_to_look_for)
+                                    || self.matches_only_glob(&child, name_to_look_for)
+                            })
+                        }
+                        _ => false,
+                    })
+                })
+            }
+            _ => false,
         }
     }
 }

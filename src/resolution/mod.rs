@@ -128,6 +128,7 @@ impl<'ast> ScopeBuilder<'ast> {
 
     pub fn check_graph(&mut self) {
         self.find_invalid_names();
+        // TODO: handle reimports
         self.find_name_conflicts();
     }
 
@@ -476,7 +477,9 @@ pub enum Node<'ast> {
     },
     Use {
         item_use: &'ast ItemUse,
-        /// Imports: (from root/mod to list of items)
+        /// Imports: (from scope to its list of use types)
+        /// Note that each UseType can include ambiguous names
+        /// These are NOT deduped, so that we can catch reimport errors
         imports: HashMap<NodeIndex, Vec<UseType<'ast>>>,
         file: Rc<File>,
     },

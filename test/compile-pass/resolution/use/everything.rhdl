@@ -9,8 +9,10 @@ pub mod a {
                     use crate::{a as A1, a as A2, self as Crate};
                     use crate::{g, f};
                     use crate::a;
+                    use k::i as I3;
                     mod k {
                         use crate::*;
+                        pub use crate::a::*;
                     }
                     pub(in super::super) fn n() {}
                     pub(in crate::a) enum o {}
