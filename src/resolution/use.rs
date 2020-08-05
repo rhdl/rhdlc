@@ -228,7 +228,7 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                         child.unwrap()
                     }
                 };
-                if !super::visibility::is_target_visible(self.scope_graph, ctx.dest, new_scope)
+                if !super::r#pub::is_target_visible(self.scope_graph, ctx.dest, new_scope)
                     .unwrap()
                 {
                     self.errors.push(
@@ -383,7 +383,7 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                 let found_children = found_children
                     .iter()
                     .filter(|index| {
-                        super::visibility::is_target_visible(self.scope_graph, ctx.dest, **index)
+                        super::r#pub::is_target_visible(self.scope_graph, ctx.dest, **index)
                             .unwrap()
                     })
                     .cloned()

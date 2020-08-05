@@ -50,7 +50,7 @@ use name::Name;
 mod r#use;
 use r#use::UseType;
 
-mod visibility;
+mod r#pub;
 
 pub type ScopeGraph<'ast> = Graph<Node<'ast>, String>;
 
@@ -106,7 +106,7 @@ impl<'ast> ScopeBuilder<'ast> {
             .scope_graph
             .node_indices()
             .filter_map(|i| {
-                if let Err(err) = visibility::apply_visibility(&mut self.scope_graph, i) {
+                if let Err(err) = r#pub::apply_visibility(&mut self.scope_graph, i) {
                     Some(err)
                 } else {
                     None
