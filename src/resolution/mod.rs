@@ -508,7 +508,7 @@ impl<'ast> Display for Node<'ast> {
                         match r#use {
                             UseType::Name { name, .. } => write!(f, " {}", name.ident)?,
                             UseType::Glob { .. } => write!(f, " *")?,
-                            UseType::Rename { rename, .. } => write!(f, " {}", rename.rename)?,
+                            UseType::Rename { rename, .. } => write!(f, " {} as {}", rename.ident, rename.rename)?,
                         }
                     }
                 }
