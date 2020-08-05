@@ -1,0 +1,11 @@
+error: could not parse file
+ --> a.rhdl
+  | expected `!`
+error: could not parse file
+ --> a/mod.rhdl
+  | expected `!`
+error: duplicates of module `a` were found at ./test/compile-fail/find-file/duplicate-module-files-parse-fail/a.rhdl and ./test/compile-fail/find-file/duplicate-module-files-parse-fail/a/mod.rhdl
+ --> top.rhdl:1:0
+  |
+1 | mod a;
+  | ^^^^^^ 
