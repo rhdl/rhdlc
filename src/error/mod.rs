@@ -356,12 +356,12 @@ impl Display for TooManySupersError {
 /// this way, there can be a
 /// "item `b` is defined here" reference wherever the item is defined
 #[derive(Debug)]
-pub struct VisibilityError {
+pub struct ItemVisibilityError {
     pub name_file: Rc<File>,
     pub name_ident: syn::Ident,
 }
 
-impl Display for VisibilityError {
+impl Display for ItemVisibilityError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
         render_location(
             f,
@@ -552,7 +552,7 @@ error!(ResolutionError {
     SelfNameNotInGroupError => SelfNameNotInGroupError,
     UnresolvedItemError => UnresolvedItemError,
     TooManySupersError => TooManySupersError,
-    VisibilityError => VisibilityError,
+    ItemVisibilityError => ItemVisibilityError,
     InvalidRawIdentifierError => InvalidRawIdentifierError,
     GlobalPathCannotHaveSpecialIdentError => GlobalPathCannotHaveSpecialIdentError,
     GlobAtEntryError => GlobAtEntryError,

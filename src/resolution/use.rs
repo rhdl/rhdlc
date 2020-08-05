@@ -8,8 +8,8 @@ use syn::{ItemMod, ItemUse, UseName, UseRename, UseTree};
 use super::{File, Node, ResolutionError, ScopeGraph};
 use crate::error::{
     DisambiguationError, GlobAtEntryError, GlobalPathCannotHaveSpecialIdentError,
-    SelfNameNotInGroupError, SpecialIdentNotAtStartOfPathError, TooManySupersError,
-    UnresolvedItemError, VisibilityError,
+    ItemVisibilityError, SelfNameNotInGroupError, SpecialIdentNotAtStartOfPathError,
+    TooManySupersError, UnresolvedItemError,
 };
 
 #[derive(Debug)]
@@ -228,11 +228,10 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                         child.unwrap()
                     }
                 };
-                if !super::r#pub::is_target_visible(self.scope_graph, ctx.dest, new_scope)
-                    .unwrap()
+                if !super::r#pub::is_target_visible(self.scope_graph, ctx.dest, new_scope).unwrap()
                 {
                     self.errors.push(
-                        VisibilityError {
+                        ItemVisibilityError {
                             name_file: ctx.file.clone(),
                             name_ident: path.ident.clone(),
                         }
@@ -390,7 +389,7 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                     .collect::<Vec<NodeIndex>>();
                 if found_children.is_empty() {
                     self.errors.push(
-                        VisibilityError {
+                        ItemVisibilityError {
                             name_file: ctx.file.clone(),
                             name_ident: ident.clone(),
                         }
