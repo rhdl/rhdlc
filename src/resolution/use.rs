@@ -328,7 +328,6 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                 };
 
                 let found_children = if found_children.is_empty() && !is_entry {
-                    // TODO: attempt to save by using matching glob children instead
                     let local_matched_globs: Vec<NodeIndex> = self
                         .scope_graph
                         .neighbors(scope)
