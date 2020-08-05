@@ -3,7 +3,7 @@ use std::rc::Rc;
 
 use log::error;
 use petgraph::{graph::NodeIndex, Direction};
-use syn::{ItemMod, ItemUse, UseName, UseRename, UseTree};
+use syn::{visit::Visit, ItemMod, ItemUse, UseGlob, UseName, UseRename, UseTree};
 
 use super::{File, Node, ResolutionError, ScopeGraph};
 use crate::error::{
@@ -277,16 +277,22 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                             .scope_graph
                             .neighbors(scope)
                             .filter(|candidate| *candidate != ctx.dest)
+                            .filter(|candidate| match &self.scope_graph[*candidate] {
+                                Node::Use {
+                                    item_use, imports, ..
+                                } => {
+                                    imports.is_empty() && {
+                                        let mut checker = ReentrancyNeededChecker {
+                                            name_to_look_for: &original_name_string,
+                                            needed: false,
+                                        };
+                                        checker.visit_item_use(item_use);
+                                        checker.needed
+                                    }
+                                }
+                                _ => false,
+                            })
                             .filter(|candidate| !self.reentrancy.contains(&candidate))
-                            .filter(
-                                |candidate: &NodeIndex| match &self.scope_graph[*candidate] {
-                                    Node::Use {
-                                        imports: other_use_imports,
-                                        ..
-                                    } => other_use_imports.is_empty(),
-                                    _ => false,
-                                },
-                            )
                             .collect::<Vec<NodeIndex>>()
                         {
                             // TODO: check if re-entrancy is actually needed in some cases:
@@ -445,10 +451,22 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
             Node::Impl { .. } => false,
             Node::Use {
                 imports: other_use_imports,
+                item_use,
                 ..
             } => {
                 if other_use_imports.is_empty() {
-                    error!("a use failed to resolve, or a recursive use was encountered");
+                    if self.reentrancy.contains(node) {
+                        error!("a recursive use was encountered and cut off");
+                    } else if {
+                        let mut checker = ReentrancyNeededChecker {
+                            name_to_look_for,
+                            needed: false,
+                        };
+                        checker.visit_item_use(item_use);
+                        checker.needed
+                    } {
+                        error!("this use failed to resolve");
+                    }
                     return false;
                 }
                 other_use_imports.iter().any(|(_, use_types)| {
@@ -462,14 +480,26 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
         }
     }
 
+    // TODO: join this with the above method
     fn matches_only_glob(&self, node: &NodeIndex, name_to_look_for: &str) -> bool {
         match &self.scope_graph[*node] {
             Node::Use {
-                imports: other_use_imports,
+                imports: other_use_imports,item_use,
                 ..
             } => {
                 if other_use_imports.is_empty() {
-                    error!("a use failed to resolve, or a recursive use was encountered");
+                    if self.reentrancy.contains(node) {
+                        error!("a recursive use was encountered and cut off");
+                    } else if {
+                        let mut checker = ReentrancyNeededChecker {
+                            name_to_look_for,
+                            needed: false,
+                        };
+                        checker.visit_item_use(item_use);
+                        checker.needed
+                    } {
+                        error!("this use failed to resolve");
+                    }
                     return false;
                 }
                 other_use_imports.iter().any(|(_, use_types)| {
@@ -486,5 +516,24 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
             }
             _ => false,
         }
+    }
+}
+
+struct ReentrancyNeededChecker<'a> {
+    name_to_look_for: &'a str,
+    needed: bool,
+}
+
+impl<'a, 'ast> Visit<'ast> for ReentrancyNeededChecker<'a> {
+    fn visit_use_name(&mut self, name: &'ast UseName) {
+        self.needed |= name.ident == self.name_to_look_for || name.ident == "self"
+    }
+
+    fn visit_use_rename(&mut self, rename: &'ast UseRename) {
+        self.needed |= rename.rename == self.name_to_look_for || rename.rename == "self"
+    }
+
+    fn visit_use_glob(&mut self, _: &'ast UseGlob) {
+        self.needed |= true;
     }
 }
