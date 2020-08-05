@@ -338,21 +338,22 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                     }
                 };
 
-                let found_children = if found_children.is_empty() && !is_entry {
-                    let local_matched_globs: Vec<NodeIndex> = self
-                        .scope_graph
-                        .neighbors(scope)
-                        .filter(|child| *child != ctx.dest)
-                        .filter(|child| self.matches_only_glob(child, &original_name_string))
-                        .collect();
-                    if local_matched_globs.len() > 1 {
-                        todo!("disambiguation between glob & glob error")
+                let found_children =
+                    if found_children.is_empty() && !(ctx.has_leading_colon && is_entry) {
+                        let local_matched_globs: Vec<NodeIndex> = self
+                            .scope_graph
+                            .neighbors(scope)
+                            .filter(|child| *child != ctx.dest)
+                            .filter(|child| self.matches_only_glob(child, &original_name_string))
+                            .collect();
+                        if local_matched_globs.len() > 1 {
+                            todo!("disambiguation between glob & glob error")
+                        } else {
+                            local_matched_globs
+                        }
                     } else {
-                        local_matched_globs
-                    }
-                } else {
-                    found_children
-                };
+                        found_children
+                    };
                 if found_children.is_empty() {
                     self.errors.push(
                         UnresolvedItemError {
