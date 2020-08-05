@@ -122,12 +122,13 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                 let new_scope = match path_ident.as_str() {
                     // Special keyword cases
                     "self" | "super" | "crate" => {
-                        let is_last_super = ctx
+                        let is_chained_supers = ctx
                             .previous_idents
                             .last()
                             .map(|ident| ident == "super")
-                            .unwrap_or_default();
-                        if !is_entry && !(path_ident == "super" && is_last_super) {
+                            .unwrap_or(true)
+                            && path_ident == "super";
+                        if !is_entry && !is_chained_supers {
                             self.errors.push(
                                 SpecialIdentNotAtStartOfPathError {
                                     file: ctx.file.clone(),
