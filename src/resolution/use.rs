@@ -289,15 +289,12 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                             )
                             .collect::<Vec<NodeIndex>>()
                         {
+                            // TODO: check if re-entrancy is actually needed in some cases:
+                            // could the other use lead to a matching ident?
+                            // * yes if tree contains name/rename with the same ident (UseVisitor)
+                            // * yes if there is a glob
                             let other_use_tree = match &self.scope_graph[reentrant] {
-                                Node::Use {
-                                    item_use:
-                                        ItemUse {
-                                            tree: other_use_tree,
-                                            ..
-                                        },
-                                    ..
-                                } => other_use_tree,
+                                Node::Use { item_use, .. } => &item_use.tree,
                                 _ => continue,
                             };
                             let mut rebuilt_ctx =
