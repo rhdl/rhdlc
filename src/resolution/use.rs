@@ -32,6 +32,7 @@ pub enum UseType<'ast> {
 
 struct TracingContext {
     file: Rc<File>,
+    root: NodeIndex,
     dest: NodeIndex,
     previous_idents: Vec<syn::Ident>,
     has_leading_colon: bool,
@@ -39,10 +40,18 @@ struct TracingContext {
 
 impl TracingContext {
     fn try_new(scope_graph: &ScopeGraph, dest: NodeIndex) -> Option<Self> {
+        let mut root = dest;
+        while let Some(parent) = scope_graph
+            .neighbors_directed(root, Direction::Incoming)
+            .next()
+        {
+            root = parent;
+        }
         match &scope_graph[dest] {
             Node::Use { item_use, file, .. } => Some(Self {
                 file: file.clone(),
                 dest,
+                root,
                 previous_idents: vec![],
                 has_leading_colon: item_use.leading_colon.is_some(),
             }),
@@ -296,32 +305,34 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                         }
                     }
 
-                    // TODO: exclude own root just in case
                     let global_iterator = self
                         .scope_graph
                         .externals(Direction::Incoming)
+                        .filter(|child| *child != ctx.root)
                         .filter(|child| self.matches_no_glob(child, &original_name_string));
                     let local_iterator = self
                         .scope_graph
                         .neighbors(scope)
                         .filter(|child| *child != ctx.dest)
                         .filter(|child| self.matches_no_glob(child, &original_name_string));
-                    if is_entry && ctx.has_leading_colon {
-                        global_iterator.collect()
-                    } else if is_entry {
-                        let global: Vec<NodeIndex> = global_iterator.collect();
-                        let local: Vec<NodeIndex> = local_iterator.collect();
-                        if !global.is_empty() && !local.is_empty() {
-                            self.errors.push(
-                                DisambiguationError {
-                                    file: ctx.file.clone(),
-                                    ident: ident.clone(),
-                                }
-                                .into(),
-                            );
-                            return;
+                    if is_entry {
+                        let global = global_iterator.collect();
+                        if ctx.has_leading_colon {
+                            global
+                        } else {
+                            let local: Vec<NodeIndex> = local_iterator.collect();
+                            if !global.is_empty() && !local.is_empty() {
+                                self.errors.push(
+                                    DisambiguationError {
+                                        file: ctx.file.clone(),
+                                        ident: ident.clone(),
+                                    }
+                                    .into(),
+                                );
+                                return;
+                            }
+                            global.iter().chain(local.iter()).cloned().collect()
                         }
-                        global.iter().chain(local.iter()).cloned().collect()
                     } else {
                         local_iterator.collect()
                     }
