@@ -105,13 +105,7 @@ impl<'ast> ScopeBuilder<'ast> {
         let mut visibility_errors = self
             .scope_graph
             .node_indices()
-            .filter_map(|i| {
-                if let Err(err) = r#pub::apply_visibility(&mut self.scope_graph, i) {
-                    Some(err)
-                } else {
-                    None
-                }
-            })
+            .filter_map(|i| r#pub::apply_visibility(&mut self.scope_graph, i).err())
             .collect::<Vec<ResolutionError>>();
         self.errors.append(&mut visibility_errors);
 

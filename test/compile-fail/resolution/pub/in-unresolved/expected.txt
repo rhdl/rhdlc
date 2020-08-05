@@ -1,0 +1,5 @@
+error: unresolved item `b`
+ --> top.rhdl:1:14
+  |
+1 | pub(in crate::b) struct a {}
+  |               ^ no `b` in `crate`

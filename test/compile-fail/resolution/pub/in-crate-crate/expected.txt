@@ -1,0 +1,5 @@
+error: `crate` in paths can only be used in the start position
+ --> top.rhdl:1:14
+  |
+1 | pub(in crate::crate) struct a {}
+  |               ^^^^^ `crate` in paths can only be used in the start position

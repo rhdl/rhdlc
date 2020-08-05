@@ -1,0 +1,5 @@
+error: this item is private in `a`
+ --> top.rhdl:3:22
+  |
+3 |         pub(in crate::a) struct c {}
+  |                       ^ private in this scope

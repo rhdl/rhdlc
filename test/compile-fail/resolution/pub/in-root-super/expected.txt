@@ -1,0 +1,5 @@
+error: there are too many leading `super` keywords
+ --> top.rhdl:1:7
+  |
+1 | pub(in super) struct a {}
+  |        ^^^^^ goes beyond the crate root

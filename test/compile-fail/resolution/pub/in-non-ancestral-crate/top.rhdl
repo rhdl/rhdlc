@@ -1,0 +1,4 @@
+mod a {
+    pub(in crate::c) struct b {}
+}
+mod c {}

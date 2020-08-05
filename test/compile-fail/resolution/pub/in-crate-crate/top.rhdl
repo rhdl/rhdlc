@@ -1,0 +1,1 @@
+pub(in crate::crate) struct a {}

@@ -1,0 +1,5 @@
+error: incorrect visibility
+ --> top.rhdl:1:7
+  |
+1 | pub(in b) struct a {}
+  |        ^ expected crate, super, or an ancestral path

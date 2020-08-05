@@ -9,9 +9,8 @@ use syn::{spanned::Spanned, Visibility};
 
 use super::{Node, ScopeGraph};
 use crate::error::{
-    IncorrectVisibilityError, NonAncestralError, ResolutionError,
+    IncorrectVisibilityError, NonAncestralError, ResolutionError, ScopeVisibilityError,
     SpecialIdentNotAtStartOfPathError, TooManySupersError, UnresolvedItemError, UnsupportedError,
-    VisibilityError,
 };
 use crate::find_file::File;
 
@@ -124,6 +123,7 @@ fn apply_visibility_in<'ast>(
             return Err(NonAncestralError {
                 file: file.clone(),
                 segment_ident: first_segment.ident.clone(),
+                prev_segment_ident: None,
             }
             .into());
         }
@@ -154,7 +154,8 @@ fn apply_visibility_in<'ast>(
         } else if prev_segment.ident == "super" && segment.ident != "super" {
             return Err(NonAncestralError {
                 file: file.clone(),
-                segment_ident: first_segment.ident.clone(),
+                segment_ident: segment.ident.clone(),
+                prev_segment_ident: Some(prev_segment.ident.clone()),
             }
             .into());
         }
@@ -162,9 +163,9 @@ fn apply_visibility_in<'ast>(
         export_dest = if segment.ident == "super" {
             if let Some(export_dest_parent) = first_parent(scope_graph, export_dest) {
                 if !is_target_visible(scope_graph, export_dest_parent, node_parent).unwrap() {
-                    return Err(VisibilityError {
-                        name_file: file.clone(),
-                        name_ident: segment.ident.clone(),
+                    return Err(ScopeVisibilityError {
+                        file: file.clone(),
+                        scope_ident: segment.ident.clone(),
                     }
                     .into());
                 }
@@ -206,9 +207,9 @@ fn apply_visibility_in<'ast>(
                 .find(|child| ancestry.contains(child))
             {
                 if !is_target_visible(scope_graph, *export_dest_child, node_parent).unwrap() {
-                    return Err(VisibilityError {
-                        name_file: file.clone(),
-                        name_ident: segment.ident.clone(),
+                    return Err(ScopeVisibilityError {
+                        file: file.clone(),
+                        scope_ident: segment.ident.clone(),
                     }
                     .into());
                 }
@@ -216,7 +217,8 @@ fn apply_visibility_in<'ast>(
             } else {
                 return Err(NonAncestralError {
                     file: file.clone(),
-                    segment_ident: first_segment.ident.clone(),
+                    segment_ident: segment.ident.clone(),
+                    prev_segment_ident: Some(prev_segment.ident.clone()),
                 }
                 .into());
             }

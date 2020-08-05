@@ -1,0 +1,5 @@
+error: `c` is not an ancestor of `super`
+ --> top.rhdl:2:18
+  |
+2 |     pub(in super::c) struct b {}
+  |                   ^ not an ancestor

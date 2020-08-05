@@ -1,0 +1,5 @@
+error: unsupported feature
+ --> top.rhdl:1:7
+  |
+1 | pub(in ::b) struct a {}
+  |        ^^ Beginning with the 2018 edition of Rust, paths for pub(in path) must start with crate, self, or super.

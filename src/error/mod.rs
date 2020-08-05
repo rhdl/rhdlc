@@ -379,6 +379,29 @@ impl Display for VisibilityError {
 }
 
 #[derive(Debug)]
+pub struct ScopeVisibilityError {
+    pub file: Rc<File>,
+    pub scope_ident: syn::Ident,
+}
+
+impl Display for ScopeVisibilityError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        render_location(
+            f,
+            format!("this item is private in `{}`", self.scope_ident),
+            (
+                Reference::Error,
+                "private in this scope",
+                self.scope_ident.span(),
+            ),
+            vec![],
+            &self.file.src,
+            &self.file.content,
+        )
+    }
+}
+
+#[derive(Debug)]
 pub struct InvalidRawIdentifierError {
     pub file: Rc<File>,
     pub ident: syn::Ident,
@@ -461,7 +484,7 @@ impl Display for IncorrectVisibilityError {
             "incorrect visibility",
             (
                 Reference::Error,
-                "expected crate, super, or a path",
+                "expected crate, super, or an ancestral path",
                 self.vis_span,
             ),
             vec![],
@@ -495,13 +518,21 @@ impl Display for UnsupportedError {
 pub struct NonAncestralError {
     pub file: Rc<File>,
     pub segment_ident: syn::Ident,
+    pub prev_segment_ident: Option<syn::Ident>,
 }
 
 impl Display for NonAncestralError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
         render_location(
             f,
-            format!("`{}` is not an ancestor of this scope", self.segment_ident),
+            format!(
+                "`{}` is not an ancestor of {}",
+                self.segment_ident,
+                match &self.prev_segment_ident {
+                    Some(prev) => format!("`{}`", prev),
+                    None => "this scope".to_string(),
+                }
+            ),
             (
                 Reference::Error,
                 "not an ancestor",
@@ -528,4 +559,5 @@ error!(ResolutionError {
     IncorrectVisibilityError => IncorrectVisibilityError,
     UnsupportedError => UnsupportedError,
     NonAncestralError => NonAncestralError,
+    ScopeVisibilityError => ScopeVisibilityError,
 });

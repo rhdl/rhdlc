@@ -1,0 +1,5 @@
+error: this item is private in `super`
+ --> top.rhdl:3:22
+  |
+3 |         pub(in super::super) struct c {}
+  |                       ^^^^^ private in this scope
