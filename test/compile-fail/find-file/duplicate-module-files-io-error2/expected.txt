@@ -1,0 +1,8 @@
+error: could not parse file
+ --> a.rhdl
+  | expected `!`
+error: file not found for module `a`
+ --> top.rhdl:1:0
+  |
+1 | mod a;
+  | ^^^^^^ ./test/compile-fail/find-file/duplicate-module-files-io-error2/a/mod.rhdl : Permission denied (os error 13)
