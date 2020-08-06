@@ -3,7 +3,7 @@ use std::rc::Rc;
 
 use log::error;
 use petgraph::{graph::NodeIndex, Direction};
-use syn::{visit::Visit, ItemMod, UseGlob, UseName, UseRename, UseTree};
+use syn::{visit::Visit, ItemMod, UseGlob, UseName, UsePath, UseRename, UseTree};
 
 use super::{File, Node, ResolutionError, ScopeGraph};
 use crate::error::{
@@ -264,6 +264,7 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                 let original_name_string = ident.to_string();
                 let found_children: Vec<NodeIndex> = if original_name_string == "self" {
                     if !in_group {
+                        // TODO: self in group but the group is the first thing
                         self.errors.push(
                             SelfNameNotInGroupError {
                                 file: ctx.file.clone(),
@@ -355,12 +356,15 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                             .collect();
                         if local_matched_globs.len() > 1 {
                             // CLAIM: these will always be globs
-                            self.errors.push(DisambiguationError {
-                                file: ctx.file.clone(),
-                                ident: ident.clone(),
-                                this: AmbiguitySource::Glob,
-                                other: AmbiguitySource::Glob,
-                            }.into());
+                            self.errors.push(
+                                DisambiguationError {
+                                    file: ctx.file.clone(),
+                                    ident: ident.clone(),
+                                    this: AmbiguitySource::Glob,
+                                    other: AmbiguitySource::Glob,
+                                }
+                                .into(),
+                            );
                             return;
                         } else {
                             local_matched_globs
@@ -505,13 +509,26 @@ struct ReentrancyNeededChecker<'a> {
 }
 
 impl<'a, 'ast> Visit<'ast> for ReentrancyNeededChecker<'a> {
+    fn visit_use_path(&mut self, path: &'ast UsePath) {
+        // this replaces the default trait impl, need to call use_tree for use name visitation
+        self.visit_use_tree(path.tree.as_ref());
+        self.needed |= path.ident == self.name_to_look_for
+            && match path.tree.as_ref() {
+                UseTree::Group(group) => group.items.iter().any(|tree| match tree {
+                    UseTree::Rename(rename) => rename.ident == "self",
+                    UseTree::Name(name) => name.ident == "self",
+                    _ => false,
+                }),
+                _ => false,
+            }
+    }
+
     fn visit_use_name(&mut self, name: &'ast UseName) {
-        // todo: visit path segments to look for groups containing a self, where the last path ident == name to look for
-        self.needed |= name.ident == self.name_to_look_for || name.ident == "self"
+        self.needed |= name.ident == self.name_to_look_for
     }
 
     fn visit_use_rename(&mut self, rename: &'ast UseRename) {
-        self.needed |= rename.rename == self.name_to_look_for || rename.rename == "self"
+        self.needed |= rename.rename == self.name_to_look_for
     }
 
     fn visit_use_glob(&mut self, _: &'ast UseGlob) {
