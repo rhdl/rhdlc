@@ -184,34 +184,24 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                     }
                     // Default case: enter the matching child scope
                     path_ident_str => {
-                        // TODO: check uses for same ident
-                        // TODO disambiguation error for this ^
-                        // i.e. use a::b; use b::c;
-                        let same_ident_finder = |child: &NodeIndex| {
-                            match &self.scope_graph[*child] {
-                                Node::Mod { item_mod, .. } => item_mod.ident == path_ident_str,
-                                // this will work just fine since n is a string
-                                Node::Root { name: Some(n), .. } => n == path_ident_str,
-                                // Node::Use {imports, ..} => {
-
-                                // }
-                                _ => false,
-                            }
-                        };
-                        let child = if is_entry && ctx.has_leading_colon {
+                        let global_iterator = self
+                            .scope_graph
+                            .externals(Direction::Incoming)
+                            .map(|i| self.path_matches(&i, path_ident_str, false))
+                            .flatten();
+                        let local_iterator = self
+                            .scope_graph
+                            .neighbors(scope)
+                            .map(|i| self.path_matches(&i, path_ident_str, false))
+                            .flatten();
+                        let found_children: Vec<NodeIndex> = if is_entry && ctx.has_leading_colon {
                             // we know the scope can be ignored in this case...
-                            self.scope_graph
-                                .externals(Direction::Incoming)
-                                .find(same_ident_finder)
+                            global_iterator.collect()
                         } else if is_entry {
-                            let global_child = self
-                                .scope_graph
-                                .externals(Direction::Incoming)
-                                .find(same_ident_finder);
-                            let local_child =
-                                self.scope_graph.neighbors(scope).find(same_ident_finder);
+                            let mut global_children: Vec<NodeIndex> = global_iterator.collect();
+                            let mut local_children: Vec<NodeIndex> = local_iterator.collect();
 
-                            if let (Some(_gc), Some(_lc)) = (global_child, local_child) {
+                            if !global_children.is_empty() && !local_children.is_empty() {
                                 // CLAIM: these will always be names, because globs are not included
                                 self.errors.push(
                                     DisambiguationError {
@@ -224,11 +214,12 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                                 );
                                 return;
                             }
-                            global_child.or(local_child)
+                            local_children.append(&mut global_children);
+                            local_children
                         } else {
-                            self.scope_graph.neighbors(scope).find(same_ident_finder)
+                            local_iterator.collect()
                         };
-                        if child.is_none() {
+                        if found_children.is_empty() {
                             self.errors.push(
                                 UnresolvedItemError {
                                     file: ctx.file.clone(),
@@ -239,8 +230,10 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                                 .into(),
                             );
                             return;
+                        } else if found_children.len() > 1 {
+                            todo!("disambiguation error");
                         }
-                        child.unwrap()
+                        *found_children.first().unwrap()
                     }
                 };
                 if !super::r#pub::is_target_visible(self.scope_graph, ctx.dest, new_scope).unwrap()
@@ -312,12 +305,12 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                         .scope_graph
                         .externals(Direction::Incoming)
                         .filter(|child| *child != ctx.root)
-                        .filter(|child| self.matches(child, &original_name_string, false));
+                        .filter(|child| self.item_matches(child, &original_name_string, false));
                     let local_iterator = self
                         .scope_graph
                         .neighbors(scope)
                         .filter(|child| *child != ctx.dest)
-                        .filter(|child| self.matches(child, &original_name_string, false));
+                        .filter(|child| self.item_matches(child, &original_name_string, false));
                     if is_entry {
                         let global = global_iterator.collect();
                         if ctx.has_leading_colon {
@@ -350,7 +343,7 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                             .scope_graph
                             .neighbors(scope)
                             .filter(|child| *child != ctx.dest)
-                            .filter(|child| self.matches(child, &original_name_string, true))
+                            .filter(|child| self.item_matches(child, &original_name_string, true))
                             .collect();
                         if local_matched_globs.len() > 1 {
                             // CLAIM: these will always be globs
@@ -449,7 +442,98 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
         }
     }
 
-    fn matches(&self, node: &NodeIndex, name_to_look_for: &str, glob_only: bool) -> bool {
+    fn path_matches(
+        &self,
+        node: &NodeIndex,
+        name_to_look_for: &str,
+        glob_only: bool,
+    ) -> Vec<NodeIndex> {
+        let exact_match = match &self.scope_graph[*node] {
+            Node::Root { name, .. } => !glob_only && name == name_to_look_for,
+            Node::Mod { item_mod, .. } => !glob_only && item_mod.ident == name_to_look_for,
+            Node::Var { .. }
+            | Node::Use { .. }
+            | Node::Macro { .. }
+            | Node::Type { .. }
+            | Node::Fn { .. }
+            | Node::Impl { .. } => false,
+        };
+        match &self.scope_graph[*node] {
+            Node::Use { imports, .. } => imports
+                .values()
+                .map(|use_types| {
+                    use_types
+                        .iter()
+                        .map(|use_type| match use_type {
+                            UseType::Name { name, indices } => {
+                                if name.ident == name_to_look_for {
+                                    indices
+                                        .iter()
+                                        .map(|i| self.path_matches(i, name_to_look_for, glob_only))
+                                        .flatten()
+                                        .collect::<Vec<NodeIndex>>()
+                                } else {
+                                    vec![]
+                                }
+                            }
+                            UseType::Rename { rename, indices } => {
+                                if rename.rename == name_to_look_for {
+                                    indices
+                                        .iter()
+                                        .map(|i| {
+                                            self.path_matches(
+                                                i,
+                                                &rename.ident.to_string(),
+                                                glob_only,
+                                            )
+                                        })
+                                        .flatten()
+                                        .collect::<Vec<NodeIndex>>()
+                                } else {
+                                    vec![]
+                                }
+                            }
+                            UseType::Glob { scope } => {
+                                if glob_only {
+                                    self.scope_graph
+                                        .neighbors(*scope)
+                                        .map(|child| {
+                                            let mut nonglob_matches =
+                                                self.path_matches(&child, name_to_look_for, false);
+                                            let mut glob_matches =
+                                                self.path_matches(&child, name_to_look_for, true);
+                                            nonglob_matches.append(&mut glob_matches);
+                                            nonglob_matches
+                                        })
+                                        .flatten()
+                                        .collect()
+                                } else {
+                                    vec![]
+                                }
+                            }
+                        })
+                        .flatten()
+                })
+                .flatten()
+                .collect(),
+
+            Node::Mod { .. }
+            | Node::Root { .. }
+            | Node::Var { .. }
+            | Node::Macro { .. }
+            | Node::Type { .. }
+            | Node::Fn { .. }
+            | Node::Impl { .. } => {
+                if exact_match {
+                    vec![*node]
+                } else {
+                    vec![]
+                }
+            }
+        }
+    }
+
+    fn item_matches(&self, node: &NodeIndex, name_to_look_for: &str, glob_only: bool) -> bool {
         match &self.scope_graph[*node] {
             Node::Var { ident, .. } | Node::Macro { ident, .. } | Node::Type { ident, .. } => {
                 !glob_only && *ident == name_to_look_for
@@ -459,13 +543,11 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                 item_mod: ItemMod { ident, .. },
                 ..
             } => !glob_only && *ident == name_to_look_for,
-            Node::Root { name: Some(n), .. } => !glob_only && n == name_to_look_for,
+            Node::Root { name, .. } => !glob_only && name == name_to_look_for,
             Node::Use {
-                imports: other_use_imports,
-                item_use,
-                ..
+                imports, item_use, ..
             } => {
-                if other_use_imports.is_empty() {
+                if imports.is_empty() {
                     if self.reentrancy.contains(node) {
                         error!("a recursive use was encountered and cut off");
                     } else if {
@@ -480,7 +562,7 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                     }
                     return false;
                 }
-                other_use_imports.iter().any(|(_, use_types)| {
+                imports.values().any(|use_types| {
                     use_types.iter().any(|use_type| match use_type {
                         UseType::Name { name, .. } => !glob_only && name.ident == name_to_look_for,
                         UseType::Rename { rename, .. } => {
@@ -489,14 +571,13 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                         UseType::Glob { scope } => {
                             glob_only
                                 && self.scope_graph.neighbors(*scope).any(|child| {
-                                    self.matches(&child, name_to_look_for, false)
-                                        || self.matches(&child, name_to_look_for, true)
+                                    self.item_matches(&child, name_to_look_for, false)
+                                        || self.item_matches(&child, name_to_look_for, true)
                                 })
                         }
                     })
                 })
             }
-            Node::Root { name: None, .. } => false,
             Node::Impl { .. } => false,
         }
     }

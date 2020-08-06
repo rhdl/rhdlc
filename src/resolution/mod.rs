@@ -36,6 +36,7 @@ use std::convert::TryFrom;
 use std::fmt::Display;
 use std::rc::Rc;
 
+use log::error;
 use petgraph::{graph::NodeIndex, visit::EdgeRef, Direction, Graph};
 use syn::{spanned::Spanned, Ident, Item, ItemFn, ItemImpl, ItemMod, ItemUse};
 
@@ -86,7 +87,7 @@ impl<'ast> ScopeBuilder<'ast> {
             let file = self.file_graph[file_index].clone();
             let scope_index = self.scope_graph.add_node(Node::Root {
                 // TODO: attach a real name
-                name: None,
+                name: String::default(),
                 file,
                 exports: vec![],
             });
@@ -268,9 +269,10 @@ impl<'ast> ScopeBuilder<'ast> {
                         .iter()
                         .filter_map(|scope_ancestor| match &self.scope_graph[*scope_ancestor] {
                             Node::Mod { item_mod, .. } => Some(item_mod.ident.clone()),
-                            Node::Root {
-                                name: Some(_name), ..
-                            } => todo!("this needs to be an ident"),
+                            Node::Root { name, .. } => {
+                                error!("this needs to be an ident");
+                                None
+                            }
                             _ => None,
                         })
                         .collect();
@@ -432,7 +434,7 @@ pub enum Node<'ast> {
         /// Only the top level entity is allowed to have no name
         /// TODO: figure out how to reconcile library-building behavior of rustc
         /// with the fact that there are no binaries for RHDL...
-        name: Option<String>,
+        name: String,
         file: Rc<File>,
         // The list of items this root exports, visible from ANY scope
         exports: Vec<NodeIndex>,

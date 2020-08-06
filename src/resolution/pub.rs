@@ -183,9 +183,7 @@ fn apply_visibility_in<'ast>(
                 .neighbors(export_dest)
                 .filter(|child| match &scope_graph[*child] {
                     Node::Mod { item_mod, .. } => item_mod.ident == segment_ident_string,
-                    Node::Root {
-                        name: Some(name), ..
-                    } => *name == segment_ident_string,
+                    Node::Root { name, .. } => *name == segment_ident_string,
                     _ => false,
                 })
                 .collect();
