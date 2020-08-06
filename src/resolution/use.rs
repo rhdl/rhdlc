@@ -255,7 +255,6 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                 let original_name_string = ident.to_string();
                 let found_children: Vec<NodeIndex> = if original_name_string == "self" {
                     if !in_group {
-                        // TODO: self in group but the group is the first thing
                         self.errors.push(
                             SelfNameNotInGroupError {
                                 file: ctx.file.clone(),
@@ -264,6 +263,9 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                             .into(),
                         );
                         return;
+                    }
+                    if ctx.previous_idents.is_empty() {
+                        todo!("self in group but the group is the first thing");
                     }
                     vec![scope]
                 } else {
