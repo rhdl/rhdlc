@@ -183,17 +183,15 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                         }
                     }
                     // Default case: enter the matching child scope
-                    _ => {
+                    path_ident_str => {
                         // TODO: check uses for same ident
                         // TODO disambiguation error for this ^
                         // i.e. use a::b; use b::c;
                         let same_ident_finder = |child: &NodeIndex| {
                             match &self.scope_graph[*child] {
-                                Node::Mod { item_mod, .. } => {
-                                    item_mod.ident == path.ident.to_string()
-                                }
+                                Node::Mod { item_mod, .. } => item_mod.ident == path_ident_str,
                                 // this will work just fine since n is a string
-                                Node::Root { name: Some(n), .. } => path.ident == n,
+                                Node::Root { name: Some(n), .. } => n == path_ident_str,
                                 // Node::Use {imports, ..} => {
 
                                 // }
