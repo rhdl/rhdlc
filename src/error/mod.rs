@@ -245,6 +245,24 @@ impl Display for SpecialIdentNotAtStartOfPathError {
 pub struct DisambiguationError {
     pub file: Rc<File>,
     pub ident: syn::Ident,
+    pub this: AmbiguitySource,
+    pub other: AmbiguitySource,
+}
+
+#[derive(Debug)]
+pub enum AmbiguitySource {
+    Name,
+    Glob,
+}
+
+impl Display for AmbiguitySource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        use AmbiguitySource::*;
+        match self {
+            Name => write!(f, "name"),
+            Glob => write!(f, "glob"),
+        }
+    }
 }
 
 impl Display for DisambiguationError {
@@ -252,8 +270,8 @@ impl Display for DisambiguationError {
         render_location(
             f,
             format!(
-                "`{}` is ambiguous (name versus other names found during resolution)",
-                self.ident
+                "`{}` is ambiguous ({} versus other {}s found during resolution)",
+                self.ident, self.this, self.other
             ),
             (Reference::Error, "ambiguous name", self.ident.span()),
             vec![],

@@ -3,11 +3,11 @@ use std::rc::Rc;
 
 use log::error;
 use petgraph::{graph::NodeIndex, Direction};
-use syn::{visit::Visit, ItemMod, ItemUse, UseGlob, UseName, UseRename, UseTree};
+use syn::{visit::Visit, ItemMod, UseGlob, UseName, UseRename, UseTree};
 
 use super::{File, Node, ResolutionError, ScopeGraph};
 use crate::error::{
-    DisambiguationError, GlobAtEntryError, GlobalPathCannotHaveSpecialIdentError,
+    AmbiguitySource, DisambiguationError, GlobAtEntryError, GlobalPathCannotHaveSpecialIdentError,
     ItemVisibilityError, SelfNameNotInGroupError, SpecialIdentNotAtStartOfPathError,
     TooManySupersError, UnresolvedItemError,
 };
@@ -185,6 +185,7 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                     // Default case: enter the matching child scope
                     _ => {
                         // TODO: check uses for same ident
+                        // TODO disambiguation error for this ^
                         // i.e. use a::b; use b::c;
                         let same_ident_finder = |child: &NodeIndex| {
                             match &self.scope_graph[*child] {
@@ -213,10 +214,13 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                                 self.scope_graph.neighbors(scope).find(same_ident_finder);
 
                             if let (Some(_gc), Some(_lc)) = (global_child, local_child) {
+                                // CLAIM: these will always be names, because globs are not included
                                 self.errors.push(
                                     DisambiguationError {
                                         file: ctx.file.clone(),
                                         ident: path.ident.clone(),
+                                        this: AmbiguitySource::Name,
+                                        other: AmbiguitySource::Name,
                                     }
                                     .into(),
                                 );
@@ -322,10 +326,13 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                         } else {
                             let local: Vec<NodeIndex> = local_iterator.collect();
                             if !global.is_empty() && !local.is_empty() {
+                                // CLAIM: these will always be names, because globs are not included
                                 self.errors.push(
                                     DisambiguationError {
                                         file: ctx.file.clone(),
                                         ident: ident.clone(),
+                                        this: AmbiguitySource::Name,
+                                        other: AmbiguitySource::Glob,
                                     }
                                     .into(),
                                 );
@@ -347,7 +354,14 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                             .filter(|child| self.matches(child, &original_name_string, true))
                             .collect();
                         if local_matched_globs.len() > 1 {
-                            todo!("disambiguation between glob & glob error")
+                            // CLAIM: these will always be globs
+                            self.errors.push(DisambiguationError {
+                                file: ctx.file.clone(),
+                                ident: ident.clone(),
+                                this: AmbiguitySource::Glob,
+                                other: AmbiguitySource::Glob,
+                            }.into());
+                            return;
                         } else {
                             local_matched_globs
                         }
