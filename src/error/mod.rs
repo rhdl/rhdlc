@@ -466,6 +466,7 @@ pub struct GlobAtEntryError {
     pub file: Rc<File>,
     pub star_span: Span,
     pub has_leading_colon: bool,
+    pub previous_ident: Option<syn::Ident>,
 }
 
 impl Display for GlobAtEntryError {
@@ -477,6 +478,13 @@ impl Display for GlobAtEntryError {
                 Reference::Error,
                 if self.has_leading_colon {
                     "this would import all crates"
+                } else if self
+                    .previous_ident
+                    .as_ref()
+                    .map(|prev| prev == "super")
+                    .unwrap_or_default()
+                {
+                    "this would re-import all local items"
                 } else {
                     "this would re-import all crates and local items"
                 },
