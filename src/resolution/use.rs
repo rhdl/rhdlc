@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use log::error;
@@ -12,7 +12,7 @@ use crate::error::{
     TooManySupersError, UnresolvedItemError,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum UseType<'ast> {
     /// Pull a particular name into scope
     /// Could be ambiguous
@@ -184,41 +184,15 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                     }
                     // Default case: enter the matching child scope
                     path_ident_str => {
-                        let global_iterator = self
-                            .scope_graph
-                            .externals(Direction::Incoming)
-                            .map(|i| self.path_matches(&i, path_ident_str, false))
-                            .flatten();
-                        let local_iterator = self
-                            .scope_graph
-                            .neighbors(scope)
-                            .map(|i| self.path_matches(&i, path_ident_str, false))
-                            .flatten();
-                        let found_children: Vec<NodeIndex> = if is_entry && ctx.has_leading_colon {
-                            // we know the scope can be ignored in this case...
-                            global_iterator.collect()
-                        } else if is_entry {
-                            let mut global_children: Vec<NodeIndex> = global_iterator.collect();
-                            let mut local_children: Vec<NodeIndex> = local_iterator.collect();
-
-                            if !global_children.is_empty() && !local_children.is_empty() {
-                                // CLAIM: these will always be names, because globs are not included
-                                self.errors.push(
-                                    DisambiguationError {
-                                        file: ctx.file.clone(),
-                                        ident: path.ident.clone(),
-                                        this: AmbiguitySource::Name,
-                                        other: AmbiguitySource::Name,
-                                    }
-                                    .into(),
-                                );
-                                return;
-                            }
-                            local_children.append(&mut global_children);
-                            local_children
-                        } else {
-                            local_iterator.collect()
-                        };
+                        let found_children =
+                            match self.find_children(ctx, scope, &path.ident, path_ident_str, true)
+                            {
+                                Ok(v) => v,
+                                Err(err) => {
+                                    self.errors.push(err);
+                                    return;
+                                }
+                            };
                         if found_children.is_empty() {
                             self.errors.push(
                                 UnresolvedItemError {
@@ -236,17 +210,6 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                         *found_children.first().unwrap()
                     }
                 };
-                if !super::r#pub::is_target_visible(self.scope_graph, ctx.dest, new_scope).unwrap()
-                {
-                    self.errors.push(
-                        ItemVisibilityError {
-                            name_file: ctx.file.clone(),
-                            name_ident: path.ident.clone(),
-                        }
-                        .into(),
-                    );
-                    return;
-                }
                 ctx.previous_idents.push(path.ident.clone());
                 self.trace_use(ctx, new_scope, &path.tree, false);
                 ctx.previous_idents.pop();
@@ -269,102 +232,15 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                     }
                     vec![scope]
                 } else {
-                    // reentrancy behavior
-                    if !(is_entry && ctx.has_leading_colon) {
-                        for reentrant in self
-                            .scope_graph
-                            .neighbors(scope)
-                            .filter(|candidate| *candidate != ctx.dest)
-                            .filter(|candidate| match &self.scope_graph[*candidate] {
-                                Node::Use {
-                                    item_use, imports, ..
-                                } => {
-                                    imports.is_empty() && {
-                                        let mut checker = ReentrancyNeededChecker {
-                                            name_to_look_for: &original_name_string,
-                                            needed: false,
-                                        };
-                                        checker.visit_item_use(item_use);
-                                        checker.needed
-                                    }
-                                }
-                                _ => false,
-                            })
-                            .filter(|candidate| !self.reentrancy.contains(&candidate))
-                            .collect::<Vec<NodeIndex>>()
-                        {
-                            let other_use_tree = match &self.scope_graph[reentrant] {
-                                Node::Use { item_use, .. } => &item_use.tree,
-                                _ => continue,
-                            };
-                            let mut rebuilt_ctx =
-                                TracingContext::try_new(self.scope_graph, reentrant).unwrap();
-                            self.trace_use_entry_reenterable(&mut rebuilt_ctx, other_use_tree);
+                    match self.find_children(ctx, scope, ident, &original_name_string, false) {
+                        Ok(v) => v,
+                        Err(err) => {
+                            self.errors.push(err);
+                            return;
                         }
-                    }
-
-                    let global_iterator = self
-                        .scope_graph
-                        .externals(Direction::Incoming)
-                        .filter(|child| *child != ctx.root)
-                        .filter(|child| self.item_matches(child, &original_name_string, false));
-                    let local_iterator = self
-                        .scope_graph
-                        .neighbors(scope)
-                        .filter(|child| *child != ctx.dest)
-                        .filter(|child| self.item_matches(child, &original_name_string, false));
-                    if is_entry {
-                        let global = global_iterator.collect();
-                        if ctx.has_leading_colon {
-                            global
-                        } else {
-                            let local: Vec<NodeIndex> = local_iterator.collect();
-                            if !global.is_empty() && !local.is_empty() {
-                                // CLAIM: these will always be names, because globs are not included
-                                self.errors.push(
-                                    DisambiguationError {
-                                        file: ctx.file.clone(),
-                                        ident: ident.clone(),
-                                        this: AmbiguitySource::Name,
-                                        other: AmbiguitySource::Glob,
-                                    }
-                                    .into(),
-                                );
-                                return;
-                            }
-                            global.iter().chain(local.iter()).cloned().collect()
-                        }
-                    } else {
-                        local_iterator.collect()
                     }
                 };
 
-                let found_children =
-                    if found_children.is_empty() && !(ctx.has_leading_colon && is_entry) {
-                        let local_matched_globs: Vec<NodeIndex> = self
-                            .scope_graph
-                            .neighbors(scope)
-                            .filter(|child| *child != ctx.dest)
-                            .filter(|child| self.item_matches(child, &original_name_string, true))
-                            .collect();
-                        if local_matched_globs.len() > 1 {
-                            // CLAIM: these will always be globs
-                            self.errors.push(
-                                DisambiguationError {
-                                    file: ctx.file.clone(),
-                                    ident: ident.clone(),
-                                    this: AmbiguitySource::Glob,
-                                    other: AmbiguitySource::Glob,
-                                }
-                                .into(),
-                            );
-                            return;
-                        } else {
-                            local_matched_globs
-                        }
-                    } else {
-                        found_children
-                    };
                 if found_children.is_empty() {
                     self.errors.push(
                         UnresolvedItemError {
@@ -372,25 +248,6 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                             previous_idents: ctx.previous_idents.clone(),
                             unresolved_ident: ident.clone(),
                             has_leading_colon: ctx.has_leading_colon,
-                        }
-                        .into(),
-                    );
-                    return;
-                }
-
-                let found_children = found_children
-                    .iter()
-                    .filter(|index| {
-                        super::r#pub::is_target_visible(self.scope_graph, ctx.dest, **index)
-                            .unwrap()
-                    })
-                    .cloned()
-                    .collect::<Vec<NodeIndex>>();
-                if found_children.is_empty() {
-                    self.errors.push(
-                        ItemVisibilityError {
-                            name_file: ctx.file.clone(),
-                            name_ident: ident.clone(),
                         }
                         .into(),
                     );
@@ -444,143 +301,250 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
         }
     }
 
-    fn path_matches(
-        &self,
-        node: &NodeIndex,
-        name_to_look_for: &str,
-        glob_only: bool,
-    ) -> Vec<NodeIndex> {
-        let exact_match = match &self.scope_graph[*node] {
-            Node::Root { name, .. } => !glob_only && name == name_to_look_for,
-            Node::Mod { item_mod, .. } => !glob_only && item_mod.ident == name_to_look_for,
-            Node::Var { .. }
-            | Node::Use { .. }
-            | Node::Macro { .. }
-            | Node::Type { .. }
-            | Node::Fn { .. }
-            | Node::Impl { .. } => false,
-        };
-        match &self.scope_graph[*node] {
-            Node::Use { imports, .. } => imports
-                .values()
-                .map(|use_types| {
-                    use_types
-                        .iter()
-                        .map(|use_type| match use_type {
-                            UseType::Name { name, indices } => {
-                                if name.ident == name_to_look_for {
-                                    indices
-                                        .iter()
-                                        .map(|i| self.path_matches(i, name_to_look_for, glob_only))
-                                        .flatten()
-                                        .collect::<Vec<NodeIndex>>()
-                                } else {
-                                    vec![]
-                                }
-                            }
-                            UseType::Rename { rename, indices } => {
-                                if rename.rename == name_to_look_for {
-                                    indices
-                                        .iter()
-                                        .map(|i| {
-                                            self.path_matches(
-                                                i,
-                                                &rename.ident.to_string(),
-                                                glob_only,
-                                            )
-                                        })
-                                        .flatten()
-                                        .collect::<Vec<NodeIndex>>()
-                                } else {
-                                    vec![]
-                                }
-                            }
-                            UseType::Glob { scope } => {
-                                if glob_only {
-                                    self.scope_graph
-                                        .neighbors(*scope)
-                                        .map(|child| {
-                                            let mut nonglob_matches =
-                                                self.path_matches(&child, name_to_look_for, false);
-                                            let mut glob_matches =
-                                                self.path_matches(&child, name_to_look_for, true);
-                                            nonglob_matches.append(&mut glob_matches);
-                                            nonglob_matches
-                                        })
-                                        .flatten()
-                                        .collect()
-                                } else {
-                                    vec![]
-                                }
-                            }
-                        })
-                        .flatten()
-                })
+    fn find_children(
+        &mut self,
+        ctx: &TracingContext,
+        scope: NodeIndex,
+        ident: &syn::Ident,
+        original_name_string: &str,
+        paths_only: bool,
+    ) -> Result<Vec<NodeIndex>, ResolutionError> {
+        let is_entry = ctx.previous_idents.is_empty();
+        let local = if !is_entry || (is_entry && !ctx.has_leading_colon) {
+            let local_nodes: Vec<NodeIndex> = self
+                .scope_graph
+                .neighbors(scope)
+                .filter(|child| *child != ctx.dest)
+                .collect();
+            local_nodes
+                .iter()
+                .map(|child| self.matches(&child, original_name_string, paths_only, false))
                 .flatten()
-                .collect(),
-
-            Node::Mod { .. }
-            | Node::Root { .. }
-            | Node::Var { .. }
-            | Node::Macro { .. }
-            | Node::Type { .. }
-            | Node::Fn { .. }
-            | Node::Impl { .. } => {
-                if exact_match {
-                    vec![*node]
+                .collect()
+        } else {
+            vec![]
+        };
+        let global = if is_entry {
+            let global_nodes: Vec<NodeIndex> = self
+                .scope_graph
+                .externals(Direction::Incoming)
+                .filter(|child| *child != ctx.root)
+                .collect();
+            global_nodes
+                .iter()
+                .map(|child| self.matches(&child, original_name_string, paths_only, false))
+                .flatten()
+                .collect()
+        } else {
+            vec![]
+        };
+        let visible_local: Vec<NodeIndex> = local
+            .iter()
+            .filter(|i| super::r#pub::is_target_visible(self.scope_graph, ctx.dest, **i))
+            .cloned()
+            .collect();
+        if global.is_empty() && !local.is_empty() && visible_local.is_empty() {
+            return Err(ItemVisibilityError {
+                name_file: ctx.file.clone(),
+                name_ident: ident.clone(),
+            }
+            .into());
+        }
+        let visible_global: Vec<NodeIndex> = global
+            .iter()
+            .filter(|i| super::r#pub::is_target_visible(self.scope_graph, ctx.dest, **i))
+            .cloned()
+            .collect();
+        if local.is_empty() && !global.is_empty() && visible_global.is_empty() {
+            return Err(ItemVisibilityError {
+                name_file: ctx.file.clone(),
+                name_ident: ident.clone(),
+            }
+            .into());
+        }
+        let local = visible_local;
+        let global = visible_global;
+        match (global.is_empty(), local.is_empty()) {
+            (false, false) => Err(DisambiguationError {
+                file: ctx.file.clone(),
+                ident: ident.clone(),
+                this: AmbiguitySource::Name,
+                other: AmbiguitySource::Name,
+            }
+            .into()),
+            (true, false) => Ok(local),
+            (false, true) => Ok(global),
+            (true, true) => {
+                if !(ctx.has_leading_colon && is_entry) {
+                    let local_nodes: Vec<NodeIndex> = self
+                        .scope_graph
+                        .neighbors(scope)
+                        .filter(|child| *child != ctx.dest)
+                        .collect();
+                    let local_from_globs: Vec<NodeIndex> = local_nodes
+                        .iter()
+                        .map(|child| self.matches(&child, &original_name_string, false, true))
+                        .flatten()
+                        .collect();
+                    let visible_local_from_globs: Vec<NodeIndex> = local_from_globs
+                        .iter()
+                        .filter(|i| {
+                            super::r#pub::is_target_visible(self.scope_graph, ctx.dest, **i)
+                        })
+                        .cloned()
+                        .collect();
+                    if !local_from_globs.is_empty() && visible_local_from_globs.is_empty() {
+                        return Err(ItemVisibilityError {
+                            name_file: ctx.file.clone(),
+                            name_ident: ident.clone(),
+                        }
+                        .into());
+                    }
+                    Ok(visible_local_from_globs)
                 } else {
-                    vec![]
+                    Ok(vec![])
                 }
             }
         }
     }
 
-    fn item_matches(&self, node: &NodeIndex, name_to_look_for: &str, glob_only: bool) -> bool {
-        match &self.scope_graph[*node] {
-            Node::Var { ident, .. } | Node::Macro { ident, .. } | Node::Type { ident, .. } => {
-                !glob_only && *ident == name_to_look_for
-            }
-            Node::Fn { item_fn, .. } => !glob_only && item_fn.sig.ident == name_to_look_for,
-            Node::Mod {
-                item_mod: ItemMod { ident, .. },
-                ..
-            } => !glob_only && *ident == name_to_look_for,
-            Node::Root { name, .. } => !glob_only && name == name_to_look_for,
-            Node::Use {
-                imports, item_use, ..
-            } => {
-                if imports.is_empty() {
-                    if self.reentrancy.contains(node) {
-                        error!("a recursive use was encountered and cut off");
-                    } else if {
-                        let mut checker = ReentrancyNeededChecker {
-                            name_to_look_for,
-                            needed: false,
-                        };
-                        checker.visit_item_use(item_use);
-                        checker.needed
-                    } {
-                        error!("this use failed to resolve");
-                    }
-                    return false;
+    fn matches(
+        &mut self,
+        node: &NodeIndex,
+        name_to_look_for: &str,
+        paths_only: bool,
+        glob_only: bool,
+    ) -> Vec<NodeIndex> {
+        if let Some(exact_match) = self.matches_exact(node, name_to_look_for, paths_only) {
+            return vec![exact_match];
+        }
+
+        let rebuilt_ctx_opt = match &self.scope_graph[*node] {
+            Node::Use { item_use, .. } => {
+                if self.reentrancy.contains(node) {
+                    error!("a recursive use was encountered and cut off");
+                    None
+                } else if {
+                    let mut checker = ReentrancyNeededChecker {
+                        name_to_look_for,
+                        needed: false,
+                    };
+                    checker.visit_item_use(item_use);
+                    checker.needed
+                } {
+                    Some((
+                        TracingContext::try_new(self.scope_graph, *node).unwrap(),
+                        &item_use.tree,
+                    ))
+                } else {
+                    None
                 }
-                imports.values().any(|use_types| {
-                    use_types.iter().any(|use_type| match use_type {
-                        UseType::Name { name, .. } => !glob_only && name.ident == name_to_look_for,
-                        UseType::Rename { rename, .. } => {
-                            !glob_only && rename.rename == name_to_look_for
+            }
+            _ => return vec![],
+        };
+        if let Some((mut rebuilt_ctx, tree)) = rebuilt_ctx_opt {
+            self.trace_use_entry_reenterable(&mut rebuilt_ctx, tree);
+        }
+        let imports = match &self.scope_graph[*node] {
+            Node::Use { imports, .. } => imports.clone(),
+            bad => panic!("this should not be reached: {:?}", bad),
+        };
+        if imports.is_empty() {
+            error!("this use failed to resolve");
+        }
+        // TODO: try and avoid recursing into private use matches
+        imports
+            .values()
+            .map(|use_types| {
+                use_types
+                    .iter()
+                    .map(|use_type| match use_type {
+                        UseType::Name { name, indices } => {
+                            if name.ident == name_to_look_for {
+                                indices
+                                    .iter()
+                                    .map(|i| {
+                                        self.matches(i, name_to_look_for, paths_only, glob_only)
+                                    })
+                                    .flatten()
+                                    .collect::<Vec<NodeIndex>>()
+                            } else {
+                                vec![]
+                            }
+                        }
+                        UseType::Rename { rename, indices } => {
+                            // match on new name, recurse on original name
+                            if rename.rename == name_to_look_for {
+                                indices
+                                    .iter()
+                                    .map(|i| {
+                                        self.matches(
+                                            i,
+                                            &rename.ident.to_string(),
+                                            paths_only,
+                                            glob_only,
+                                        )
+                                    })
+                                    .flatten()
+                                    .collect::<Vec<NodeIndex>>()
+                            } else {
+                                vec![]
+                            }
                         }
                         UseType::Glob { scope } => {
-                            glob_only
-                                && self.scope_graph.neighbors(*scope).any(|child| {
-                                    self.item_matches(&child, name_to_look_for, false)
-                                        || self.item_matches(&child, name_to_look_for, true)
-                                })
+                            if glob_only {
+                                let neighbors = self
+                                    .scope_graph
+                                    .neighbors(*scope)
+                                    .collect::<Vec<NodeIndex>>();
+                                neighbors
+                                    .iter()
+                                    .map(|child| {
+                                        let nonglob_matches = self.matches(
+                                            &child,
+                                            name_to_look_for,
+                                            paths_only,
+                                            false,
+                                        );
+                                        if nonglob_matches.is_empty() {
+                                            self.matches(&child, name_to_look_for, paths_only, true)
+                                        } else {
+                                            nonglob_matches
+                                        }
+                                    })
+                                    .flatten()
+                                    .collect()
+                            } else {
+                                vec![]
+                            }
                         }
                     })
-                })
+                    .flatten()
+                    .collect::<Vec<NodeIndex>>()
+            })
+            .flatten()
+            .collect()
+    }
+
+    fn matches_exact(
+        &self,
+        node: &NodeIndex,
+        name_to_look_for: &str,
+        paths_only: bool,
+    ) -> Option<NodeIndex> {
+        let exact_match = match &self.scope_graph[*node] {
+            Node::Var { ident, .. } | Node::Macro { ident, .. } | Node::Type { ident, .. } => {
+                !paths_only && *ident == name_to_look_for
             }
-            Node::Impl { .. } => false,
+            Node::Fn { item_fn, .. } => !paths_only && item_fn.sig.ident == name_to_look_for,
+            Node::Root { name, .. } => name == name_to_look_for,
+            Node::Mod { item_mod, .. } => item_mod.ident == name_to_look_for,
+            Node::Use { .. } | Node::Impl { .. } => false,
+        };
+        if exact_match {
+            Some(*node)
+        } else {
+            None
         }
     }
 }

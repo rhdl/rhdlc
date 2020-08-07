@@ -162,7 +162,7 @@ fn apply_visibility_in<'ast>(
 
         export_dest = if segment.ident == "super" {
             if let Some(export_dest_parent) = first_parent(scope_graph, export_dest) {
-                if !is_target_visible(scope_graph, export_dest_parent, node_parent).unwrap() {
+                if !is_target_visible(scope_graph, export_dest_parent, node_parent) {
                     return Err(ScopeVisibilityError {
                         file: file.clone(),
                         scope_ident: segment.ident.clone(),
@@ -204,7 +204,7 @@ fn apply_visibility_in<'ast>(
                 .iter()
                 .find(|child| ancestry.contains(child))
             {
-                if !is_target_visible(scope_graph, *export_dest_child, node_parent).unwrap() {
+                if !is_target_visible(scope_graph, *export_dest_child, node_parent) {
                     return Err(ScopeVisibilityError {
                         file: file.clone(),
                         scope_ident: segment.ident.clone(),
@@ -303,28 +303,28 @@ pub fn is_target_visible<'ast>(
     scope_graph: &mut ScopeGraph<'ast>,
     dest: NodeIndex,
     target: NodeIndex,
-) -> Option<bool> {
+) -> bool {
     let target_parent = if let Some(target_parent) = first_parent(scope_graph, target) {
         target_parent
     } else {
         // this is necessarily a root
-        return Some(true);
+        return true;
     };
     // self
     if target_parent == target {
-        return Some(true);
+        return true;
     }
     // super
     if first_parent(scope_graph, target_parent)
         .map(|g| g == target)
         .unwrap_or_default()
     {
-        return Some(true);
+        return true;
     }
     let dest_ancestry = build_ancestry(scope_graph, dest);
     // targets in an ancestor of the use are always visible
     if dest_ancestry.contains(&target_parent) {
-        return Some(true);
+        return true;
     }
 
     let target_parent_ancestry = build_ancestry(scope_graph, target_parent);
@@ -332,18 +332,15 @@ pub fn is_target_visible<'ast>(
     match &scope_graph[target_parent] {
         // same root || target explicitly exported outside of crate
         Node::Root { exports, .. } => {
-            Some(dest_ancestry.contains(&target_parent) || exports.contains(&target))
+            dest_ancestry.contains(&target_parent) || exports.contains(&target)
         }
         // explicitly visible to any dest ancestor or target parent ancestor
-        Node::Mod { exports, .. } => Some(
-            exports
-                .get(&target)
-                .map(|export_dest| {
-                    dest_ancestry.contains(export_dest)
-                        || target_parent_ancestry.contains(export_dest)
-                })
-                .unwrap_or_default(),
-        ),
-        _ => None,
+        Node::Mod { exports, .. } => exports
+            .get(&target)
+            .map(|export_dest| {
+                dest_ancestry.contains(export_dest) || target_parent_ancestry.contains(export_dest)
+            })
+            .unwrap_or_default(),
+        _ => panic!("nonmod/root parent"),
     }
 }
