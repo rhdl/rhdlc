@@ -59,7 +59,7 @@ pub fn apply_visibility<'ast>(
             file,
             ..
         } => Some((vis, file.clone())),
-        Node::Root { .. } | Node::Impl { .. } => None,
+        Node::Root { .. } | Node::Impl { .. } | Node::MacroUsage { .. } => None,
     };
 
     if let Some((vis, file)) = vis_and_file {

@@ -422,7 +422,6 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
         let rebuilt_ctx_opt = match &self.scope_graph[*node] {
             Node::Use { item_use, .. } => {
                 if self.reentrancy.contains(node) {
-                    error!("a recursive use was encountered and cut off");
                     None
                 } else if {
                     let mut checker = ReentrancyNeededChecker {
@@ -539,7 +538,7 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
             Node::Fn { item_fn, .. } => !paths_only && item_fn.sig.ident == name_to_look_for,
             Node::Root { name, .. } => name == name_to_look_for,
             Node::Mod { item_mod, .. } => item_mod.ident == name_to_look_for,
-            Node::Use { .. } | Node::Impl { .. } => false,
+            Node::Use { .. } | Node::Impl { .. } | Node::MacroUsage { .. } => false,
         };
         if exact_match {
             Some(*node)

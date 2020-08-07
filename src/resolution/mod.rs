@@ -139,7 +139,7 @@ impl<'ast> ScopeBuilder<'ast> {
             .node_indices()
             .map(|node| match &self.scope_graph[node] {
                 // TODO: handle invalid name roots
-                Node::Root { .. } => vec![],
+                Node::Root { .. } | Node::MacroUsage { .. } => vec![],
                 Node::Var { item, file, .. }
                 | Node::Macro { item, file, .. }
                 | Node::Type { item, file, .. } => Name::try_from(*item)
@@ -207,7 +207,9 @@ impl<'ast> ScopeBuilder<'ast> {
                             }
                         });
                     }
-                    Node::Impl { .. } | Node::Root { .. } => continue,
+                    Node::Impl { .. } | Node::Root { .. } | Node::MacroUsage { .. } => {
+                        continue
+                    }
                 }
             }
             for (ident, names) in ident_map.iter() {
@@ -270,7 +272,7 @@ impl<'ast> ScopeBuilder<'ast> {
                         .filter_map(|scope_ancestor| match &self.scope_graph[*scope_ancestor] {
                             Node::Mod { item_mod, .. } => Some(item_mod.ident.clone()),
                             Node::Root { name, .. } => {
-                                error!("this needs to be an ident");
+                                error!("this needs to be an ident: {}", name);
                                 None
                             }
                             _ => None,
@@ -333,6 +335,15 @@ impl<'ast> ScopeBuilder<'ast> {
                 let parent = self.scope_ancestry.last().unwrap();
                 self.scope_graph
                     .add_edge(*parent, item_idx, "macro".to_string());
+            }
+            Macro(ItemMacro { ident: None, .. }) => {
+                let item_idx = self.scope_graph.add_node(Node::MacroUsage {
+                    item,
+                    file: self.file_graph[*self.file_ancestry.last().unwrap()].clone(),
+                });
+                let parent = self.scope_ancestry.last().unwrap();
+                self.scope_graph
+                    .add_edge(*parent, item_idx, "macro invocation".to_string());
             }
             Fn(r#fn) => {
                 let item_idx = self.scope_graph.add_node(Node::Fn {
@@ -412,6 +423,7 @@ impl<'ast> ScopeBuilder<'ast> {
             }
 
             other => {
+                dbg!(other);
                 self.errors.push(
                     UnsupportedError {
                         file: self.file_graph[*self.file_ancestry.last().unwrap()].clone(),
@@ -443,6 +455,10 @@ pub enum Node<'ast> {
         // A macro or macro2
         item: &'ast Item,
         ident: &'ast Ident,
+        file: Rc<File>,
+    },
+    MacroUsage {
+        item: &'ast Item,
         file: Rc<File>,
     },
     Fn {
@@ -493,6 +509,7 @@ impl<'ast> Display for Node<'ast> {
         match self {
             Self::Root { .. } => write!(f, "root"),
             Self::Macro { ident, .. } => write!(f, "macro {}", ident),
+            Self::MacroUsage { .. } => write!(f, "macro invocation"),
             Self::Fn { item_fn, .. } => write!(f, "fn {}", item_fn.sig.ident),
             Self::Var { ident, .. } => write!(f, "var {}", ident),
             Self::Type { ident, .. } => write!(f, "type {}", ident),
