@@ -36,7 +36,7 @@ pub enum UseType<'ast> {
 pub struct UseResolver<'a, 'ast> {
     pub scope_graph: &'a mut ScopeGraph<'ast>,
     pub errors: &'a mut Vec<ResolutionError>,
-    pub reentrancy: &'a mut HashSet<NodeIndex>,
+    pub visited: &'a mut HashSet<NodeIndex>,
 }
 
 impl<'a, 'ast> UseResolver<'a, 'ast> {
@@ -57,10 +57,10 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
     }
 
     pub fn trace_use_entry_reenterable(&mut self, ctx: &mut TracingContext, tree: &'ast UseTree) {
-        if self.reentrancy.contains(&ctx.dest) {
+        if self.visited.contains(&ctx.dest) {
             return;
         }
-        self.reentrancy.insert(ctx.dest);
+        self.visited.insert(ctx.dest);
         let scope = if ctx.has_leading_colon {
             // just give any old dummy node because it'll have to be ignored in path/name finding
             NodeIndex::new(0)
@@ -154,7 +154,7 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                         let mut path_finder = PathFinder {
                             scope_graph: self.scope_graph,
                             errors: self.errors,
-                            reentrancy: self.reentrancy,
+                            visited: self.visited,
                         };
                         let found_children = match path_finder.find_children(
                             ctx,
@@ -211,7 +211,7 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                     let mut path_finder = PathFinder {
                         scope_graph: self.scope_graph,
                         errors: self.errors,
-                        reentrancy: self.reentrancy,
+                        visited: self.visited,
                     };
                     match path_finder.find_children(ctx, scope, ident, &original_name_string, false)
                     {

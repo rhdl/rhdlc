@@ -120,9 +120,9 @@ impl<'ast> ScopeBuilder<'ast> {
                 _ => false,
             })
             .collect();
-        let mut reentrancy = HashSet::default();
+        let mut visited = HashSet::default();
         let mut use_resolver = r#use::UseResolver {
-            reentrancy: &mut reentrancy,
+            visited: &mut visited,
             scope_graph: &mut self.scope_graph,
             errors: &mut self.errors,
         };

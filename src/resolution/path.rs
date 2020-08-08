@@ -5,7 +5,10 @@ use log::error;
 use petgraph::{graph::NodeIndex, Direction};
 use syn::{visit::Visit, Path, UseGlob, UseName, UsePath, UseRename, UseTree};
 
-use super::{r#use::{UseType, UseResolver}, Node, ScopeGraph};
+use super::{
+    r#use::{UseResolver, UseType},
+    Node, ScopeGraph,
+};
 use crate::error::*;
 use crate::find_file::File;
 
@@ -18,7 +21,12 @@ pub struct TracingContext {
 }
 
 impl TracingContext {
-    pub fn new(scope_graph: &ScopeGraph, dest: NodeIndex, file: &Rc<File>, has_leading_colon: bool) -> Self {
+    pub fn new(
+        scope_graph: &ScopeGraph,
+        dest: NodeIndex,
+        file: &Rc<File>,
+        has_leading_colon: bool,
+    ) -> Self {
         let mut root = dest;
         while let Some(parent) = scope_graph
             .neighbors_directed(root, Direction::Incoming)
@@ -39,7 +47,7 @@ impl TracingContext {
 pub struct PathFinder<'a, 'ast> {
     pub scope_graph: &'a mut ScopeGraph<'ast>,
     pub errors: &'a mut Vec<ResolutionError>,
-    pub reentrancy: &'a mut HashSet<NodeIndex>,
+    pub visited: &'a mut HashSet<NodeIndex>,
 }
 
 impl<'a, 'ast> Into<UseResolver<'a, 'ast>> for &'a mut PathFinder<'a, 'ast> {
@@ -47,11 +55,10 @@ impl<'a, 'ast> Into<UseResolver<'a, 'ast>> for &'a mut PathFinder<'a, 'ast> {
         UseResolver {
             scope_graph: self.scope_graph,
             errors: self.errors,
-            reentrancy: self.reentrancy,
+            visited: self.visited,
         }
     }
 }
-
 
 impl<'a, 'ast> PathFinder<'a, 'ast> {
     pub fn find_children(
@@ -179,20 +186,25 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                 file,
                 ..
             } => {
-                if self.reentrancy.contains(node) {
+                if self.visited.contains(node) {
                     None
                 } else if !imports.is_empty() {
                     None
                 } else if {
                     let mut checker = UseMightMatchChecker {
                         name_to_look_for,
-                        needed: false,
+                        might_match: false,
                     };
                     checker.visit_item_use(item_use);
-                    checker.needed
+                    checker.might_match
                 } {
                     Some((
-                        TracingContext::new(self.scope_graph, *node, file, item_use.leading_colon.is_some()),
+                        TracingContext::new(
+                            self.scope_graph,
+                            *node,
+                            file,
+                            item_use.leading_colon.is_some(),
+                        ),
                         &item_use.tree,
                     ))
                 } else {
@@ -206,7 +218,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
             let mut use_resolver = UseResolver {
                 scope_graph: self.scope_graph,
                 errors: self.errors,
-                reentrancy: self.reentrancy,
+                visited: self.visited,
             };
             use_resolver.trace_use_entry_reenterable(&mut rebuilt_ctx, tree);
         }
@@ -313,14 +325,14 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
 
 struct UseMightMatchChecker<'a> {
     name_to_look_for: &'a str,
-    needed: bool,
+    might_match: bool,
 }
 
 impl<'a, 'ast> Visit<'ast> for UseMightMatchChecker<'a> {
     fn visit_use_path(&mut self, path: &'ast UsePath) {
         // this replaces the default trait impl, need to call use_tree for use name visitation
         self.visit_use_tree(path.tree.as_ref());
-        self.needed |= path.ident == self.name_to_look_for
+        self.might_match |= path.ident == self.name_to_look_for
             && match path.tree.as_ref() {
                 UseTree::Group(group) => group.items.iter().any(|tree| match tree {
                     UseTree::Rename(rename) => rename.ident == "self",
@@ -332,14 +344,14 @@ impl<'a, 'ast> Visit<'ast> for UseMightMatchChecker<'a> {
     }
 
     fn visit_use_name(&mut self, name: &'ast UseName) {
-        self.needed |= name.ident == self.name_to_look_for
+        self.might_match |= name.ident == self.name_to_look_for
     }
 
     fn visit_use_rename(&mut self, rename: &'ast UseRename) {
-        self.needed |= rename.rename == self.name_to_look_for
+        self.might_match |= rename.rename == self.name_to_look_for
     }
 
     fn visit_use_glob(&mut self, _: &'ast UseGlob) {
-        self.needed |= true;
+        self.might_match |= true;
     }
 }
