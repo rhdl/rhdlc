@@ -31,7 +31,7 @@
 ///             * use [strsim](https://docs.rs/strsim/0.10.0/strsim/) for Ident similarity
 ///             * heuristic guess by type (fn, struct, var, mod, etc.)
 ///         * fall back all the way to "not found" if nothing is similar
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
 use std::fmt::Display;
 use std::rc::Rc;
@@ -51,6 +51,7 @@ use name::Name;
 mod r#use;
 use r#use::UseType;
 
+mod path;
 mod r#pub;
 
 pub type ScopeGraph<'ast> = Graph<Node<'ast>, String>;
@@ -119,7 +120,12 @@ impl<'ast> ScopeBuilder<'ast> {
                 _ => false,
             })
             .collect();
-        let mut use_resolver = r#use::UseResolver::new(&mut self.scope_graph, &mut self.errors);
+        let mut reentrancy = HashSet::default();
+        let mut use_resolver = r#use::UseResolver {
+            reentrancy: &mut reentrancy,
+            scope_graph: &mut self.scope_graph,
+            errors: &mut self.errors,
+        };
         for use_index in use_indices {
             use_resolver.resolve_use(use_index);
         }
@@ -260,16 +266,14 @@ impl<'ast> ScopeBuilder<'ast> {
                                 indices,
                                 rename: UseRename { ident, .. },
                                 ..
-                            } => {
-                                indices.iter().for_each(|i| {
-                                    use std::collections::hash_map::Entry;
-                                    if let Entry::Occupied(occupant) = imported.entry(*i) {
-                                        todo!("reimport error: {:?} {:?}", i, occupant);
-                                    } else {
-                                        imported.insert(*i, ident);
-                                    }
-                                })
-                            }
+                            } => indices.iter().for_each(|i| {
+                                use std::collections::hash_map::Entry;
+                                if let Entry::Occupied(occupant) = imported.entry(*i) {
+                                    todo!("reimport error: {:?} {:?}", i, occupant);
+                                } else {
+                                    imported.insert(*i, ident);
+                                }
+                            }),
                             _ => {}
                         })
                     });
@@ -523,7 +527,7 @@ pub enum Node<'ast> {
     Impl {
         item_impl: &'ast ItemImpl,
         file: Rc<File>,
-        /// impl _ for **NodeIndex**
+        /// impl Option<Trait> Option<for> **NodeIndex**
         /// which cannot be resolved at first
         r#for: Option<NodeIndex>,
     },

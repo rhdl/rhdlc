@@ -256,13 +256,13 @@ fn apply_visibility_pub<'ast>(
     Ok(())
 }
 
-fn first_parent<'ast>(scope_graph: &mut ScopeGraph<'ast>, node: NodeIndex) -> Option<NodeIndex> {
+fn first_parent<'ast>(scope_graph: &ScopeGraph<'ast>, node: NodeIndex) -> Option<NodeIndex> {
     scope_graph
         .neighbors_directed(node, Direction::Incoming)
         .next()
 }
 
-fn build_ancestry<'ast>(scope_graph: &mut ScopeGraph<'ast>, node: NodeIndex) -> Vec<NodeIndex> {
+fn build_ancestry<'ast>(scope_graph: &ScopeGraph<'ast>, node: NodeIndex) -> Vec<NodeIndex> {
     let mut prev_parent = node;
     let mut ancestry = vec![];
     while let Some(parent) = first_parent(scope_graph, prev_parent) {
@@ -300,7 +300,7 @@ fn apply_visibility_crate<'ast>(
 /// * target is actually a parent of target_parent (use super::super::b, always visible)
 /// * target_parent is a parent of dest_parent (use super::a, always visible)
 pub fn is_target_visible<'ast>(
-    scope_graph: &mut ScopeGraph<'ast>,
+    scope_graph: &ScopeGraph<'ast>,
     dest: NodeIndex,
     target: NodeIndex,
 ) -> bool {
