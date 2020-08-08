@@ -451,7 +451,7 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
         if imports.is_empty() {
             error!("this use failed to resolve");
         }
-        // TODO: try and avoid recursing into private use matches
+        // TODO: try to avoid recursing into private use matches
         imports
             .values()
             .map(|use_types| {
