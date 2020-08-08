@@ -436,7 +436,7 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                         &item_use.tree,
                     ))
                 } else {
-                    None
+                    return vec![];
                 }
             }
             _ => return vec![],
