@@ -40,7 +40,7 @@ use log::error;
 use petgraph::{graph::NodeIndex, visit::EdgeRef, Direction, Graph};
 use syn::{
     spanned::Spanned, visit::Visit, Ident, Item, ItemConst, ItemEnum, ItemFn, ItemImpl, ItemMod,
-    ItemStruct, ItemTrait, ItemType, ItemUse, UseName, UseRename,
+    ItemStruct, ItemTrait, ItemType, ItemUse, Type, UseName, UseRename,
 };
 
 use crate::error::{
@@ -134,6 +134,7 @@ impl<'ast> ScopeBuilder<'ast> {
         }
 
         // Stage four: tie impls
+        self.tie_impls();
     }
 
     pub fn check_graph(&mut self) {
@@ -150,7 +151,7 @@ impl<'ast> ScopeBuilder<'ast> {
         }
     }
 
-    pub fn find_invalid_names(&self) -> Vec<ResolutionError> {
+    fn find_invalid_names(&self) -> Vec<ResolutionError> {
         struct IdentVisitor<'ast>(Vec<ResolutionError>, &'ast Rc<File>);
         impl<'ast> Visit<'ast> for IdentVisitor<'ast> {
             fn visit_ident(&mut self, ident: &Ident) {
@@ -262,6 +263,36 @@ impl<'ast> ScopeBuilder<'ast> {
         errors
     }
 
+    fn tie_impls(&mut self) {
+        let impls: Vec<NodeIndex> = self
+            .scope_graph
+            .node_indices()
+            .filter(|index| match &self.scope_graph[*index] {
+                Node::Impl { .. } => true,
+                _ => false,
+            })
+            .collect();
+        for r#impl in impls {
+            let (item_impl, mut r#trait, mut r#for) = match self.scope_graph[r#impl] {
+                Node::Impl {
+                    item_impl,
+                    r#trait,
+                    r#for,
+                } => (item_impl, r#trait, r#for),
+                _ => continue,
+            };
+            if let Some((_, trait_path, _)) = &item_impl.trait_ {
+                // find the trait
+            }
+
+            if let Type::Path(type_path) = item_impl.self_ty.as_ref() {
+                // find the for
+            } else if item_impl.trait_.is_none() {
+                todo!("no base type found for inherent implementation")
+            }
+        }
+    }
+
     /// Stage one
     fn add_mod(&mut self, item: &'ast Item) {
         use syn::Item::*;
@@ -359,19 +390,28 @@ impl<'ast> ScopeBuilder<'ast> {
                     .add_edge(*parent, item_idx, "type alias".to_string());
             }
             Trait(item_trait) => {
-                let item_idx = self.scope_graph.add_node(Node::Trait { item_trait });
+                let item_idx = self.scope_graph.add_node(Node::Trait {
+                    item_trait,
+                    impls: HashMap::default(),
+                });
                 let parent = self.scope_ancestry.last().unwrap();
                 self.scope_graph
                     .add_edge(*parent, item_idx, "trait".to_string());
             }
             Struct(item_struct) => {
-                let item_idx = self.scope_graph.add_node(Node::Struct { item_struct });
+                let item_idx = self.scope_graph.add_node(Node::Struct {
+                    item_struct,
+                    impls: HashMap::default(),
+                });
                 let parent = self.scope_ancestry.last().unwrap();
                 self.scope_graph
                     .add_edge(*parent, item_idx, "struct".to_string());
             }
             Enum(item_enum) => {
-                let item_idx = self.scope_graph.add_node(Node::Enum { item_enum });
+                let item_idx = self.scope_graph.add_node(Node::Enum {
+                    item_enum,
+                    impls: HashMap::default(),
+                });
                 let parent = self.scope_ancestry.last().unwrap();
                 self.scope_graph
                     .add_edge(*parent, item_idx, "enum".to_string());
@@ -390,6 +430,7 @@ impl<'ast> ScopeBuilder<'ast> {
             Impl(item_impl) => {
                 let impl_idx = self.scope_graph.add_node(Node::Impl {
                     item_impl,
+                    r#trait: None,
                     r#for: None,
                 });
                 let parent = self.scope_ancestry.last().unwrap();
@@ -481,15 +522,22 @@ pub enum Node<'ast> {
     },
     Struct {
         item_struct: &'ast ItemStruct,
+        // impls for this: traits & self
+        impls: HashMap<NodeIndex, NodeIndex>,
     },
     Enum {
         item_enum: &'ast ItemEnum,
+        // impls for this: traits & self
+        impls: HashMap<NodeIndex, NodeIndex>,
     },
     Type {
         item_type: &'ast ItemType,
+        // TODO: since this is an alias, needs to be treated as a pointer to a real underlying type
     },
     Trait {
         item_trait: &'ast ItemTrait,
+        // impls of this trait
+        impls: HashMap<NodeIndex, NodeIndex>,
     },
     Mod {
         item_mod: &'ast ItemMod,
@@ -503,6 +551,7 @@ pub enum Node<'ast> {
         item_impl: &'ast ItemImpl,
         /// impl Option<Trait> Option<for> **NodeIndex**
         /// which cannot be resolved at first
+        r#trait: Option<NodeIndex>,
         r#for: Option<NodeIndex>,
     },
     Use {

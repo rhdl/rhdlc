@@ -298,6 +298,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
     fn matches_exact(&self, node: &NodeIndex, name_to_look_for: &str, paths_only: bool) -> bool {
         let is_path = match &self.scope_graph[*node] {
             Node::Mod { .. } | Node::Root { .. } => true,
+            // TODO: look for associated consts, but NOT for uses
             _ => false,
         };
         // Node::Use { .. } | Node::Impl { .. } | Node::MacroUsage { .. } => false,

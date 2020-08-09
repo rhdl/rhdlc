@@ -29,12 +29,15 @@ pub fn apply_visibility<'ast>(
         }
         | Node::Struct {
             item_struct: ItemStruct { vis, .. },
+            ..
         }
         | Node::Trait {
             item_trait: ItemTrait { vis, .. },
+            ..
         }
         | Node::Enum {
             item_enum: ItemEnum { vis, .. },
+            ..
         }
         | Node::Type {
             item_type: ItemType { vis, .. },
