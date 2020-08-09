@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 use clap::{clap_app, crate_authors, crate_description, crate_version};
+#[cfg(not(test))]
 use petgraph::dot::Dot;
 
 use std::env;

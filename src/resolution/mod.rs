@@ -36,16 +36,13 @@ use std::convert::TryFrom;
 use std::fmt::Display;
 use std::rc::Rc;
 
-use log::error;
-use petgraph::{graph::NodeIndex, visit::EdgeRef, Direction, Graph};
+use petgraph::{graph::NodeIndex, Direction, Graph};
 use syn::{
-    spanned::Spanned, visit::Visit, Ident, Item, ItemConst, ItemEnum, ItemFn, ItemImpl, ItemMod,
-    ItemStruct, ItemTrait, ItemType, ItemUse, Type, UseName, UseRename,
+    visit::Visit, Ident, ItemConst, ItemEnum, ItemFn, ItemImpl, ItemMod, ItemStruct, ItemTrait,
+    ItemType, ItemUse, Type, UseName, UseRename,
 };
 
-use crate::error::{
-    InvalidRawIdentifierError, MultipleDefinitionError, ResolutionError, UnsupportedError,
-};
+use crate::error::{InvalidRawIdentifierError, MultipleDefinitionError, ResolutionError};
 use crate::find_file::{File, FileGraph};
 
 mod name;
@@ -432,10 +429,10 @@ impl<'ast> Node<'ast> {
         match self {
             // TODO: handle invalid name roots
             Self::Root { .. } => vec![],
-            Self::Struct { item_struct, .. } => vec![Name::from(*item_struct).into()],
-            Self::Trait { item_trait, .. } => vec![Name::from(*item_trait).into()],
-            Self::Type { item_type, .. } => vec![Name::from(*item_type).into()],
-            Self::Enum { item_enum, .. } => vec![Name::from(*item_enum).into()],
+            Self::Struct { item_struct, .. } => vec![Name::from(*item_struct)],
+            Self::Trait { item_trait, .. } => vec![Name::from(*item_trait)],
+            Self::Type { item_type, .. } => vec![Name::from(*item_type)],
+            Self::Enum { item_enum, .. } => vec![Name::from(*item_enum)],
             Self::Fn { item_fn, .. } => vec![Name::from(*item_fn)],
             Self::Mod { item_mod, .. } => vec![Name::from(*item_mod)],
             Self::Const { item_const, .. } => vec![Name::from(*item_const)],
@@ -467,7 +464,7 @@ impl<'ast> Display for Node<'ast> {
             Self::Impl { r#for, .. } => {
                 write!(f, "impl")?;
                 if let Some(r#for) = r#for {
-                    write!(f, "for {:?}", r#for);
+                    write!(f, "for {:?}", r#for)?;
                 }
                 Ok(())
             }

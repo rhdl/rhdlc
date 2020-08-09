@@ -1,18 +1,16 @@
 use std::collections::HashSet;
-use std::rc::Rc;
 
 use log::error;
 use petgraph::{graph::NodeIndex, Direction};
-use syn::{visit::Visit, ItemMod, UseGlob, UseName, UsePath, UseRename, UseTree};
+use syn::{UseName, UseRename, UseTree};
 
 use super::{
     path::{PathFinder, TracingContext},
-    File, Node, ResolutionError, ScopeGraph,
+    Node, ResolutionError, ScopeGraph,
 };
 use crate::error::{
-    AmbiguitySource, DisambiguationError, GlobAtEntryError, GlobalPathCannotHaveSpecialIdentError,
-    ItemVisibilityError, SelfNameNotInGroupError, SpecialIdentNotAtStartOfPathError,
-    TooManySupersError, UnresolvedItemError,
+    GlobAtEntryError, GlobalPathCannotHaveSpecialIdentError, SelfNameNotInGroupError,
+    SpecialIdentNotAtStartOfPathError, TooManySupersError,
 };
 
 #[derive(Debug, Clone)]

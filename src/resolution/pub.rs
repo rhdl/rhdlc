@@ -21,7 +21,6 @@ pub fn apply_visibility<'ast>(
     scope_graph: &mut ScopeGraph<'ast>,
     node: NodeIndex,
 ) -> Result<(), ResolutionError> {
-    use syn::Item::*;
     use syn::*;
     let vis = match &scope_graph[node] {
         Node::Const {
@@ -143,13 +142,13 @@ fn apply_visibility_in<'ast>(
             || (prev_segment.ident != "super" && segment.ident == "super")
         {
             return Err(SpecialIdentNotAtStartOfPathError {
-                file: file.clone(),
+                file,
                 path_ident: segment.ident.clone(),
             }
             .into());
         } else if prev_segment.ident == "super" && segment.ident != "super" {
             return Err(NonAncestralError {
-                file: file.clone(),
+                file,
                 segment_ident: segment.ident.clone(),
                 prev_segment_ident: Some(prev_segment.ident.clone()),
             }
@@ -160,7 +159,7 @@ fn apply_visibility_in<'ast>(
             if let Some(export_dest_parent) = first_parent(scope_graph, export_dest) {
                 if !is_target_visible(scope_graph, export_dest_parent, node_parent) {
                     return Err(ScopeVisibilityError {
-                        file: file.clone(),
+                        file,
                         scope_ident: segment.ident.clone(),
                     }
                     .into());
@@ -168,7 +167,7 @@ fn apply_visibility_in<'ast>(
                 export_dest_parent
             } else {
                 return Err(TooManySupersError {
-                    file: file.clone(),
+                    file,
                     ident: segment.ident.clone(),
                 }
                 .into());
@@ -185,7 +184,7 @@ fn apply_visibility_in<'ast>(
                 .collect();
             if export_dest_children.is_empty() {
                 return Err(UnresolvedItemError {
-                    file: file.clone(),
+                    file,
                     previous_idents: path
                         .segments
                         .iter()
@@ -203,7 +202,7 @@ fn apply_visibility_in<'ast>(
             {
                 if !is_target_visible(scope_graph, *export_dest_child, node_parent) {
                     return Err(ScopeVisibilityError {
-                        file: file.clone(),
+                        file,
                         scope_ident: segment.ident.clone(),
                     }
                     .into());
@@ -211,7 +210,7 @@ fn apply_visibility_in<'ast>(
                 *export_dest_child
             } else {
                 return Err(NonAncestralError {
-                    file: file.clone(),
+                    file,
                     segment_ident: segment.ident.clone(),
                     prev_segment_ident: Some(prev_segment.ident.clone()),
                 }

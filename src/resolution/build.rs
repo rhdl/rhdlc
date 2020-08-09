@@ -3,9 +3,9 @@ use std::collections::HashMap;
 use log::error;
 use petgraph::{graph::NodeIndex, visit::EdgeRef};
 use syn::{
-    spanned::Spanned, visit::Visit, File, Ident, Item, ItemConst, ItemEnum, ItemExternCrate,
-    ItemFn, ItemImpl, ItemMacro, ItemMacro2, ItemMod, ItemStatic, ItemStruct, ItemTrait,
-    ItemTraitAlias, ItemType, ItemUnion, ItemUse, Type, UseName, UseRename,
+    spanned::Spanned, visit::Visit, File, Ident, ItemConst, ItemEnum, ItemExternCrate, ItemFn,
+    ItemImpl, ItemMacro, ItemMacro2, ItemMod, ItemStatic, ItemStruct, ItemTrait, ItemTraitAlias,
+    ItemType, ItemUnion, ItemUse,
 };
 
 use super::{FileGraph, Node, ScopeGraph};

@@ -1,7 +1,6 @@
 use std::collections::HashSet;
 use std::rc::Rc;
 
-use log::error;
 use petgraph::{graph::NodeIndex, Direction};
 use syn::{visit::Visit, Path, UseGlob, UseName, UsePath, UseRename, UseTree};
 
@@ -106,7 +105,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
         paths_only: bool,
     ) -> Result<Vec<NodeIndex>, ResolutionError> {
         let is_entry = ctx.previous_idents.is_empty();
-        let local = if !is_entry || (is_entry && !ctx.has_leading_colon) {
+        let local = if !is_entry || !ctx.has_leading_colon {
             let local_nodes: Vec<NodeIndex> = self
                 .scope_graph
                 .neighbors(scope)
@@ -244,9 +243,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
             Node::Use {
                 item_use, imports, ..
             } => {
-                if self.visited.contains(node) {
-                    None
-                } else if !imports.is_empty() {
+                if self.visited.contains(node) || !imports.is_empty() {
                     None
                 } else if {
                     let mut checker = UseMightMatchChecker {
@@ -362,7 +359,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
         };
         // Node::Use { .. } | Node::Impl { .. } | Node::MacroUsage { .. } => false,
         let names = self.scope_graph[*node].names();
-        (!paths_only || (paths_only && is_path))
+        (is_path || !paths_only)
             && names.len() == 1
             && names.first().unwrap().ident() == name_to_look_for
     }
