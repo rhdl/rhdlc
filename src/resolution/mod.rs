@@ -56,32 +56,29 @@ use r#use::UseType;
 
 mod path;
 use path::PathFinder;
+mod build;
 mod r#pub;
 
 pub type ScopeGraph<'ast> = Graph<Node<'ast>, String>;
 
 #[derive(Debug)]
-pub struct ScopeBuilder<'ast> {
+pub struct Resolver<'ast> {
     pub file_graph: &'ast FileGraph,
     pub scope_graph: ScopeGraph<'ast>,
     pub errors: Vec<ResolutionError>,
-    scope_ancestry: Vec<NodeIndex>,
-    file_ancestry: Vec<NodeIndex>,
 }
 
-impl<'ast> From<&'ast FileGraph> for ScopeBuilder<'ast> {
+impl<'ast> From<&'ast FileGraph> for Resolver<'ast> {
     fn from(file_graph: &'ast FileGraph) -> Self {
         Self {
             file_graph,
             scope_graph: Graph::default(),
             errors: vec![],
-            scope_ancestry: vec![],
-            file_ancestry: vec![],
         }
     }
 }
 
-impl<'ast> ScopeBuilder<'ast> {
+impl<'ast> Resolver<'ast> {
     /// Find all names given a source forest
     /// Externals are paths to standalone source code: a top + lib.rs of each crate
     /// Doesn't care about errors, for now
@@ -96,15 +93,14 @@ impl<'ast> ScopeBuilder<'ast> {
                 file,
                 exports: vec![],
             });
-            self.scope_ancestry.push(scope_index);
-            self.file_ancestry.push(file_index);
-            self.file_graph[file_index]
-                .syn
-                .items
-                .iter()
-                .for_each(|i| self.add_mod(i));
-            self.file_ancestry.pop();
-            self.scope_ancestry.pop();
+            let mut builder = build::ScopeBuilder {
+                errors: &mut self.errors,
+                file_graph: &mut self.file_graph,
+                scope_graph: &mut self.scope_graph,
+                file_ancestry: vec![file_index],
+                scope_ancestry: vec![scope_index],
+            };
+            builder.visit_file(&self.file_graph[file_index].syn);
         }
 
         // Stage two: apply visibility
@@ -275,7 +271,9 @@ impl<'ast> ScopeBuilder<'ast> {
             .collect();
         for r#impl in impls {
             let (r#trait, self_ty) = match &mut self.scope_graph[r#impl] {
-                Node::Impl { item_impl, .. } => (item_impl.trait_.clone(), item_impl.self_ty.clone()),
+                Node::Impl { item_impl, .. } => {
+                    (item_impl.trait_.clone(), item_impl.self_ty.clone())
+                }
                 _ => continue,
             };
             let mut path_finder = PathFinder {
@@ -327,216 +325,13 @@ impl<'ast> ScopeBuilder<'ast> {
             match &mut self.scope_graph[r#impl] {
                 Node::Impl {
                     r#trait: trait_dest,
-                    r#for: for_dest,..
+                    r#for: for_dest,
+                    ..
                 } => {
                     *trait_dest = r#trait;
                     *for_dest = r#for;
                 }
                 _ => continue,
-            }
-        }
-    }
-
-    /// Stage one
-    fn add_mod(&mut self, item: &'ast Item) {
-        use syn::Item::*;
-        use syn::*;
-        match item {
-            Mod(item_mod) => {
-                if let Some((_, items)) = &item_mod.content {
-                    let mod_idx = self.scope_graph.add_node(Node::Mod {
-                        item_mod,
-                        exports: HashMap::default(),
-                        file: self.file_graph[*self.file_ancestry.last().unwrap()].clone(),
-                        content_file: None,
-                    });
-                    let parent = self.scope_ancestry.last().unwrap();
-                    self.scope_graph
-                        .add_edge(*parent, mod_idx, "mod".to_string());
-                    self.scope_ancestry.push(mod_idx);
-                    items.iter().for_each(|i| self.add_mod(i));
-                    self.scope_ancestry.pop();
-                } else {
-                    let mut full_ident_path: Vec<Ident> = self
-                        .scope_ancestry
-                        .iter()
-                        .filter_map(|scope_ancestor| match &self.scope_graph[*scope_ancestor] {
-                            Node::Mod { item_mod, .. } => Some(item_mod.ident.clone()),
-                            Node::Root { name, .. } => {
-                                error!("this needs to be an ident: {}", name);
-                                None
-                            }
-                            _ => None,
-                        })
-                        .collect();
-                    full_ident_path.push(item_mod.ident.clone());
-
-                    let file_index = self.file_ancestry.last().and_then(|parent| {
-                        self.file_graph
-                            .edges(*parent)
-                            .filter(|edge| full_ident_path.ends_with(edge.weight()))
-                            .max_by_key(|edge| edge.weight().len())
-                            .map(|edge| edge.target())
-                    });
-
-                    if let Some(file_index) = file_index {
-                        let content_file = self.file_graph[file_index].clone();
-                        let mod_idx = self.scope_graph.add_node(Node::Mod {
-                            item_mod,
-                            exports: HashMap::default(),
-                            file: self.file_graph[*self.file_ancestry.last().unwrap()].clone(),
-                            content_file: Some(content_file),
-                        });
-                        if let Some(parent) = self.scope_ancestry.last() {
-                            self.scope_graph
-                                .add_edge(*parent, mod_idx, "mod".to_string());
-                        }
-                        self.scope_ancestry.push(mod_idx);
-                        self.file_ancestry.push(file_index);
-                        self.file_graph[file_index]
-                            .syn
-                            .items
-                            .iter()
-                            .for_each(|item| self.add_mod(item));
-                        self.file_ancestry.pop();
-                        self.scope_ancestry.pop();
-                    } else {
-                        let mod_idx = self.scope_graph.add_node(Node::Mod {
-                            item_mod,
-                            exports: HashMap::default(),
-                            file: self.file_graph[*self.file_ancestry.last().unwrap()].clone(),
-                            content_file: None,
-                        });
-                        if let Some(parent) = self.scope_ancestry.last() {
-                            self.scope_graph
-                                .add_edge(*parent, mod_idx, "mod".to_string());
-                        }
-                    }
-                }
-            }
-            Fn(r#fn) => {
-                let item_idx = self.scope_graph.add_node(Node::Fn { item_fn: r#fn });
-                let parent = self.scope_ancestry.last().unwrap();
-                self.scope_graph
-                    .add_edge(*parent, item_idx, "fn".to_string());
-            }
-
-            Const(item_const) => {
-                let item_idx = self.scope_graph.add_node(Node::Const { item_const });
-                let parent = self.scope_ancestry.last().unwrap();
-                self.scope_graph
-                    .add_edge(*parent, item_idx, "const".to_string());
-            }
-            Type(item_type) => {
-                let item_idx = self.scope_graph.add_node(Node::Type { item_type });
-                let parent = self.scope_ancestry.last().unwrap();
-                self.scope_graph
-                    .add_edge(*parent, item_idx, "type alias".to_string());
-            }
-            Trait(item_trait) => {
-                let item_idx = self.scope_graph.add_node(Node::Trait {
-                    item_trait,
-                    impls: HashMap::default(),
-                });
-                let parent = self.scope_ancestry.last().unwrap();
-                self.scope_graph
-                    .add_edge(*parent, item_idx, "trait".to_string());
-            }
-            Struct(item_struct) => {
-                let item_idx = self.scope_graph.add_node(Node::Struct {
-                    item_struct,
-                    impls: HashMap::default(),
-                });
-                let parent = self.scope_ancestry.last().unwrap();
-                self.scope_graph
-                    .add_edge(*parent, item_idx, "struct".to_string());
-            }
-            Enum(item_enum) => {
-                let item_idx = self.scope_graph.add_node(Node::Enum {
-                    item_enum,
-                    impls: HashMap::default(),
-                });
-                let parent = self.scope_ancestry.last().unwrap();
-                self.scope_graph
-                    .add_edge(*parent, item_idx, "enum".to_string());
-            }
-            Use(item_use) => {
-                let use_idx = self.scope_graph.add_node(Node::Use {
-                    item_use,
-                    imports: HashMap::default(),
-                });
-                self.scope_graph.add_edge(
-                    *self.scope_ancestry.last().unwrap(),
-                    use_idx,
-                    "use".to_string(),
-                );
-            }
-            Impl(item_impl) => {
-                let impl_idx = self.scope_graph.add_node(Node::Impl {
-                    item_impl,
-                    r#trait: None,
-                    r#for: None,
-                });
-                let parent = self.scope_ancestry.last().unwrap();
-                self.scope_graph
-                    .add_edge(*parent, impl_idx, "impl".to_string());
-            }
-            Macro(ItemMacro { ident, .. }) => {
-                self.errors.push(
-                    UnsupportedError {
-                        file: self.file_graph[*self.file_ancestry.last().unwrap()].clone(),
-                        span: ident.span(),
-                        reason: "RHDL does not support macros (yet)",
-                    }
-                    .into(),
-                );
-            }
-            Macro2(ItemMacro2 { ident, .. }) => {
-                self.errors.push(UnsupportedError {
-                    file: self.file_graph[*self.file_ancestry.last().unwrap()].clone(),
-                    span: ident.span(),
-                    reason: "RHDL does not support declarative macros, as they are not stabilized in Rust"
-                }.into());
-            }
-            Static(ItemStatic { ident, .. }) => {
-                self.errors.push(UnsupportedError {
-                    file: self.file_graph[*self.file_ancestry.last().unwrap()].clone(),
-                    span: ident.span(),
-                    reason: "RHDL cannot support static variables and other unsafe code: safety is not yet formally defined"
-                }.into());
-            }
-            Union(ItemUnion { ident, .. }) => {
-                self.errors.push(UnsupportedError {
-                    file: self.file_graph[*self.file_ancestry.last().unwrap()].clone(),
-                    span: ident.span(),
-                    reason: "RHDL cannot support unions and other unsafe code: safety is not yet formally defined"
-                }.into());
-            }
-            TraitAlias(ItemTraitAlias { ident, .. }) => {
-                self.errors.push(UnsupportedError {
-                    file: self.file_graph[*self.file_ancestry.last().unwrap()].clone(),
-                    span: ident.span(),
-                    reason: "RHDL does not support trait aliases as they are still experimental in Rust"
-                }.into());
-            }
-            ExternCrate(ItemExternCrate { ident, .. }) => {
-                self.errors.push(UnsupportedError {
-                    file: self.file_graph[*self.file_ancestry.last().unwrap()].clone(),
-                    span: ident.span(),
-                    reason: "RHDL does not support Rust 2015 syntax, you can safely remove this. :)"
-                }.into());
-            }
-
-            other => {
-                dbg!(other);
-                self.errors.push(
-                    UnsupportedError {
-                        file: self.file_graph[*self.file_ancestry.last().unwrap()].clone(),
-                        span: other.span(),
-                        reason: "RHDL does not know about this feature (yet!)",
-                    }
-                    .into(),
-                );
             }
         }
     }

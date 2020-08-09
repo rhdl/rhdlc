@@ -10,7 +10,7 @@ mod find_file;
 mod resolution;
 
 use find_file::{FileContentSource, FileFinder};
-use resolution::ScopeBuilder;
+use resolution::Resolver;
 
 fn main() {
     if env::var("RUST_LOG").is_err() {
@@ -47,7 +47,7 @@ fn entry(src: FileContentSource) -> String {
         .map(|err| format!("{}", err))
         .for_each(|err| acc += &err);
 
-    let mut scope_builder = ScopeBuilder::from(&finder.file_graph);
+    let mut scope_builder = Resolver::from(&finder.file_graph);
     scope_builder.build_graph();
     scope_builder.check_graph();
     scope_builder

@@ -240,7 +240,10 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                             file: ctx.file.clone(),
                             star_span: glob.star_token.spans[0],
                             has_leading_colon: ctx.has_leading_colon,
-                            previous_ident: ctx.previous_idents.last().map(|ident| (*ident).clone()),
+                            previous_ident: ctx
+                                .previous_idents
+                                .last()
+                                .map(|ident| (*ident).clone()),
                         }
                         .into(),
                     );
