@@ -64,10 +64,15 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
             // just give any old dummy node because it'll have to be ignored in path/name finding
             NodeIndex::new(0)
         } else {
-            self.scope_graph
-                .neighbors_directed(ctx.dest, Direction::Incoming)
-                .next()
-                .unwrap()
+            let mut scope = ctx.dest;
+            while self.scope_graph[scope].is_nameless_scope() {
+                scope = self
+                    .scope_graph
+                    .neighbors_directed(scope, Direction::Incoming)
+                    .next()
+                    .unwrap();
+            }
+            scope
         };
         self.trace_use(ctx, scope, tree, false);
     }

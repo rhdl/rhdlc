@@ -13,6 +13,9 @@ pub mod a {
                     mod k {
                         use crate::*;
                         pub use crate::a::*;
+                        fn q() {
+                            use super::I3;
+                        }
                     }
                     pub(in super::super) fn n() {}
                     pub(in crate::a) enum o {}

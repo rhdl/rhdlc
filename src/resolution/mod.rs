@@ -399,6 +399,13 @@ pub enum Node<'ast> {
     },
 }
 impl<'ast> Node<'ast> {
+    fn is_nameless_scope(&self) -> bool {
+        match self {
+            Self::Root{..} | Self::Mod{..} => false,
+            _ => true
+        }
+    }
+
     fn file(scope_graph: &'ast ScopeGraph<'ast>, index: NodeIndex) -> &'ast Rc<File> {
         let mut current_index = index;
         loop {
