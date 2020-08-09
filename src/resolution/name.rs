@@ -1,7 +1,9 @@
 use std::convert::TryFrom;
 
 use log::{debug, error, warn};
-use syn::{Ident, ImplItem, Item, ItemFn, ItemMod};
+use syn::{
+    Ident, ImplItem, Item, ItemConst, ItemEnum, ItemFn, ItemMod, ItemStruct, ItemTrait, ItemType,
+};
 
 use super::r#use::UseType;
 
@@ -110,6 +112,36 @@ impl<'ast> From<&'ast ItemMod> for Name<'ast> {
 impl<'ast> From<&'ast ItemFn> for Name<'ast> {
     fn from(item_fn: &'ast ItemFn) -> Self {
         Self::Fn(&item_fn.sig.ident)
+    }
+}
+
+impl<'ast> From<&'ast ItemConst> for Name<'ast> {
+    fn from(item_const: &'ast ItemConst) -> Self {
+        Self::Var(&item_const.ident)
+    }
+}
+
+impl<'ast> From<&'ast ItemStruct> for Name<'ast> {
+    fn from(item_struct: &'ast ItemStruct) -> Self {
+        Self::Type(&item_struct.ident)
+    }
+}
+
+impl<'ast> From<&'ast ItemType> for Name<'ast> {
+    fn from(item_type: &'ast ItemType) -> Self {
+        Self::Type(&item_type.ident)
+    }
+}
+
+impl<'ast> From<&'ast ItemEnum> for Name<'ast> {
+    fn from(item_enum: &'ast ItemEnum) -> Self {
+        Self::Type(&item_enum.ident)
+    }
+}
+
+impl<'ast> From<&'ast ItemTrait> for Name<'ast> {
+    fn from(item_trait: &'ast ItemTrait) -> Self {
+        Self::Type(&item_trait.ident)
     }
 }
 

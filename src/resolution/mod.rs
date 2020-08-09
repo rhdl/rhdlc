@@ -38,7 +38,10 @@ use std::rc::Rc;
 
 use log::error;
 use petgraph::{graph::NodeIndex, visit::EdgeRef, Direction, Graph};
-use syn::{spanned::Spanned, Ident, Item, ItemFn, ItemImpl, ItemMod, ItemUse, UseName, UseRename};
+use syn::{
+    spanned::Spanned, Ident, Item, ItemConst, ItemEnum, ItemFn, ItemImpl, ItemMacro, ItemMod,
+    ItemStruct, ItemTrait, ItemType, ItemUse, UseName, UseRename,
+};
 
 use crate::error::{
     InvalidRawIdentifierError, MultipleDefinitionError, ResolutionError, UnsupportedError,
@@ -138,7 +141,8 @@ impl<'ast> ScopeBuilder<'ast> {
             self.errors.append(&mut self.find_invalid_names_for(node));
 
             let file = match &self.scope_graph[node] {
-                Node::Root { file, .. } | Node::Mod { file, .. } | Node::Impl { file, .. } => file,
+                Node::Root { file, .. } | Node::Mod { file, .. } => file,
+                Node::Impl { .. } => Node::file(&self.scope_graph, node),
                 _ => continue,
             };
             self.errors
@@ -148,39 +152,19 @@ impl<'ast> ScopeBuilder<'ast> {
     }
 
     pub fn find_invalid_names_for(&self, node: NodeIndex) -> Vec<ResolutionError> {
-        let mut names: Vec<(Name<'ast>, &Rc<File>)> = match &self.scope_graph[node] {
-            // TODO: handle invalid name roots
-            Node::Root { .. } | Node::MacroUsage { .. } => vec![],
-            Node::Var { item, file, .. }
-            | Node::Macro { item, file, .. }
-            | Node::Type { item, file, .. } => Name::try_from(*item)
-                .ok()
-                .map(|n| vec![(n, file)])
-                .unwrap_or_default(),
-            Node::Fn { item_fn, file, .. } => vec![(Name::from(*item_fn), file)],
-            Node::Mod { item_mod, file, .. } => vec![(Name::from(*item_mod), file)],
-            Node::Use { imports, file, .. } => imports
-                .values()
-                .map(|uses| {
-                    uses.iter()
-                        .filter_map(|r#use| Name::try_from(r#use).ok().map(|name| (name, file)))
-                })
-                .flatten()
-                .collect::<Vec<(Name<'ast>, &Rc<File>)>>(),
-            Node::Impl {
-                item_impl: ItemImpl { items, .. },
-                file,
-                ..
-            } => items
-                .iter()
-                .filter_map(|item| Name::try_from(item).ok().map(|name| (name, file)))
-                .collect(),
-        };
+        let file = Node::file(&self.scope_graph, node);
+        let mut names: Vec<Name<'ast>> = self.scope_graph[node].names();
         names
             .drain(..)
-            .filter(|(name, _)| !name.can_be_raw())
-            .map(|(name, file)| (name.ident().clone(), file.clone()))
-            .map(|(ident, file)| InvalidRawIdentifierError { file, ident }.into())
+            .filter(|name| !name.can_be_raw())
+            .map(|name| name.ident().clone())
+            .map(|ident| {
+                InvalidRawIdentifierError {
+                    file: file.clone(),
+                    ident,
+                }
+                .into()
+            })
             .collect()
     }
 
@@ -188,28 +172,8 @@ impl<'ast> ScopeBuilder<'ast> {
         // Check the scope for conflicts
         let mut ident_map: HashMap<String, Vec<Name<'ast>>> = HashMap::default();
         for child in self.scope_graph.neighbors(node) {
-            match &self.scope_graph[child] {
-                Node::Var { item, .. } | Node::Macro { item, .. } | Node::Type { item, .. } => {
-                    if let Ok(name) = Name::try_from(*item) {
-                        ident_map.entry(name.to_string()).or_default().push(name);
-                    }
-                }
-                Node::Fn { item_fn, .. } => {
-                    let name = Name::from(*item_fn);
-                    ident_map.entry(name.to_string()).or_default().push(name);
-                }
-                Node::Mod { item_mod, .. } => {
-                    let name = Name::from(*item_mod);
-                    ident_map.entry(name.to_string()).or_default().push(name);
-                }
-                Node::Use { imports, .. } => {
-                    imports.values().flatten().for_each(|item| {
-                        if let Ok(name) = Name::try_from(item) {
-                            ident_map.entry(name.to_string()).or_default().push(name);
-                        }
-                    });
-                }
-                Node::Impl { .. } | Node::Root { .. } | Node::MacroUsage { .. } => continue,
+            for name in self.scope_graph[child].names() {
+                ident_map.entry(name.to_string()).or_default().push(name);
             }
         }
         let mut errors = vec![];
@@ -361,66 +325,47 @@ impl<'ast> ScopeBuilder<'ast> {
                     }
                 }
             }
-            Macro(ItemMacro {
-                ident: Some(ident), ..
-            })
-            | Macro2(ItemMacro2 { ident, .. }) => {
-                let item_idx = self.scope_graph.add_node(Node::Macro {
-                    item,
-                    ident,
-                    file: self.file_graph[*self.file_ancestry.last().unwrap()].clone(),
-                });
-                let parent = self.scope_ancestry.last().unwrap();
-                self.scope_graph
-                    .add_edge(*parent, item_idx, "macro".to_string());
-            }
-            Macro(ItemMacro { ident: None, .. }) => {
-                let item_idx = self.scope_graph.add_node(Node::MacroUsage {
-                    item,
-                    file: self.file_graph[*self.file_ancestry.last().unwrap()].clone(),
-                });
-                let parent = self.scope_ancestry.last().unwrap();
-                self.scope_graph
-                    .add_edge(*parent, item_idx, "macro invocation".to_string());
-            }
             Fn(r#fn) => {
-                let item_idx = self.scope_graph.add_node(Node::Fn {
-                    item_fn: r#fn,
-                    file: self.file_graph[*self.file_ancestry.last().unwrap()].clone(),
-                });
+                let item_idx = self.scope_graph.add_node(Node::Fn { item_fn: r#fn });
                 let parent = self.scope_ancestry.last().unwrap();
                 self.scope_graph
                     .add_edge(*parent, item_idx, "fn".to_string());
             }
 
-            Static(ItemStatic { ident, .. }) | Const(ItemConst { ident, .. }) => {
-                let item_idx = self.scope_graph.add_node(Node::Var {
-                    item,
-                    ident,
-                    file: self.file_graph[*self.file_ancestry.last().unwrap()].clone(),
-                });
+            Const(item_const) => {
+                let item_idx = self.scope_graph.add_node(Node::Const { item_const });
                 let parent = self.scope_ancestry.last().unwrap();
                 self.scope_graph
-                    .add_edge(*parent, item_idx, "var".to_string());
+                    .add_edge(*parent, item_idx, "const".to_string());
             }
-            Type(ItemType { ident, .. })
-            | Struct(ItemStruct { ident, .. })
-            | Enum(ItemEnum { ident, .. })
-            | Trait(ItemTrait { ident, .. }) => {
-                let item_idx = self.scope_graph.add_node(Node::Type {
-                    item,
-                    ident,
-                    file: self.file_graph[*self.file_ancestry.last().unwrap()].clone(),
-                });
+            Type(item_type) => {
+                let item_idx = self.scope_graph.add_node(Node::Type { item_type });
                 let parent = self.scope_ancestry.last().unwrap();
                 self.scope_graph
-                    .add_edge(*parent, item_idx, "type".to_string());
+                    .add_edge(*parent, item_idx, "type alias".to_string());
+            }
+            Trait(item_trait) => {
+                let item_idx = self.scope_graph.add_node(Node::Trait { item_trait });
+                let parent = self.scope_ancestry.last().unwrap();
+                self.scope_graph
+                    .add_edge(*parent, item_idx, "trait".to_string());
+            }
+            Struct(item_struct) => {
+                let item_idx = self.scope_graph.add_node(Node::Struct { item_struct });
+                let parent = self.scope_ancestry.last().unwrap();
+                self.scope_graph
+                    .add_edge(*parent, item_idx, "struct".to_string());
+            }
+            Enum(item_enum) => {
+                let item_idx = self.scope_graph.add_node(Node::Enum { item_enum });
+                let parent = self.scope_ancestry.last().unwrap();
+                self.scope_graph
+                    .add_edge(*parent, item_idx, "enum".to_string());
             }
             Use(item_use) => {
                 let use_idx = self.scope_graph.add_node(Node::Use {
                     item_use,
                     imports: HashMap::default(),
-                    file: self.file_graph[*self.file_ancestry.last().unwrap()].clone(),
                 });
                 self.scope_graph.add_edge(
                     *self.scope_ancestry.last().unwrap(),
@@ -431,12 +376,35 @@ impl<'ast> ScopeBuilder<'ast> {
             Impl(item_impl) => {
                 let impl_idx = self.scope_graph.add_node(Node::Impl {
                     item_impl,
-                    file: self.file_graph[*self.file_ancestry.last().unwrap()].clone(),
                     r#for: None,
                 });
                 let parent = self.scope_ancestry.last().unwrap();
                 self.scope_graph
                     .add_edge(*parent, impl_idx, "impl".to_string());
+            }
+            Macro(ItemMacro { ident, .. }) => {
+                self.errors.push(
+                    UnsupportedError {
+                        file: self.file_graph[*self.file_ancestry.last().unwrap()].clone(),
+                        span: ident.span(),
+                        reason: "RHDL does not support macros (yet)",
+                    }
+                    .into(),
+                );
+            }
+            Macro2(ItemMacro2 { ident, .. }) => {
+                self.errors.push(UnsupportedError {
+                    file: self.file_graph[*self.file_ancestry.last().unwrap()].clone(),
+                    span: ident.span(),
+                    reason: "RHDL does not support declarative macros, as they are not stabilized in Rust"
+                }.into());
+            }
+            Static(ItemStatic { ident, .. }) => {
+                self.errors.push(UnsupportedError {
+                    file: self.file_graph[*self.file_ancestry.last().unwrap()].clone(),
+                    span: ident.span(),
+                    reason: "RHDL cannot support static variables and other unsafe code: safety is not yet formally defined"
+                }.into());
             }
             Union(ItemUnion { ident, .. }) => {
                 self.errors.push(UnsupportedError {
@@ -489,32 +457,25 @@ pub enum Node<'ast> {
         // The list of items this root exports, visible from ANY scope
         exports: Vec<NodeIndex>,
     },
-    Macro {
-        // A macro or macro2
-        item: &'ast Item,
-        ident: &'ast Ident,
-        file: Rc<File>,
-    },
-    MacroUsage {
-        item: &'ast Item,
-        file: Rc<File>,
-    },
     Fn {
         /// A fn
         item_fn: &'ast ItemFn,
-        file: Rc<File>,
     },
-    Var {
+    Const {
         /// A const, static
-        item: &'ast Item,
-        ident: &'ast Ident,
-        file: Rc<File>,
+        item_const: &'ast ItemConst,
+    },
+    Struct {
+        item_struct: &'ast ItemStruct,
+    },
+    Enum {
+        item_enum: &'ast ItemEnum,
     },
     Type {
-        /// An enum, struct, trait, or type
-        item: &'ast Item,
-        ident: &'ast Ident,
-        file: Rc<File>,
+        item_type: &'ast ItemType,
+    },
+    Trait {
+        item_trait: &'ast ItemTrait,
     },
     Mod {
         item_mod: &'ast ItemMod,
@@ -526,7 +487,6 @@ pub enum Node<'ast> {
     },
     Impl {
         item_impl: &'ast ItemImpl,
-        file: Rc<File>,
         /// impl Option<Trait> Option<for> **NodeIndex**
         /// which cannot be resolved at first
         r#for: Option<NodeIndex>,
@@ -537,8 +497,60 @@ pub enum Node<'ast> {
         /// Note that each UseType can include ambiguous names
         /// These are NOT deduped, so that we can catch reimport errors
         imports: HashMap<NodeIndex, Vec<UseType<'ast>>>,
-        file: Rc<File>,
     },
+}
+impl<'ast> Node<'ast> {
+    fn file(scope_graph: &'ast ScopeGraph<'ast>, index: NodeIndex) -> &'ast Rc<File> {
+        let mut current_index = index;
+        loop {
+            match &scope_graph[current_index] {
+                Self::Root { file, .. } => return &file,
+                Self::Mod {
+                    file, content_file, ..
+                } => {
+                    return if let (Some(content_file), false) =
+                        (content_file.as_ref(), index == current_index)
+                    {
+                        content_file
+                    } else {
+                        &file
+                    }
+                }
+                _ => {
+                    current_index = scope_graph
+                        .neighbors_directed(current_index, Direction::Incoming)
+                        .next()
+                        .unwrap();
+                }
+            }
+        }
+    }
+
+    fn names(&self) -> Vec<Name<'ast>> {
+        match self {
+            // TODO: handle invalid name roots
+            Self::Root { .. } => vec![],
+            Self::Struct { item_struct, .. } => vec![Name::from(*item_struct).into()],
+            Self::Trait { item_trait, .. } => vec![Name::from(*item_trait).into()],
+            Self::Type { item_type, .. } => vec![Name::from(*item_type).into()],
+            Self::Enum { item_enum, .. } => vec![Name::from(*item_enum).into()],
+            Self::Fn { item_fn, .. } => vec![Name::from(*item_fn)],
+            Self::Mod { item_mod, .. } => vec![Name::from(*item_mod)],
+            Self::Const { item_const, .. } => vec![Name::from(*item_const)],
+            Self::Use { imports, .. } => imports
+                .values()
+                .map(|uses| uses.iter().filter_map(|r#use| Name::try_from(r#use).ok()))
+                .flatten()
+                .collect::<Vec<Name<'ast>>>(),
+            Self::Impl {
+                item_impl: ItemImpl { items, .. },
+                ..
+            } => items
+                .iter()
+                .filter_map(|item| Name::try_from(item).ok())
+                .collect(),
+        }
+    }
 }
 
 #[cfg(not(tarpaulin_include))]
@@ -546,11 +558,12 @@ impl<'ast> Display for Node<'ast> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
         match self {
             Self::Root { .. } => write!(f, "root"),
-            Self::Macro { ident, .. } => write!(f, "macro {}", ident),
-            Self::MacroUsage { .. } => write!(f, "macro invocation"),
+            Self::Const { item_const, .. } => write!(f, "const {}", item_const.ident),
             Self::Fn { item_fn, .. } => write!(f, "fn {}", item_fn.sig.ident),
-            Self::Var { ident, .. } => write!(f, "var {}", ident),
-            Self::Type { ident, .. } => write!(f, "type {}", ident),
+            Self::Struct { item_struct, .. } => write!(f, "struct {}", item_struct.ident),
+            Self::Trait { item_trait, .. } => write!(f, "trait {}", item_trait.ident),
+            Self::Type { item_type, .. } => write!(f, "type {}", item_type.ident),
+            Self::Enum { item_enum, .. } => write!(f, "enum {}", item_enum.ident),
             Self::Mod { item_mod, .. } => write!(f, "mod {}", item_mod.ident),
             Self::Impl { .. } => write!(f, "impl"),
             Self::Use {

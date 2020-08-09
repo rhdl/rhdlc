@@ -23,52 +23,45 @@ pub fn apply_visibility<'ast>(
 ) -> Result<(), ResolutionError> {
     use syn::Item::*;
     use syn::*;
-    let vis_and_file = match &scope_graph[node] {
-        Node::Var { item, file, .. }
-        | Node::Macro { item, file, .. }
-        | Node::Type { item, file, .. } => match item {
-            ExternCrate(ItemExternCrate { vis, .. })
-            | Type(ItemType { vis, .. })
-            | Static(ItemStatic { vis, .. })
-            | Const(ItemConst { vis, .. })
-            | Fn(ItemFn {
-                sig: Signature { .. },
-                vis,
-                ..
-            })
-            | Macro2(ItemMacro2 { vis, .. })
-            | Struct(ItemStruct { vis, .. })
-            | Enum(ItemEnum { vis, .. })
-            | Trait(ItemTrait { vis, .. })
-            | TraitAlias(ItemTraitAlias { vis, .. })
-            | Union(ItemUnion { vis, .. }) => Some((vis, file.clone())),
-            _ => None,
-        },
-        Node::Fn {
+    let vis = match &scope_graph[node] {
+        Node::Const {
+            item_const: ItemConst { vis, .. },
+        }
+        | Node::Struct {
+            item_struct: ItemStruct { vis, .. },
+        }
+        | Node::Trait {
+            item_trait: ItemTrait { vis, .. },
+        }
+        | Node::Enum {
+            item_enum: ItemEnum { vis, .. },
+        }
+        | Node::Type {
+            item_type: ItemType { vis, .. },
+        }
+        | Node::Fn {
             item_fn: ItemFn { vis, .. },
-            file,
             ..
-        } => Some((vis, file.clone())),
-        Node::Mod {
-            item_mod: ItemMod { vis, .. },
-            file,
-            ..
-        } => Some((vis, file.clone())),
-        Node::Use {
+        }
+        | Node::Use {
             item_use: ItemUse { vis, .. },
-            file,
             ..
-        } => Some((vis, file.clone())),
-        Node::Root { .. } | Node::Impl { .. } | Node::MacroUsage { .. } => None,
+        }
+        | Node::Mod {
+            item_mod: ItemMod { vis, .. },
+            ..
+        } => Some(vis),
+        Node::Root { .. } | Node::Impl { .. } => None,
     };
 
-    if let Some((vis, file)) = vis_and_file {
+    if let Some(vis) = vis {
         use Visibility::*;
+        let file = Node::file(&scope_graph, node).clone();
         match vis {
             Public(_) => apply_visibility_pub(scope_graph, node),
             Crate(_) => apply_visibility_crate(scope_graph, node),
             Restricted(r) => {
-                apply_visibility_in(scope_graph, node, &file, r.in_token.is_some(), &r.path)
+                apply_visibility_in(scope_graph, node, file, r.in_token.is_some(), &r.path)
             }
             Inherited => Ok(()),
         }
@@ -80,13 +73,13 @@ pub fn apply_visibility<'ast>(
 fn apply_visibility_in<'ast>(
     scope_graph: &mut ScopeGraph<'ast>,
     node: NodeIndex,
-    file: &Rc<File>,
+    file: Rc<File>,
     has_in_token: bool,
     path: &syn::Path,
 ) -> Result<(), ResolutionError> {
     if !has_in_token && path.segments.len() > 1 {
         return Err(UnsupportedError {
-            file: file.clone(),
+            file,
             span: path.span(),
             reason: "RHDL does not recognize this path, it should be pub(in path)",
         }
@@ -94,7 +87,7 @@ fn apply_visibility_in<'ast>(
     }
     if path.leading_colon.is_some() {
         return Err(UnsupportedError {
-            file: file.clone(),
+            file,
             span: path.leading_colon.span(),
             reason: "Beginning with the 2018 edition of Rust, paths for pub(in path) must start with crate, self, or super."
         }.into());
@@ -113,7 +106,7 @@ fn apply_visibility_in<'ast>(
             grandparent
         } else {
             return Err(TooManySupersError {
-                file: file.clone(),
+                file,
                 ident: first_segment.ident.clone(),
             }
             .into());
@@ -121,7 +114,7 @@ fn apply_visibility_in<'ast>(
     } else if first_segment.ident == "self" {
         if path.segments.len() > 1 {
             return Err(NonAncestralError {
-                file: file.clone(),
+                file,
                 segment_ident: first_segment.ident.clone(),
                 prev_segment_ident: None,
             }
@@ -130,7 +123,7 @@ fn apply_visibility_in<'ast>(
         return Ok(());
     } else {
         return Err(IncorrectVisibilityError {
-            file: file.clone(),
+            file,
             vis_span: first_segment.ident.span(),
         }
         .into());

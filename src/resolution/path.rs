@@ -175,16 +175,13 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
         paths_only: bool,
         glob_only: bool,
     ) -> Vec<NodeIndex> {
-        if let Some(exact_match) = self.matches_exact(node, name_to_look_for, paths_only) {
-            return vec![exact_match];
+        if self.matches_exact(node, name_to_look_for, paths_only) {
+            return vec![*node];
         }
 
         let rebuilt_ctx_opt = match &self.scope_graph[*node] {
             Node::Use {
-                item_use,
-                imports,
-                file,
-                ..
+                item_use, imports, ..
             } => {
                 if self.visited.contains(node) {
                     None
@@ -198,14 +195,12 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                     checker.visit_item_use(item_use);
                     checker.might_match
                 } {
-                    Some((
-                        TracingContext::new(
-                            self.scope_graph,
-                            *node,
-                            file,
-                            item_use.leading_colon.is_some(),
-                        ),
-                        &item_use.tree,
+                    let file = Node::file(&self.scope_graph, *node);
+                    Some(TracingContext::new(
+                        self.scope_graph,
+                        *node,
+                        file,
+                        item_use.leading_colon.is_some(),
                     ))
                 } else {
                     // claim: if might not match returned empty, it definitely will not match
@@ -214,13 +209,13 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
             }
             _ => return vec![],
         };
-        if let Some((mut rebuilt_ctx, tree)) = rebuilt_ctx_opt {
+        if let Some(mut rebuilt_ctx) = rebuilt_ctx_opt {
             let mut use_resolver = UseResolver {
                 scope_graph: self.scope_graph,
                 errors: self.errors,
                 visited: self.visited,
             };
-            use_resolver.trace_use_entry_reenterable(&mut rebuilt_ctx, tree);
+            use_resolver.trace_use_entry_reenterable(&mut rebuilt_ctx);
         }
         let imports = match &self.scope_graph[*node] {
             Node::Use { imports, .. } => imports.clone(),
@@ -300,26 +295,16 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
             .collect()
     }
 
-    fn matches_exact(
-        &self,
-        node: &NodeIndex,
-        name_to_look_for: &str,
-        paths_only: bool,
-    ) -> Option<NodeIndex> {
-        let exact_match = match &self.scope_graph[*node] {
-            Node::Var { ident, .. } | Node::Macro { ident, .. } | Node::Type { ident, .. } => {
-                !paths_only && *ident == name_to_look_for
-            }
-            Node::Fn { item_fn, .. } => !paths_only && item_fn.sig.ident == name_to_look_for,
-            Node::Root { name, .. } => name == name_to_look_for,
-            Node::Mod { item_mod, .. } => item_mod.ident == name_to_look_for,
-            Node::Use { .. } | Node::Impl { .. } | Node::MacroUsage { .. } => false,
+    fn matches_exact(&self, node: &NodeIndex, name_to_look_for: &str, paths_only: bool) -> bool {
+        let is_path = match &self.scope_graph[*node] {
+            Node::Mod { .. } | Node::Root { .. } => true,
+            _ => false,
         };
-        if exact_match {
-            Some(*node)
-        } else {
-            None
-        }
+        // Node::Use { .. } | Node::Impl { .. } | Node::MacroUsage { .. } => false,
+        let names = self.scope_graph[*node].names();
+        (!paths_only || (paths_only && is_path))
+            && names.len() == 1
+            && names.first().unwrap().ident() == name_to_look_for
     }
 }
 

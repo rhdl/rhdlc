@@ -41,22 +41,25 @@ pub struct UseResolver<'a, 'ast> {
 
 impl<'a, 'ast> UseResolver<'a, 'ast> {
     pub fn resolve_use(&mut self, dest: NodeIndex) {
-        let (item_use, file) = match &self.scope_graph[dest] {
-            Node::Use { item_use, file, .. } => (item_use, file),
+        let item_use = match &self.scope_graph[dest] {
+            Node::Use { item_use, .. } => item_use,
             _ => return,
         };
-        self.trace_use_entry_reenterable(
-            &mut TracingContext::new(
-                self.scope_graph,
-                dest,
-                file,
-                item_use.leading_colon.is_some(),
-            ),
-            &item_use.tree,
-        );
+        let file = Node::file(&self.scope_graph, dest).clone();
+        let has_leading_colon = item_use.leading_colon.is_some();
+        self.trace_use_entry_reenterable(&mut TracingContext::new(
+            self.scope_graph,
+            dest,
+            &file,
+            has_leading_colon,
+        ));
     }
 
-    pub fn trace_use_entry_reenterable(&mut self, ctx: &mut TracingContext, tree: &'ast UseTree) {
+    pub fn trace_use_entry_reenterable(&mut self, ctx: &mut TracingContext) {
+        let tree = match &self.scope_graph[ctx.dest] {
+            Node::Use { item_use, .. } => &item_use.tree,
+            _ => return,
+        };
         if self.visited.contains(&ctx.dest) {
             return;
         }
