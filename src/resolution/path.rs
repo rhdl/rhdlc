@@ -62,10 +62,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
     ) -> Result<Vec<NodeIndex>, ResolutionError> {
         let mut ctx = TracingContext::new(self.scope_graph, dest, path.leading_colon.is_some());
         let mut dest_scope = dest;
-        while !match &self.scope_graph[dest_scope] {
-            Node::Mod { .. } | Node::Root { .. } => true,
-            _ => false,
-        } {
+        while self.scope_graph[dest_scope].is_nameless_scope() {
             dest_scope = self
                 .scope_graph
                 .neighbors_directed(dest_scope, Direction::Incoming)
