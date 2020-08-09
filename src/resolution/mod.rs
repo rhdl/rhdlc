@@ -39,8 +39,8 @@ use std::rc::Rc;
 use log::error;
 use petgraph::{graph::NodeIndex, visit::EdgeRef, Direction, Graph};
 use syn::{
-    spanned::Spanned, Ident, Item, ItemConst, ItemEnum, ItemFn, ItemImpl, ItemMacro, ItemMod,
-    ItemStruct, ItemTrait, ItemType, ItemUse, UseName, UseRename,
+    spanned::Spanned, visit::Visit, Ident, Item, ItemConst, ItemEnum, ItemFn, ItemImpl, ItemMacro,
+    ItemMod, ItemStruct, ItemTrait, ItemType, ItemUse, UseName, UseRename,
 };
 
 use crate::error::{
@@ -137,9 +137,8 @@ impl<'ast> ScopeBuilder<'ast> {
     }
 
     pub fn check_graph(&mut self) {
+        self.errors.append(&mut self.find_invalid_names());
         for node in self.scope_graph.node_indices() {
-            self.errors.append(&mut self.find_invalid_names_for(node));
-
             let file = match &self.scope_graph[node] {
                 Node::Root { file, .. } | Node::Mod { file, .. } => file,
                 Node::Impl { .. } => Node::file(&self.scope_graph, node),
@@ -151,21 +150,36 @@ impl<'ast> ScopeBuilder<'ast> {
         }
     }
 
-    pub fn find_invalid_names_for(&self, node: NodeIndex) -> Vec<ResolutionError> {
-        let file = Node::file(&self.scope_graph, node);
-        let mut names: Vec<Name<'ast>> = self.scope_graph[node].names();
-        names
-            .drain(..)
-            .filter(|name| !name.can_be_raw())
-            .map(|name| name.ident().clone())
-            .map(|ident| {
-                InvalidRawIdentifierError {
-                    file: file.clone(),
-                    ident,
+    pub fn find_invalid_names(&self) -> Vec<ResolutionError> {
+        struct IdentVisitor<'ast>(Vec<ResolutionError>, &'ast Rc<File>);
+        impl<'ast> Visit<'ast> for IdentVisitor<'ast> {
+            fn visit_ident(&mut self, ident: &Ident) {
+                // https://github.com/rust-lang/rust/blob/5ef299eb9805b4c86b227b718b39084e8bf24454/src/librustc_span/symbol.rs#L1592
+                if ident == "r#_"
+                    || ident == "r#"
+                    || ident == "r#super"
+                        || ident == "r#self"
+                        || ident == "r#Self"
+                        || ident == "r#crate"
+                {
+                    self.0.push(
+                        InvalidRawIdentifierError {
+                            file: self.1.clone(),
+                            ident: ident.clone(),
+                        }
+                        .into(),
+                    );
                 }
-                .into()
-            })
-            .collect()
+            }
+        }
+        let mut errors = vec![];
+        for node in self.file_graph.node_indices() {
+            let file = &self.file_graph[node];
+            let mut visitor = IdentVisitor(vec![], file);
+            visitor.visit_file(&file.syn);
+            errors.append(&mut visitor.0);
+        }
+        errors
     }
 
     fn find_name_conflicts_in(&self, node: NodeIndex, file: &Rc<File>) -> Vec<ResolutionError> {
@@ -543,12 +557,9 @@ impl<'ast> Node<'ast> {
                 .flatten()
                 .collect::<Vec<Name<'ast>>>(),
             Self::Impl {
-                item_impl: ItemImpl { items, .. },
+                item_impl: ItemImpl { .. },
                 ..
-            } => items
-                .iter()
-                .filter_map(|item| Name::try_from(item).ok())
-                .collect(),
+            } => vec![],
         }
     }
 }
