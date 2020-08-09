@@ -39,6 +39,15 @@ impl<'a, 'ast> Visit<'ast> for ScopeBuilder<'a, 'ast> {
             items.iter().for_each(|i| self.visit_item(i));
             self.scope_ancestry.pop();
         } else {
+            if self.scope_ancestry.iter().any(|ancestor| {
+                if let Node::Fn { .. } = self.scope_graph[*ancestor] {
+                    true
+                } else {
+                    false
+                }
+            }) {
+                todo!("mod without content in a fn not allowed")
+            }
             let mut full_ident_path: Vec<Ident> = self
                 .scope_ancestry
                 .iter()
@@ -110,6 +119,9 @@ impl<'a, 'ast> Visit<'ast> for ScopeBuilder<'a, 'ast> {
         let parent = self.scope_ancestry.last().unwrap();
         self.scope_graph
             .add_edge(*parent, item_idx, "fn".to_string());
+        self.scope_ancestry.push(item_idx);
+        self.visit_block(item_fn.block.as_ref());
+        self.scope_ancestry.pop();
     }
 
     fn visit_item_const(&mut self, item_const: &'ast ItemConst) {
