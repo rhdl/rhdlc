@@ -13,8 +13,11 @@ pub mod a {
                     mod k {
                         use crate::*;
                         pub use crate::a::*;
-                        fn q() {
+                        fn r() {
                             use super::I3;
+                            mod s {
+                                use super::super::I2;
+                            }
                         }
                     }
                     pub(in super::super) fn n() {}

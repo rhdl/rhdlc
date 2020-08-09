@@ -122,11 +122,24 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                         if path_ident == "self" {
                             scope
                         } else if path_ident == "super" {
-                            if let Some(use_grandparent) = self
+                            let mut use_grandparent = self
                                 .scope_graph
                                 .neighbors_directed(scope, Direction::Incoming)
-                                .next()
+                                .next();
+                            while use_grandparent
+                                .as_ref()
+                                .map(|i| self.scope_graph[*i].is_nameless_scope())
+                                .unwrap_or_default()
                             {
+                                use_grandparent = self
+                                    .scope_graph
+                                    .neighbors_directed(
+                                        *use_grandparent.as_ref().unwrap(),
+                                        Direction::Incoming,
+                                    )
+                                    .next();
+                            }
+                            if let Some(use_grandparent) = use_grandparent {
                                 use_grandparent
                             } else {
                                 self.errors.push(
