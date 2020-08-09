@@ -12,21 +12,16 @@ use super::{
 use crate::error::*;
 use crate::find_file::File;
 
-pub struct TracingContext {
+pub struct TracingContext<'ast> {
     pub file: Rc<File>,
     pub root: NodeIndex,
     pub dest: NodeIndex,
-    pub previous_idents: Vec<syn::Ident>,
+    pub previous_idents: Vec<&'ast syn::Ident>,
     pub has_leading_colon: bool,
 }
 
-impl TracingContext {
-    pub fn new(
-        scope_graph: &ScopeGraph,
-        dest: NodeIndex,
-        file: &Rc<File>,
-        has_leading_colon: bool,
-    ) -> Self {
+impl<'ast> TracingContext<'ast> {
+    pub fn new(scope_graph: &ScopeGraph, dest: NodeIndex, has_leading_colon: bool) -> Self {
         let mut root = dest;
         while let Some(parent) = scope_graph
             .neighbors_directed(root, Direction::Incoming)
@@ -35,7 +30,7 @@ impl TracingContext {
             root = parent;
         }
         Self {
-            file: file.clone(),
+            file: Node::file(scope_graph, dest).clone(),
             dest,
             root,
             previous_idents: vec![],
@@ -61,6 +56,47 @@ impl<'a, 'ast> Into<UseResolver<'a, 'ast>> for &'a mut PathFinder<'a, 'ast> {
 }
 
 impl<'a, 'ast> PathFinder<'a, 'ast> {
+    pub fn find_at_path(
+        &mut self,
+        dest: NodeIndex,
+        path: &Path,
+    ) -> Result<Vec<NodeIndex>, ResolutionError> {
+        let mut ctx = TracingContext::new(self.scope_graph, dest, path.leading_colon.is_some());
+        let mut dest_scope = dest;
+        while !match &self.scope_graph[dest_scope] {
+            Node::Mod { .. } | Node::Root { .. } => true,
+            _ => false,
+        } {
+            dest_scope = self
+                .scope_graph
+                .neighbors_directed(dest_scope, Direction::Incoming)
+                .next()
+                .unwrap();
+        }
+        let mut scopes = vec![dest_scope];
+        for (i, segment) in path.segments.iter().enumerate() {
+            let ident = &segment.ident;
+            let r#string = ident.to_string();
+            let mut results: Vec<Result<Vec<NodeIndex>, ResolutionError>> = scopes
+                .iter()
+                .map(|scope| {
+                    self.find_children(&ctx, *scope, ident, &r#string, i + 1 != path.segments.len())
+                })
+                .collect();
+            if results.iter().all(|res| res.is_err()) {
+                return results.drain(..).next().unwrap();
+            }
+            scopes = results
+                .drain(..)
+                .filter_map(|res| res.ok())
+                .flatten()
+                .collect();
+            ctx.previous_idents.push(&segment.ident);
+        }
+        Ok(scopes)
+    }
+
+    /// Ok is guaranteed to have >= 1 node, else an unresolved error will be returned
     pub fn find_children(
         &mut self,
         ctx: &TracingContext,
@@ -143,7 +179,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                         .collect();
                     let local_from_globs: Vec<NodeIndex> = local_nodes
                         .iter()
-                        .map(|child| self.matches(&child, &original_name_string, false, true))
+                        .map(|child| self.matches(&child, &original_name_string, paths_only, true))
                         .flatten()
                         .collect();
                     let visible_local_from_globs: Vec<NodeIndex> = local_from_globs
@@ -154,15 +190,40 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                         .cloned()
                         .collect();
                     if !local_from_globs.is_empty() && visible_local_from_globs.is_empty() {
-                        return Err(ItemVisibilityError {
+                        Err(ItemVisibilityError {
                             name_file: ctx.file.clone(),
                             name_ident: ident.clone(),
                         }
-                        .into());
+                        .into())
+                    } else if visible_local_from_globs.is_empty() {
+                        Err(UnresolvedItemError {
+                            file: ctx.file.clone(),
+                            previous_idents: ctx
+                                .previous_idents
+                                .iter()
+                                .map(|ident| (*ident).clone())
+                                .collect(),
+                            unresolved_ident: ident.clone(),
+                            has_leading_colon: ctx.has_leading_colon,
+                            paths_only,
+                        }
+                        .into())
+                    } else {
+                        Ok(visible_local_from_globs)
                     }
-                    Ok(visible_local_from_globs)
                 } else {
-                    Ok(vec![])
+                    Err(UnresolvedItemError {
+                        file: ctx.file.clone(),
+                        previous_idents: ctx
+                            .previous_idents
+                            .iter()
+                            .map(|ident| (*ident).clone())
+                            .collect(),
+                        unresolved_ident: ident.clone(),
+                        has_leading_colon: ctx.has_leading_colon,
+                        paths_only,
+                    }
+                    .into())
                 }
             }
         }
@@ -195,11 +256,9 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                     checker.visit_item_use(item_use);
                     checker.might_match
                 } {
-                    let file = Node::file(&self.scope_graph, *node);
                     Some(TracingContext::new(
                         self.scope_graph,
                         *node,
-                        file,
                         item_use.leading_colon.is_some(),
                     ))
                 } else {

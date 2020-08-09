@@ -55,6 +55,7 @@ mod r#use;
 use r#use::UseType;
 
 mod path;
+use path::PathFinder;
 mod r#pub;
 
 pub type ScopeGraph<'ast> = Graph<Node<'ast>, String>;
@@ -134,7 +135,7 @@ impl<'ast> ScopeBuilder<'ast> {
         }
 
         // Stage four: tie impls
-        self.tie_impls();
+        self.tie_impls(&mut visited);
     }
 
     pub fn check_graph(&mut self) {
@@ -263,7 +264,7 @@ impl<'ast> ScopeBuilder<'ast> {
         errors
     }
 
-    fn tie_impls(&mut self) {
+    fn tie_impls(&mut self, visited: &mut HashSet<NodeIndex>) {
         let impls: Vec<NodeIndex> = self
             .scope_graph
             .node_indices()
@@ -273,22 +274,70 @@ impl<'ast> ScopeBuilder<'ast> {
             })
             .collect();
         for r#impl in impls {
-            let (item_impl, mut r#trait, mut r#for) = match self.scope_graph[r#impl] {
+            let item_impl = match &mut self.scope_graph[r#impl] {
                 Node::Impl {
                     item_impl,
                     r#trait,
                     r#for,
-                } => (item_impl, r#trait, r#for),
+                } => item_impl.clone(),
                 _ => continue,
             };
-            if let Some((_, trait_path, _)) = &item_impl.trait_ {
+            let mut path_finder = PathFinder {
+                scope_graph: &mut self.scope_graph,
+                visited,
+                errors: &mut self.errors,
+            };
+            let r#trait = if let Some((_, trait_path, _)) = &item_impl.trait_ {
                 // find the trait
-            }
+                match path_finder.find_at_path(r#impl, trait_path) {
+                    Ok(traits) => {
+                        if traits.len() > 1 {
+                            todo!("disambiguate if possible, if not push an error but run with the found trait");
+                        }
+                        traits.first().cloned()
+                    }
+                    Err(err) => {
+                        self.errors.push(err);
+                        continue;
+                    }
+                }
+            } else {
+                None
+            };
 
-            if let Type::Path(type_path) = item_impl.self_ty.as_ref() {
-                // find the for
-            } else if item_impl.trait_.is_none() {
-                todo!("no base type found for inherent implementation")
+            // TODO: this actually needs type-checking to be resolved if trait is some
+            let r#for = if item_impl.trait_.is_none() {
+                if let Type::Path(type_path) = item_impl.self_ty.as_ref() {
+                    // find the for
+                    match path_finder.find_at_path(r#impl, &type_path.path) {
+                        Ok(types) => {
+                            if types.len() > 1 {
+                                todo!("disambiguate if possible, if not push an error but run with the found struct");
+                            }
+                            types.first().cloned()
+                        }
+                        Err(err) => {
+                            self.errors.push(err);
+                            continue;
+                        }
+                    }
+                } else {
+                    todo!("no base type found for inherent implementation")
+                }
+            } else {
+                None
+            };
+
+            match &mut self.scope_graph[r#impl] {
+                Node::Impl {
+                    item_impl,
+                    r#trait: trait_dest,
+                    r#for: for_dest,
+                } => {
+                    *trait_dest = r#trait;
+                    *for_dest = r#for;
+                },
+                _ => continue,
             }
         }
     }
@@ -625,7 +674,13 @@ impl<'ast> Display for Node<'ast> {
             Self::Type { item_type, .. } => write!(f, "type {}", item_type.ident),
             Self::Enum { item_enum, .. } => write!(f, "enum {}", item_enum.ident),
             Self::Mod { item_mod, .. } => write!(f, "mod {}", item_mod.ident),
-            Self::Impl { .. } => write!(f, "impl"),
+            Self::Impl { r#for, .. } => {
+                write!(f, "impl")?;
+                if let Some(r#for) = r#for {
+                    write!(f, "for {:?}", r#for);
+                }
+                Ok(())
+            }
             Self::Use {
                 item_use, imports, ..
             } => {

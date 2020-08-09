@@ -45,17 +45,15 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
             Node::Use { item_use, .. } => item_use,
             _ => return,
         };
-        let file = Node::file(&self.scope_graph, dest).clone();
         let has_leading_colon = item_use.leading_colon.is_some();
         self.trace_use_entry_reenterable(&mut TracingContext::new(
             self.scope_graph,
             dest,
-            &file,
             has_leading_colon,
         ));
     }
 
-    pub fn trace_use_entry_reenterable(&mut self, ctx: &mut TracingContext) {
+    pub fn trace_use_entry_reenterable(&mut self, ctx: &mut TracingContext<'ast>) {
         let tree = match &self.scope_graph[ctx.dest] {
             Node::Use { item_use, .. } => &item_use.tree,
             _ => return,
@@ -79,7 +77,7 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
     /// Trace usages
     fn trace_use(
         &mut self,
-        ctx: &mut TracingContext,
+        ctx: &mut TracingContext<'ast>,
         scope: NodeIndex,
         tree: &'ast UseTree,
         in_group: bool,
@@ -95,7 +93,7 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                         let is_chained_supers = ctx
                             .previous_idents
                             .last()
-                            .map(|ident| ident == "super")
+                            .map(|ident| *ident == "super")
                             .unwrap_or(true)
                             && path_ident == "super";
                         if !is_entry && !is_chained_supers {
@@ -172,24 +170,13 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                                 return;
                             }
                         };
-                        if found_children.is_empty() {
-                            self.errors.push(
-                                UnresolvedItemError {
-                                    file: ctx.file.clone(),
-                                    previous_idents: ctx.previous_idents.clone(),
-                                    unresolved_ident: path.ident.clone(),
-                                    has_leading_colon: ctx.has_leading_colon,
-                                }
-                                .into(),
-                            );
-                            return;
-                        } else if found_children.len() > 1 {
+                        if found_children.len() > 1 {
                             todo!("disambiguation error");
                         }
                         *found_children.first().unwrap()
                     }
                 };
-                ctx.previous_idents.push(path.ident.clone());
+                ctx.previous_idents.push(&path.ident);
                 self.trace_use(ctx, new_scope, &path.tree, false);
                 ctx.previous_idents.pop();
             }
@@ -225,19 +212,6 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                         }
                     }
                 };
-
-                if found_children.is_empty() {
-                    self.errors.push(
-                        UnresolvedItemError {
-                            file: ctx.file.clone(),
-                            previous_idents: ctx.previous_idents.clone(),
-                            unresolved_ident: ident.clone(),
-                            has_leading_colon: ctx.has_leading_colon,
-                        }
-                        .into(),
-                    );
-                    return;
-                }
                 if let Node::Use { imports, .. } = &mut self.scope_graph[ctx.dest] {
                     match tree {
                         Name(name) => imports.entry(scope).or_default().push(UseType::Name {
@@ -258,7 +232,7 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                     || ctx
                         .previous_idents
                         .last()
-                        .map(|ident| ident == "self")
+                        .map(|ident| *ident == "self")
                         .unwrap_or_default()
                 {
                     self.errors.push(
@@ -266,7 +240,7 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                             file: ctx.file.clone(),
                             star_span: glob.star_token.spans[0],
                             has_leading_colon: ctx.has_leading_colon,
-                            previous_ident: ctx.previous_idents.last().cloned(),
+                            previous_ident: ctx.previous_idents.last().map(|ident| (*ident).clone()),
                         }
                         .into(),
                     );

@@ -286,37 +286,45 @@ pub struct UnresolvedItemError {
     pub file: Rc<File>,
     pub previous_idents: Vec<syn::Ident>,
     pub has_leading_colon: bool,
+    pub paths_only: bool,
     pub unresolved_ident: syn::Ident,
 }
 
 impl Display for UnresolvedItemError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
-        let (reference_msg, reference_span) =
-            match (self.previous_idents.len(), self.has_leading_colon) {
-                (0, false) => (
-                    format!("no `{}` crate or mod", self.unresolved_ident),
-                    self.unresolved_ident.span(),
-                ),
-                (0, true) => (
-                    format!("no `{}` external crate", self.unresolved_ident),
-                    self.unresolved_ident.span(),
-                ),
-                (_nonzero, _) => (
-                    format!(
-                        "no `{}` in `{}`",
-                        self.unresolved_ident,
-                        self.previous_idents
-                            .last()
-                            .map(|ident| ident.to_string())
-                            .unwrap()
-                    ),
-                    self.unresolved_ident.span(),
-                ),
-            };
+        let reference_msg = match (
+            self.previous_idents.len(),
+            self.has_leading_colon,
+            self.paths_only,
+        ) {
+            (0, false, false) => format!("no `{}` item", self.unresolved_ident),
+            (0, false, true) => format!("no `{}` crate or mod", self.unresolved_ident),
+            (0, true, _) => format!("no `{}` external crate", self.unresolved_ident),
+            (_nonzero, _, false) => format!(
+                "no `{}` in `{}`",
+                self.unresolved_ident,
+                self.previous_idents
+                    .last()
+                    .map(|ident| ident.to_string())
+                    .unwrap()
+            ),
+            (_nonzero, _, true) => format!(
+                "no `{}` mod in `{}`",
+                self.unresolved_ident,
+                self.previous_idents
+                    .last()
+                    .map(|ident| ident.to_string())
+                    .unwrap()
+            ),
+        };
         render_location(
             f,
             format!("unresolved item `{}`", self.unresolved_ident),
-            (Reference::Error, &reference_msg, reference_span),
+            (
+                Reference::Error,
+                &reference_msg,
+                self.unresolved_ident.span(),
+            ),
             vec![],
             &self.file.src,
             &self.file.content,

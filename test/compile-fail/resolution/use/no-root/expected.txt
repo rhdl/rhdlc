@@ -2,4 +2,4 @@ error: unresolved item `a`
  --> top.rhdl:1:4
   |
 1 | use a;
-  |     ^ no `a` crate or mod
+  |     ^ no `a` item

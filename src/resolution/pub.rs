@@ -194,6 +194,7 @@ fn apply_visibility_in<'ast>(
                         .collect(),
                     unresolved_ident: segment.ident.clone(),
                     has_leading_colon: false,
+                    paths_only: true,
                 }
                 .into());
             } else if let Some(export_dest_child) = export_dest_children
