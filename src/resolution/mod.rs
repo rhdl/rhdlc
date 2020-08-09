@@ -39,8 +39,8 @@ use std::rc::Rc;
 use log::error;
 use petgraph::{graph::NodeIndex, visit::EdgeRef, Direction, Graph};
 use syn::{
-    spanned::Spanned, visit::Visit, Ident, Item, ItemConst, ItemEnum, ItemFn, ItemImpl, ItemMacro,
-    ItemMod, ItemStruct, ItemTrait, ItemType, ItemUse, UseName, UseRename,
+    spanned::Spanned, visit::Visit, Ident, Item, ItemConst, ItemEnum, ItemFn, ItemImpl, ItemMod,
+    ItemStruct, ItemTrait, ItemType, ItemUse, UseName, UseRename,
 };
 
 use crate::error::{
@@ -158,9 +158,9 @@ impl<'ast> ScopeBuilder<'ast> {
                 if ident == "r#_"
                     || ident == "r#"
                     || ident == "r#super"
-                        || ident == "r#self"
-                        || ident == "r#Self"
-                        || ident == "r#crate"
+                    || ident == "r#self"
+                    || ident == "r#Self"
+                    || ident == "r#crate"
                 {
                     self.0.push(
                         InvalidRawIdentifierError {
