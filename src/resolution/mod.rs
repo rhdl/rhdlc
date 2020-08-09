@@ -274,12 +274,8 @@ impl<'ast> ScopeBuilder<'ast> {
             })
             .collect();
         for r#impl in impls {
-            let item_impl = match &mut self.scope_graph[r#impl] {
-                Node::Impl {
-                    item_impl,
-                    r#trait,
-                    r#for,
-                } => item_impl.clone(),
+            let (r#trait, self_ty) = match &mut self.scope_graph[r#impl] {
+                Node::Impl { item_impl, .. } => (item_impl.trait_.clone(), item_impl.self_ty.clone()),
                 _ => continue,
             };
             let mut path_finder = PathFinder {
@@ -287,7 +283,7 @@ impl<'ast> ScopeBuilder<'ast> {
                 visited,
                 errors: &mut self.errors,
             };
-            let r#trait = if let Some((_, trait_path, _)) = &item_impl.trait_ {
+            let r#trait = if let Some((_, trait_path, _)) = &r#trait {
                 // find the trait
                 match path_finder.find_at_path(r#impl, trait_path) {
                     Ok(traits) => {
@@ -306,8 +302,8 @@ impl<'ast> ScopeBuilder<'ast> {
             };
 
             // TODO: this actually needs type-checking to be resolved if trait is some
-            let r#for = if item_impl.trait_.is_none() {
-                if let Type::Path(type_path) = item_impl.self_ty.as_ref() {
+            let r#for = if r#trait.is_none() {
+                if let Type::Path(type_path) = self_ty.as_ref() {
                     // find the for
                     match path_finder.find_at_path(r#impl, &type_path.path) {
                         Ok(types) => {
@@ -330,13 +326,12 @@ impl<'ast> ScopeBuilder<'ast> {
 
             match &mut self.scope_graph[r#impl] {
                 Node::Impl {
-                    item_impl,
                     r#trait: trait_dest,
-                    r#for: for_dest,
+                    r#for: for_dest,..
                 } => {
                     *trait_dest = r#trait;
                     *for_dest = r#for;
-                },
+                }
                 _ => continue,
             }
         }
