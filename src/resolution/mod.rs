@@ -401,8 +401,8 @@ pub enum Node<'ast> {
 impl<'ast> Node<'ast> {
     fn is_nameless_scope(&self) -> bool {
         match self {
-            Self::Root{..} | Self::Mod{..} => false,
-            _ => true
+            Self::Root { .. } | Self::Mod { .. } => false,
+            _ => true,
         }
     }
 

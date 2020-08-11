@@ -32,18 +32,20 @@ macro_rules! error {
                     $(
                         Self::$err(_) => stringify!($err).to_string(),
                     )*
+                    _ => "N/A".to_string()
                 }
             }
         }
 
         impl Display for $name {
-            fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
                 match self {
                     $(
                         Self::$err(err) => {
-                            write!(formatter, "{}", err)
+                            write!(f, "{}", err)
                         },
                     )*
+                    _ => write!(f, "N/A")
                 }
             }
         }
@@ -595,3 +597,5 @@ error!(ResolutionError {
     NonAncestralError => NonAncestralError,
     ScopeVisibilityError => ScopeVisibilityError,
 });
+
+error!(TypeError {});

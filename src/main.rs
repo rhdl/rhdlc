@@ -9,6 +9,7 @@ use std::env;
 mod error;
 mod find_file;
 mod resolution;
+mod type_checker;
 
 use find_file::{FileContentSource, FileFinder};
 use resolution::Resolver;
