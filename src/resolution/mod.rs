@@ -55,22 +55,25 @@ mod path;
 use path::PathFinder;
 mod build;
 mod r#pub;
+mod type_existence;
 
 pub type ScopeGraph<'ast> = Graph<Node<'ast>, String>;
 
 #[derive(Debug)]
 pub struct Resolver<'ast> {
-    pub file_graph: &'ast FileGraph,
+    file_graph: &'ast FileGraph,
     pub scope_graph: ScopeGraph<'ast>,
     pub errors: Vec<ResolutionError>,
+    visited_uses: HashSet<NodeIndex>,
 }
 
 impl<'ast> From<&'ast FileGraph> for Resolver<'ast> {
     fn from(file_graph: &'ast FileGraph) -> Self {
         Self {
             file_graph,
-            scope_graph: Graph::default(),
+            scope_graph: Default::default(),
             errors: vec![],
+            visited_uses: Default::default(),
         }
     }
 }
@@ -116,16 +119,14 @@ impl<'ast> Resolver<'ast> {
                 _ => false,
             })
             .collect();
-        let mut visited = HashSet::default();
         let mut use_resolver = r#use::UseResolver {
-            visited: &mut visited,
+            visited: &mut self.visited_uses,
             scope_graph: &mut self.scope_graph,
             errors: &mut self.errors,
         };
         for use_index in use_indices {
             use_resolver.resolve_use(use_index);
         }
-
     }
 
     pub fn check_graph(&mut self) {
@@ -140,6 +141,7 @@ impl<'ast> Resolver<'ast> {
                 .append(&mut self.find_name_conflicts_in(node, &file));
             // self.errors.append(&mut self.find_reimports_in(node, &file));
         }
+        type_existence::TypeExistenceChecker::visit_all(&self.scope_graph, &mut self.errors, &mut self.visited_uses);
     }
 
     fn find_invalid_names(&self) -> Vec<ResolutionError> {
