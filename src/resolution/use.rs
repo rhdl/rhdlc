@@ -90,9 +90,12 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
         match tree {
             Path(path) => {
                 let path_ident = path.ident.to_string();
-                let new_scope = match path_ident.as_str() {
+                let new_scope = match path.ident == "self"
+                    || path.ident == "super"
+                    || path.ident == "crate"
+                {
                     // Special keyword cases
-                    "self" | "super" | "crate" => {
+                    true => {
                         let is_chained_supers = ctx
                             .previous_idents
                             .last()
@@ -167,25 +170,20 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                         }
                     }
                     // Default case: enter the matching child scope
-                    path_ident_str => {
+                    false => {
                         let mut path_finder = PathFinder {
                             scope_graph: self.scope_graph,
                             errors: self.errors,
                             visited: self.visited,
                         };
-                        let found_children = match path_finder.find_children(
-                            ctx,
-                            scope,
-                            &path.ident,
-                            path_ident_str,
-                            true,
-                        ) {
-                            Ok(v) => v,
-                            Err(err) => {
-                                self.errors.push(err);
-                                return;
-                            }
-                        };
+                        let found_children =
+                            match path_finder.find_children(ctx, scope, &path.ident, true) {
+                                Ok(v) => v,
+                                Err(err) => {
+                                    self.errors.push(err);
+                                    return;
+                                }
+                            };
                         if found_children.len() > 1 {
                             todo!("disambiguation error");
                         }
@@ -197,8 +195,7 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                 ctx.previous_idents.pop();
             }
             Name(UseName { ident, .. }) | Rename(UseRename { ident, .. }) => {
-                let original_name_string = ident.to_string();
-                let found_children: Vec<NodeIndex> = if original_name_string == "self" {
+                let found_children: Vec<NodeIndex> = if ident == "self" {
                     if !in_group {
                         self.errors.push(
                             SelfNameNotInGroupError {
@@ -219,8 +216,7 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                         errors: self.errors,
                         visited: self.visited,
                     };
-                    match path_finder.find_children(ctx, scope, ident, &original_name_string, false)
-                    {
+                    match path_finder.find_children(ctx, scope, ident, false) {
                         Ok(v) => v,
                         Err(err) => {
                             self.errors.push(err);

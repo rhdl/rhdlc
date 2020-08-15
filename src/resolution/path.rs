@@ -72,12 +72,9 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
         let mut scopes = vec![dest_scope];
         for (i, segment) in path.segments.iter().enumerate() {
             let ident = &segment.ident;
-            let r#string = ident.to_string();
             let mut results: Vec<Result<Vec<NodeIndex>, ResolutionError>> = scopes
                 .iter()
-                .map(|scope| {
-                    self.find_children(&ctx, *scope, ident, &r#string, i + 1 != path.segments.len())
-                })
+                .map(|scope| self.find_children(&ctx, *scope, ident, i + 1 != path.segments.len()))
                 .collect();
             if results.iter().all(|res| res.is_err()) {
                 return results.drain(..).next().unwrap();
@@ -98,7 +95,6 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
         ctx: &TracingContext,
         scope: NodeIndex,
         ident: &syn::Ident,
-        original_name_string: &str,
         paths_only: bool,
     ) -> Result<Vec<NodeIndex>, ResolutionError> {
         let is_entry = ctx.previous_idents.is_empty();
@@ -110,7 +106,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                 .collect();
             local_nodes
                 .iter()
-                .map(|child| self.matches(&child, original_name_string, paths_only, false))
+                .map(|child| self.matches(&child, ident, paths_only, false))
                 .flatten()
                 .collect()
         } else {
@@ -124,7 +120,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                 .collect();
             global_nodes
                 .iter()
-                .map(|child| self.matches(&child, original_name_string, paths_only, false))
+                .map(|child| self.matches(&child, ident, paths_only, false))
                 .flatten()
                 .collect()
         } else {
@@ -175,7 +171,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                         .collect();
                     let local_from_globs: Vec<NodeIndex> = local_nodes
                         .iter()
-                        .map(|child| self.matches(&child, &original_name_string, paths_only, true))
+                        .map(|child| self.matches(&child, &ident, paths_only, true))
                         .flatten()
                         .collect();
                     let visible_local_from_globs: Vec<NodeIndex> = local_from_globs
@@ -228,11 +224,11 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
     fn matches(
         &mut self,
         node: &NodeIndex,
-        name_to_look_for: &str,
+        ident_to_look_for: &syn::Ident,
         paths_only: bool,
         glob_only: bool,
     ) -> Vec<NodeIndex> {
-        if self.matches_exact(node, name_to_look_for, paths_only) {
+        if self.matches_exact(node, ident_to_look_for, paths_only) {
             return vec![*node];
         }
 
@@ -244,7 +240,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                     None
                 } else if {
                     let mut checker = UseMightMatchChecker {
-                        name_to_look_for,
+                        ident_to_look_for,
                         might_match: false,
                     };
                     checker.visit_item_use(item_use);
@@ -282,11 +278,11 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                     .iter()
                     .map(|use_type| match use_type {
                         UseType::Name { name, indices } => {
-                            if name.ident == name_to_look_for {
+                            if name.ident == *ident_to_look_for {
                                 indices
                                     .iter()
                                     .map(|i| {
-                                        self.matches(i, name_to_look_for, paths_only, glob_only)
+                                        self.matches(i, ident_to_look_for, paths_only, glob_only)
                                     })
                                     .flatten()
                                     .collect::<Vec<NodeIndex>>()
@@ -296,17 +292,10 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                         }
                         UseType::Rename { rename, indices } => {
                             // match on new name, recurse on original name
-                            if rename.rename == name_to_look_for {
+                            if rename.rename == *ident_to_look_for {
                                 indices
                                     .iter()
-                                    .map(|i| {
-                                        self.matches(
-                                            i,
-                                            &rename.ident.to_string(),
-                                            paths_only,
-                                            glob_only,
-                                        )
-                                    })
+                                    .map(|i| self.matches(i, &rename.ident, paths_only, glob_only))
                                     .flatten()
                                     .collect::<Vec<NodeIndex>>()
                             } else {
@@ -324,12 +313,17 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                                     .map(|child| {
                                         let nonglob_matches = self.matches(
                                             &child,
-                                            name_to_look_for,
+                                            ident_to_look_for,
                                             paths_only,
                                             false,
                                         );
                                         if nonglob_matches.is_empty() {
-                                            self.matches(&child, name_to_look_for, paths_only, true)
+                                            self.matches(
+                                                &child,
+                                                ident_to_look_for,
+                                                paths_only,
+                                                true,
+                                            )
                                         } else {
                                             nonglob_matches
                                         }
@@ -348,7 +342,12 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
             .collect()
     }
 
-    fn matches_exact(&self, node: &NodeIndex, name_to_look_for: &str, paths_only: bool) -> bool {
+    fn matches_exact(
+        &self,
+        node: &NodeIndex,
+        ident_to_look_for: &syn::Ident,
+        paths_only: bool,
+    ) -> bool {
         let is_path = match &self.scope_graph[*node] {
             Node::Mod { .. } | Node::Root { .. } => true,
             // TODO: look for associated consts, but NOT for uses
@@ -358,12 +357,12 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
         let names = self.scope_graph[*node].names();
         (is_path || !paths_only)
             && names.len() == 1
-            && names.first().unwrap().ident() == name_to_look_for
+            && names.first().unwrap().ident() == ident_to_look_for
     }
 }
 
 struct UseMightMatchChecker<'a> {
-    name_to_look_for: &'a str,
+    ident_to_look_for: &'a syn::Ident,
     might_match: bool,
 }
 
@@ -371,7 +370,7 @@ impl<'a, 'ast> Visit<'ast> for UseMightMatchChecker<'a> {
     fn visit_use_path(&mut self, path: &'ast UsePath) {
         // this replaces the default trait impl, need to call use_tree for use name visitation
         self.visit_use_tree(path.tree.as_ref());
-        self.might_match |= path.ident == self.name_to_look_for
+        self.might_match |= path.ident == *self.ident_to_look_for
             && match path.tree.as_ref() {
                 UseTree::Group(group) => group.items.iter().any(|tree| match tree {
                     UseTree::Rename(rename) => rename.ident == "self",
@@ -383,11 +382,11 @@ impl<'a, 'ast> Visit<'ast> for UseMightMatchChecker<'a> {
     }
 
     fn visit_use_name(&mut self, name: &'ast UseName) {
-        self.might_match |= name.ident == self.name_to_look_for
+        self.might_match |= name.ident == *self.ident_to_look_for
     }
 
     fn visit_use_rename(&mut self, rename: &'ast UseRename) {
-        self.might_match |= rename.rename == self.name_to_look_for
+        self.might_match |= rename.rename == *self.ident_to_look_for
     }
 
     fn visit_use_glob(&mut self, _: &'ast UseGlob) {

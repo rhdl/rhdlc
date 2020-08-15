@@ -64,7 +64,7 @@ impl<'ast> Name<'ast> {
                 | Mod(other_ident)
                 | Crate(other_ident)
                 | UseName(other_ident)
-                | UseRename(other_ident) => **ident == other_ident.to_string(),
+                | UseRename(other_ident) => ident == other_ident,
             },
         }
     }

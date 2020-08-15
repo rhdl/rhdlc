@@ -78,7 +78,6 @@ impl<'ast> From<&'ast FileGraph> for Resolver<'ast> {
 impl<'ast> Resolver<'ast> {
     /// Find all names given a source forest
     /// Externals are paths to standalone source code: a top + lib.rs of each crate
-    /// Doesn't care about errors, for now
     pub fn build_graph(&mut self) {
         // Stage one: add nodes
         let files: Vec<NodeIndex> = self.file_graph.externals(Direction::Incoming).collect();
@@ -127,8 +126,6 @@ impl<'ast> Resolver<'ast> {
             use_resolver.resolve_use(use_index);
         }
 
-        // Stage four: tie impls
-        self.tie_impls(&mut visited);
     }
 
     pub fn check_graph(&mut self) {
@@ -255,82 +252,6 @@ impl<'ast> Resolver<'ast> {
             }
         }
         errors
-    }
-
-    fn tie_impls(&mut self, visited: &mut HashSet<NodeIndex>) {
-        let impls: Vec<NodeIndex> = self
-            .scope_graph
-            .node_indices()
-            .filter(|index| match &self.scope_graph[*index] {
-                Node::Impl { .. } => true,
-                _ => false,
-            })
-            .collect();
-        for r#impl in impls {
-            let (r#trait, self_ty) = match &mut self.scope_graph[r#impl] {
-                Node::Impl { item_impl, .. } => {
-                    (item_impl.trait_.clone(), item_impl.self_ty.clone())
-                }
-                _ => continue,
-            };
-            let mut path_finder = PathFinder {
-                scope_graph: &mut self.scope_graph,
-                visited,
-                errors: &mut self.errors,
-            };
-            let r#trait = if let Some((_, trait_path, _)) = &r#trait {
-                // find the trait
-                match path_finder.find_at_path(r#impl, trait_path) {
-                    Ok(traits) => {
-                        if traits.len() > 1 {
-                            todo!("disambiguate if possible, if not push an error but run with the found trait");
-                        }
-                        traits.first().cloned()
-                    }
-                    Err(err) => {
-                        self.errors.push(err);
-                        continue;
-                    }
-                }
-            } else {
-                None
-            };
-
-            // TODO: this actually needs type-checking to be resolved if trait is some
-            let r#for = if r#trait.is_none() {
-                if let Type::Path(type_path) = self_ty.as_ref() {
-                    // find the for
-                    match path_finder.find_at_path(r#impl, &type_path.path) {
-                        Ok(types) => {
-                            if types.len() > 1 {
-                                todo!("disambiguate if possible, if not push an error but run with the found struct");
-                            }
-                            types.first().cloned()
-                        }
-                        Err(err) => {
-                            self.errors.push(err);
-                            continue;
-                        }
-                    }
-                } else {
-                    todo!("no base type found for inherent implementation")
-                }
-            } else {
-                None
-            };
-
-            match &mut self.scope_graph[r#impl] {
-                Node::Impl {
-                    r#trait: trait_dest,
-                    r#for: for_dest,
-                    ..
-                } => {
-                    *trait_dest = r#trait;
-                    *for_dest = r#for;
-                }
-                _ => continue,
-            }
-        }
     }
 }
 
