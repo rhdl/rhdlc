@@ -2,10 +2,10 @@ use std::collections::HashSet;
 
 use log::error;
 use petgraph::{graph::NodeIndex, Direction};
-use syn::{UseName, UseRename, UseTree};
+use syn::{visit::Visit, Ident, ItemUse, UseGlob, UseName, UsePath, UseRename, UseTree};
 
 use super::{
-    path::{PathFinder, TracingContext},
+    path::{r#mut::PathFinder, TracingContext},
     Node, ResolutionError, ScopeGraph,
 };
 use crate::error::{
@@ -34,7 +34,7 @@ pub enum UseType<'ast> {
 pub struct UseResolver<'a, 'ast> {
     pub scope_graph: &'a mut ScopeGraph<'ast>,
     pub errors: &'a mut Vec<ResolutionError>,
-    pub visited: &'a mut HashSet<NodeIndex>,
+    pub visited_uses: &'a mut HashSet<NodeIndex>,
 }
 
 impl<'a, 'ast> UseResolver<'a, 'ast> {
@@ -56,10 +56,10 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
             Node::Use { item_use, .. } => &item_use.tree,
             _ => return,
         };
-        if self.visited.contains(&ctx.dest) {
+        if self.visited_uses.contains(&ctx.dest) {
             return;
         }
-        self.visited.insert(ctx.dest);
+        self.visited_uses.insert(ctx.dest);
         let scope = if ctx.has_leading_colon {
             // just give any old dummy node because it'll have to be ignored in path/name finding
             NodeIndex::new(0)
@@ -174,7 +174,7 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                         let mut path_finder = PathFinder {
                             scope_graph: self.scope_graph,
                             errors: self.errors,
-                            visited: self.visited,
+                            visited_uses: self.visited_uses,
                         };
                         let found_children =
                             match path_finder.find_children(ctx, scope, &path.ident, true) {
@@ -214,7 +214,7 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                     let mut path_finder = PathFinder {
                         scope_graph: self.scope_graph,
                         errors: self.errors,
-                        visited: self.visited,
+                        visited_uses: self.visited_uses,
                     };
                     match path_finder.find_children(ctx, scope, ident, false) {
                         Ok(v) => v,

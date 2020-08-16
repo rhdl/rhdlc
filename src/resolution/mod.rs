@@ -120,7 +120,7 @@ impl<'ast> Resolver<'ast> {
             })
             .collect();
         let mut use_resolver = r#use::UseResolver {
-            visited: &mut self.visited_uses,
+            visited_uses: &mut self.visited_uses,
             scope_graph: &mut self.scope_graph,
             errors: &mut self.errors,
         };
@@ -141,7 +141,12 @@ impl<'ast> Resolver<'ast> {
                 .append(&mut self.find_name_conflicts_in(node, &file));
             // self.errors.append(&mut self.find_reimports_in(node, &file));
         }
-        type_existence::TypeExistenceChecker::visit_all(&self.scope_graph, &mut self.errors, &mut self.visited_uses);
+        let mut type_existence_checker = type_existence::TypeExistenceChecker {
+            scope_graph: &mut self.scope_graph,
+            errors: &mut self.errors,
+            visited_uses: &mut self.visited_uses,
+        };
+        type_existence_checker.visit_all();
     }
 
     fn find_invalid_names(&self) -> Vec<ResolutionError> {
@@ -326,6 +331,31 @@ impl<'ast> Node<'ast> {
         match self {
             Self::Root { .. } | Self::Mod { .. } => false,
             _ => true,
+        }
+    }
+
+    fn is_trait(&self) -> bool {
+        match self {
+            Self::Trait { .. } => true,
+            _ => false,
+        }
+    }
+
+    fn visit<V>(&self, v: &mut V)
+    where
+        V: Visit<'ast>,
+    {
+        match self {
+            Self::Root { .. } => {}
+            Self::Mod { .. } => {}
+            Self::Struct { item_struct, .. } => v.visit_item_struct(item_struct),
+            Self::Trait { item_trait, .. } => v.visit_item_trait(item_trait),
+            Self::Type { item_type, .. } => v.visit_item_type(item_type),
+            Self::Enum { item_enum, .. } => v.visit_item_enum(item_enum),
+            Self::Fn { item_fn, .. } => v.visit_item_fn(item_fn),
+            Self::Const { item_const, .. } => v.visit_item_const(item_const),
+            Self::Use { item_use, .. } => v.visit_item_use(item_use),
+            Self::Impl { item_impl, .. } => v.visit_item_impl(item_impl),
         }
     }
 

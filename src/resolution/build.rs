@@ -39,13 +39,14 @@ impl<'a, 'ast> Visit<'ast> for ScopeBuilder<'a, 'ast> {
             items.iter().for_each(|i| self.visit_item(i));
             self.scope_ancestry.pop();
         } else {
-            if self.scope_ancestry.iter().any(|ancestor| {
+            let is_fn = self.scope_ancestry.iter().any(|ancestor| {
                 if let Node::Fn { .. } = self.scope_graph[*ancestor] {
                     true
                 } else {
                     false
                 }
-            }) {
+            });
+            if is_fn {
                 todo!("mod without content in a fn not allowed")
             }
             let mut full_ident_path: Vec<Ident> = self

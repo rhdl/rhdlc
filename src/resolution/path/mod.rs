@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::rc::Rc;
 
 use petgraph::{graph::NodeIndex, Direction};
-use syn::{visit::Visit, Path, UseGlob, UseName, UsePath, UseRename, UseTree};
+use syn::{visit::Visit, Ident, Path, UseGlob, UseName, UsePath, UseRename, UseTree};
 
 use super::{
     r#use::{UseResolver, UseType},
@@ -10,6 +10,8 @@ use super::{
 };
 use crate::error::*;
 use crate::find_file::File;
+
+pub mod r#mut;
 
 pub struct TracingContext<'ast> {
     pub file: Rc<File>,
@@ -39,24 +41,12 @@ impl<'ast> TracingContext<'ast> {
 }
 
 pub struct PathFinder<'a, 'ast> {
-    pub scope_graph: &'a mut ScopeGraph<'ast>,
-    pub errors: &'a mut Vec<ResolutionError>,
-    pub visited: &'a mut HashSet<NodeIndex>,
-}
-
-impl<'a, 'ast> Into<UseResolver<'a, 'ast>> for &'a mut PathFinder<'a, 'ast> {
-    fn into(self) -> UseResolver<'a, 'ast> {
-        UseResolver {
-            scope_graph: self.scope_graph,
-            errors: self.errors,
-            visited: self.visited,
-        }
-    }
+    pub scope_graph: &'a ScopeGraph<'ast>,
 }
 
 impl<'a, 'ast> PathFinder<'a, 'ast> {
     pub fn find_at_path(
-        &mut self,
+        &self,
         dest: NodeIndex,
         path: &Path,
     ) -> Result<Vec<NodeIndex>, ResolutionError> {
@@ -91,7 +81,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
 
     /// Ok is guaranteed to have >= 1 node, else an unresolved error will be returned
     pub fn find_children(
-        &mut self,
+        &self,
         ctx: &TracingContext,
         scope: NodeIndex,
         ident: &syn::Ident,
@@ -99,13 +89,9 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
     ) -> Result<Vec<NodeIndex>, ResolutionError> {
         let is_entry = ctx.previous_idents.is_empty();
         let local = if !is_entry || !ctx.has_leading_colon {
-            let local_nodes: Vec<NodeIndex> = self
-                .scope_graph
+            self.scope_graph
                 .neighbors(scope)
                 .filter(|child| *child != ctx.dest)
-                .collect();
-            local_nodes
-                .iter()
                 .map(|child| self.matches(&child, ident, paths_only, false))
                 .flatten()
                 .collect()
@@ -113,13 +99,9 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
             vec![]
         };
         let global = if is_entry {
-            let global_nodes: Vec<NodeIndex> = self
-                .scope_graph
+            self.scope_graph
                 .externals(Direction::Incoming)
                 .filter(|child| *child != ctx.root)
-                .collect();
-            global_nodes
-                .iter()
                 .map(|child| self.matches(&child, ident, paths_only, false))
                 .flatten()
                 .collect()
@@ -164,13 +146,10 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
             (false, true) => Ok(global),
             (true, true) => {
                 if !(ctx.has_leading_colon && is_entry) {
-                    let local_nodes: Vec<NodeIndex> = self
+                    let local_from_globs: Vec<NodeIndex> = self
                         .scope_graph
                         .neighbors(scope)
                         .filter(|child| *child != ctx.dest)
-                        .collect();
-                    let local_from_globs: Vec<NodeIndex> = local_nodes
-                        .iter()
                         .map(|child| self.matches(&child, &ident, paths_only, true))
                         .flatten()
                         .collect();
@@ -222,7 +201,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
     }
 
     fn matches(
-        &mut self,
+        &self,
         node: &NodeIndex,
         ident_to_look_for: &syn::Ident,
         paths_only: bool,
@@ -231,44 +210,12 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
         if self.matches_exact(node, ident_to_look_for, paths_only) {
             return vec![*node];
         }
-
-        let rebuilt_ctx_opt = match &self.scope_graph[*node] {
-            Node::Use {
-                item_use, imports, ..
-            } => {
-                if self.visited.contains(node) || !imports.is_empty() {
-                    None
-                } else if {
-                    let mut checker = UseMightMatchChecker {
-                        ident_to_look_for,
-                        might_match: false,
-                    };
-                    checker.visit_item_use(item_use);
-                    checker.might_match
-                } {
-                    Some(TracingContext::new(
-                        self.scope_graph,
-                        *node,
-                        item_use.leading_colon.is_some(),
-                    ))
-                } else {
-                    // claim: if might not match returned empty, it definitely will not match
-                    return vec![];
-                }
-            }
-            _ => return vec![],
-        };
-        if let Some(mut rebuilt_ctx) = rebuilt_ctx_opt {
-            let mut use_resolver = UseResolver {
-                scope_graph: self.scope_graph,
-                errors: self.errors,
-                visited: self.visited,
-            };
-            use_resolver.trace_use_entry_reenterable(&mut rebuilt_ctx);
-        }
+        // if let Some(scope_graph_mut) = self.scope_graph_mut {
+        //     callback(node, ident_to_look_for);
+        // }
         let imports = match &self.scope_graph[*node] {
             Node::Use { imports, .. } => imports.clone(),
-            bad => panic!("this should not be reached: {:?}", bad),
+            _ => return vec![],
         };
         // TODO: try to avoid recursing into private use matches
         imports
@@ -358,38 +305,5 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
         (is_path || !paths_only)
             && names.len() == 1
             && names.first().unwrap().ident() == ident_to_look_for
-    }
-}
-
-struct UseMightMatchChecker<'a> {
-    ident_to_look_for: &'a syn::Ident,
-    might_match: bool,
-}
-
-impl<'a, 'ast> Visit<'ast> for UseMightMatchChecker<'a> {
-    fn visit_use_path(&mut self, path: &'ast UsePath) {
-        // this replaces the default trait impl, need to call use_tree for use name visitation
-        self.visit_use_tree(path.tree.as_ref());
-        self.might_match |= path.ident == *self.ident_to_look_for
-            && match path.tree.as_ref() {
-                UseTree::Group(group) => group.items.iter().any(|tree| match tree {
-                    UseTree::Rename(rename) => rename.ident == "self",
-                    UseTree::Name(name) => name.ident == "self",
-                    _ => false,
-                }),
-                _ => false,
-            }
-    }
-
-    fn visit_use_name(&mut self, name: &'ast UseName) {
-        self.might_match |= name.ident == *self.ident_to_look_for
-    }
-
-    fn visit_use_rename(&mut self, rename: &'ast UseRename) {
-        self.might_match |= rename.rename == *self.ident_to_look_for
-    }
-
-    fn visit_use_glob(&mut self, _: &'ast UseGlob) {
-        self.might_match |= true;
     }
 }
