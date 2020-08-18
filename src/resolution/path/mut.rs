@@ -200,10 +200,6 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
         paths_only: bool,
         glob_only: bool,
     ) -> Vec<NodeIndex> {
-        if self.matches_exact(node, ident_to_look_for, paths_only) {
-            return vec![*node];
-        }
-
         let rebuilt_ctx_opt = match &self.scope_graph[*node] {
             Node::Use {
                 item_use, imports, ..
@@ -228,7 +224,13 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                     return vec![];
                 }
             }
-            _ => return vec![],
+            _ => {
+                return if self.matches_exact(node, ident_to_look_for, paths_only) {
+                    vec![*node]
+                } else {
+                    vec![]
+                }
+            }
         };
         if let Some(mut rebuilt_ctx) = rebuilt_ctx_opt {
             let mut use_resolver = UseResolver {

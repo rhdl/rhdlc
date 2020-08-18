@@ -207,15 +207,15 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
         paths_only: bool,
         glob_only: bool,
     ) -> Vec<NodeIndex> {
-        if self.matches_exact(node, ident_to_look_for, paths_only) {
-            return vec![*node];
-        }
-        // if let Some(scope_graph_mut) = self.scope_graph_mut {
-        //     callback(node, ident_to_look_for);
-        // }
         let imports = match &self.scope_graph[*node] {
-            Node::Use { imports, .. } => imports.clone(),
-            _ => return vec![],
+            Node::Use { imports, .. } => imports,
+            _ => {
+                return if self.matches_exact(node, ident_to_look_for, paths_only) {
+                    vec![*node]
+                } else {
+                    vec![]
+                };
+            },
         };
         // TODO: try to avoid recursing into private use matches
         imports
