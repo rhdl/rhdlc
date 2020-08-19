@@ -3,8 +3,8 @@ use std::collections::HashSet;
 use petgraph::graph::NodeIndex;
 use syn::{
     visit::Visit, AngleBracketedGenericArguments, Fields, GenericArgument, Generics, Item,
-    ItemConst, ItemEnum, ItemFn, ItemImpl, ItemMod, ItemStruct, ItemTrait, ItemType, PathArguments,
-    PathSegment, TraitBound, TypeParam, TypeParamBound, TypePath,
+    ItemConst, ItemEnum, ItemFn, ItemImpl, ItemMod, ItemStruct, ItemTrait, ItemType, Path,
+    PathArguments, PathSegment, TraitBound, TypeParam, TypeParamBound, TypePath,
 };
 
 use crate::error::ResolutionError;
@@ -38,6 +38,29 @@ impl<'a, 'ast> TypeExistenceChecker<'a, 'ast> {
         }
     }
 }
+impl<'a, 'c, 'ast> TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
+    fn find_trait(&self, path: &Path) -> Result<NodeIndex, ResolutionError> {
+        let res = {
+            let path_finder = PathFinder {
+                scope_graph: &self.scope_graph,
+            };
+            path_finder.find_at_path(self.scope, &path)
+        };
+        res.and_then(|matching| {
+            // Check that there is a single trait match
+            let num_matching = matching
+                .iter()
+                .filter(|i| self.scope_graph[**i].is_trait())
+                .count();
+            if num_matching == 0 {
+                todo!("no such trait");
+            } else if num_matching > 1 {
+                todo!("ambiguous trait name");
+            }
+            Ok(*matching.first().unwrap())
+        })
+    }
+}
 impl<'a, 'c, 'ast> Visit<'c> for TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
     fn visit_item_mod(&mut self, item_mod: &'c ItemMod) {
         // purposefully do nothing so we don't recurse out of this scope
@@ -45,12 +68,27 @@ impl<'a, 'c, 'ast> Visit<'c> for TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
 
     fn visit_item_impl(&mut self, item_impl: &'c ItemImpl) {
         self.visit_generics(&item_impl.generics);
-        // TODO: visit items inside the item impl
+        if let Some((_, path, _)) = &item_impl.trait_ {
+            match self.find_trait(path) {
+                Ok(_) => {}
+                Err(err) => self.errors.push(err),
+            }
+            if let Some(PathSegment { arguments, .. }) = path.segments.last() {
+                self.visit_path_arguments(arguments);
+            }
+        }
+        self.visit_type(item_impl.self_ty.as_ref());
+        for item in item_impl.items.iter() {
+            // TODO: pull out the individual visits so the generics can be popped off
+            self.visit_impl_item(item);
+        }
     }
 
     fn visit_item_fn(&mut self, item_fn: &'c ItemFn) {
         self.visit_signature(&item_fn.sig);
-        // TODO: does this need some special handling for body?
+        // TODO: special handling is needed for body, to avoid recursing into local items like structs
+        // this can be done in a way that would also work for impl methods
+        self.visit_block(item_fn.block.as_ref());
         // also: can inferrability be handled now?, that would be cool
     }
 
@@ -74,47 +112,12 @@ impl<'a, 'c, 'ast> Visit<'c> for TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
 
     fn visit_type_param_bound(&mut self, bound: &'c TypeParamBound) {
         if let TypeParamBound::Trait(TraitBound { path, .. }) = bound {
-            let res = {
-                let path_finder = PathFinder {
-                    scope_graph: &self.scope_graph,
-                };
-                path_finder.find_at_path(self.scope, &path)
-            };
-            match res {
-                Ok(matching) => {
-                    // Check that there is a single trait match
-                    let num_matching = matching
-                        .iter()
-                        .filter(|i| self.scope_graph[**i].is_trait())
-                        .count();
-                    if num_matching == 0 {
-                        todo!("no such trait");
-                    } else if num_matching > 1 {
-                        todo!("ambiguous trait name");
-                    }
-                }
+            match self.find_trait(path) {
+                Ok(_) => {}
                 Err(err) => self.errors.push(err),
             }
-            if let Some(PathSegment {
-                arguments: PathArguments::AngleBracketed(bracketed),
-                ..
-            }) = path.segments.last()
-            {
-                for arg in &bracketed.args {
-                    match arg {
-                        GenericArgument::Type(t) => self.visit_type(t),
-                        GenericArgument::Binding(b) => self.visit_type(&b.ty),
-                        GenericArgument::Constraint(c) => {
-                            for bound in &c.bounds {
-                                self.visit_type_param_bound(bound);
-                            }
-                        }
-                        GenericArgument::Const(c) => {
-                            todo!("const params not yet supported: {:?}", c);
-                        }
-                        GenericArgument::Lifetime(_) => {}
-                    }
-                }
+            if let Some(PathSegment { arguments, .. }) = path.segments.last() {
+                self.visit_path_arguments(arguments);
             }
         }
     }

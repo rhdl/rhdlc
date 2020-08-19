@@ -1,5 +1,6 @@
 struct a {}
 impl a {
     fn b () {}
-    const b: bool = false;
+    const b: c = false;
 }
+enum c {}
