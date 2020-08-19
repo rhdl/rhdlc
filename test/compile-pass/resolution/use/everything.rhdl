@@ -32,7 +32,7 @@ pub mod a {
                 pub fn g() {}
                 pub mod g {}
                 fn j() {}
-                type m = bool;
+                type m = p;
                 use e::p;
             }
             pub fn h() {}

@@ -1,5 +1,6 @@
 struct a {}
 enum a {}
 trait a {}
-const a: bool = false;
-type a = bool;
+const a: b = false;
+type a = b;
+struct b {}

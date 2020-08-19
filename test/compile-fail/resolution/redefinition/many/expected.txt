@@ -17,12 +17,12 @@ error: the name `a` is defined multiple times
   |
 3 | trait a {}
   |       - previous definition of the type `a` here
-4 | const a: bool = false;
+4 | const a: b = false;
   |       ^ `a` redefined here
 error: the name `a` is defined multiple times
  --> top.rhdl:5:5
   |
-4 | const a: bool = false;
+4 | const a: b = false;
   |       - previous definition of the type `a` here
-5 | type a = bool;
+5 | type a = b;
   |      ^ `a` redefined here

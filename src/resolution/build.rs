@@ -170,11 +170,7 @@ impl<'a, 'ast> Visit<'ast> for ScopeBuilder<'a, 'ast> {
     }
 
     fn visit_item_impl(&mut self, item_impl: &'ast ItemImpl) {
-        let impl_idx = self.scope_graph.add_node(Node::Impl {
-            item_impl,
-            r#trait: None,
-            r#for: None,
-        });
+        let impl_idx = self.scope_graph.add_node(Node::Impl { item_impl });
         let parent = self.scope_ancestry.last().unwrap();
         self.scope_graph
             .add_edge(*parent, impl_idx, "impl".to_string());

@@ -215,7 +215,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                 } else {
                     vec![]
                 };
-            },
+            }
         };
         // TODO: try to avoid recursing into private use matches
         imports

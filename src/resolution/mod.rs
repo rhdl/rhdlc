@@ -313,10 +313,10 @@ pub enum Node<'ast> {
     },
     Impl {
         item_impl: &'ast ItemImpl,
-        /// impl Option<Trait> Option<for> **NodeIndex**
-        /// which cannot be resolved at first
-        r#trait: Option<NodeIndex>,
-        r#for: Option<NodeIndex>,
+        // / impl Option<Trait> Option<for> **NodeIndex**
+        // / which cannot be resolved at first
+        // r#trait: Option<NodeIndex>,
+        // r#for: Option<NodeIndex>,
     },
     Use {
         item_use: &'ast ItemUse,
@@ -337,6 +337,13 @@ impl<'ast> Node<'ast> {
     fn is_trait(&self) -> bool {
         match self {
             Self::Trait { .. } => true,
+            _ => false,
+        }
+    }
+
+    fn is_type(&self) -> bool {
+        match self {
+            Self::Struct { .. } | Self::Type { .. } | Self::Enum { .. } => true,
             _ => false,
         }
     }
@@ -421,11 +428,8 @@ impl<'ast> Display for Node<'ast> {
             Self::Type { item_type, .. } => write!(f, "type {}", item_type.ident),
             Self::Enum { item_enum, .. } => write!(f, "enum {}", item_enum.ident),
             Self::Mod { item_mod, .. } => write!(f, "mod {}", item_mod.ident),
-            Self::Impl { r#for, .. } => {
+            Self::Impl { .. } => {
                 write!(f, "impl")?;
-                if let Some(r#for) = r#for {
-                    write!(f, "for {:?}", r#for)?;
-                }
                 Ok(())
             }
             Self::Use {
