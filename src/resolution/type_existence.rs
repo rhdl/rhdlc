@@ -2,9 +2,10 @@ use std::collections::HashSet;
 
 use petgraph::graph::NodeIndex;
 use syn::{
-    visit::Visit, AngleBracketedGenericArguments, Fields, GenericArgument, Generics, Item,
-    ItemConst, ItemEnum, ItemFn, ItemImpl, ItemMod, ItemStruct, ItemTrait, ItemType, Path,
-    PathArguments, PathSegment, TraitBound, TypeParam, TypeParamBound, TypePath,
+    visit::Visit, AngleBracketedGenericArguments, Fields, GenericArgument, Generics,
+    ImplItemMethod, Item, ItemConst, ItemEnum, ItemFn, ItemImpl, ItemMod, ItemStruct, ItemTrait,
+    ItemType, Path, PathArguments, PathSegment, TraitBound, TraitItemMethod, TypeParam,
+    TypeParamBound, TypePath,
 };
 
 use crate::error::ResolutionError;
@@ -90,6 +91,22 @@ impl<'a, 'c, 'ast> Visit<'c> for TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
         // this can be done in a way that would also work for impl methods
         self.visit_block(item_fn.block.as_ref());
         // also: can inferrability be handled now?, that would be cool
+        // pop off signature generics
+        self.generics.pop();
+    }
+
+    fn visit_impl_item_method(&mut self, impl_item_method: &'c ImplItemMethod) {
+        self.visit_signature(&impl_item_method.sig);
+        self.visit_block(&impl_item_method.block);
+        self.generics.pop();
+    }
+
+    fn visit_trait_item_method(&mut self, trait_item_method: &'c TraitItemMethod) {
+        self.visit_signature(&trait_item_method.sig);
+        if let Some(block) = &trait_item_method.default {
+            self.visit_block(block);
+        }
+        self.generics.pop();
     }
 
     /// Grab the current generics
@@ -149,13 +166,6 @@ impl<'a, 'c, 'ast> Visit<'c> for TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
                 }
             }
             Err(err) => self.errors.push(err),
-        }
-    }
-
-    fn visit_fields(&mut self, fields: &'c Fields) {
-        // Check generics, then check items in scope
-        for field in fields.iter() {
-            self.visit_type(&field.ty);
         }
     }
 }
