@@ -2,10 +2,10 @@ use std::collections::HashSet;
 
 use petgraph::graph::NodeIndex;
 use syn::{
-    visit::Visit, AngleBracketedGenericArguments, Fields, GenericArgument, Generics,
-    ImplItemMethod, Item, ItemConst, ItemEnum, ItemFn, ItemImpl, ItemMod, ItemStruct, ItemTrait,
-    ItemType, Path, PathArguments, PathSegment, TraitBound, TraitItemMethod, TypeParam,
-    TypeParamBound, TypePath,
+    visit::Visit, AngleBracketedGenericArguments, Fields, GenericArgument, Generics, ImplItem,
+    ImplItemMethod, ImplItemType, Item, ItemConst, ItemEnum, ItemFn, ItemImpl, ItemMod, ItemStruct,
+    ItemTrait, ItemType, Path, PathArguments, PathSegment, TraitBound, TraitItemMethod,
+    TraitItemType, TypeParam, TypeParamBound, TypePath,
 };
 
 use crate::error::ResolutionError;
@@ -85,6 +85,23 @@ impl<'a, 'c, 'ast> Visit<'c> for TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
         }
     }
 
+    fn visit_impl_item_type(&mut self, impl_item_type: &'c ImplItemType) {
+        self.visit_generics(&impl_item_type.generics);
+        self.visit_type(&impl_item_type.ty);
+        self.generics.pop();
+    }
+
+    fn visit_trait_item_type(&mut self, trait_item_type: &'c TraitItemType) {
+        self.visit_generics(&trait_item_type.generics);
+        for type_param_bound in trait_item_type.bounds.iter() {
+            self.visit_type_param_bound(type_param_bound);
+        }
+        if let Some((_, ty)) = &trait_item_type.default {
+            self.visit_type(ty);
+        }
+        self.generics.pop();
+    }
+
     fn visit_item_fn(&mut self, item_fn: &'c ItemFn) {
         self.visit_signature(&item_fn.sig);
         // TODO: special handling is needed for body, to avoid recursing into local items like structs
@@ -109,8 +126,6 @@ impl<'a, 'c, 'ast> Visit<'c> for TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
         self.generics.pop();
     }
 
-    /// Grab the current generics
-    /// Check that all references to traits, etc. exist
     fn visit_generics(&mut self, generics: &'c Generics) {
         self.generics.push(generics);
         for type_param in generics.type_params() {
