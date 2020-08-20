@@ -2,14 +2,12 @@ use std::collections::HashSet;
 
 use petgraph::graph::NodeIndex;
 use syn::{
-    visit::Visit, AngleBracketedGenericArguments, Fields, GenericArgument, Generics, ImplItem,
-    ImplItemMethod, ImplItemType, Item, ItemConst, ItemEnum, ItemFn, ItemImpl, ItemMod, ItemStruct,
-    ItemTrait, ItemType, Path, PathArguments, PathSegment, TraitBound, TraitItemMethod,
-    TraitItemType, TypeParam, TypeParamBound, TypePath,
+    visit::Visit, Generics, ImplItemMethod, ImplItemType, Item, ItemFn, ItemImpl, ItemMod, Path,
+    PathSegment, TraitBound, TraitItemMethod, TraitItemType, TypeParam, TypeParamBound, TypePath,
 };
 
 use crate::error::ResolutionError;
-use crate::resolution::{path::PathFinder, Node, ScopeGraph};
+use crate::resolution::{path::PathFinder, ScopeGraph};
 
 pub struct TypeExistenceChecker<'a, 'ast> {
     pub scope_graph: &'a ScopeGraph<'ast>,
@@ -63,11 +61,11 @@ impl<'a, 'c, 'ast> TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
     }
 }
 impl<'a, 'c, 'ast> Visit<'c> for TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
-    fn visit_item_mod(&mut self, item_mod: &'c ItemMod) {
+    fn visit_item_mod(&mut self, _item_mod: &'c ItemMod) {
         // purposefully do nothing so we don't recurse out of this scope
     }
 
-    fn visit_item(&mut self, item: &'c Item) {
+    fn visit_item(&mut self, _item: &'c Item) {
         // purposefully do nothing so we don't recurse out of this scope
     }
 

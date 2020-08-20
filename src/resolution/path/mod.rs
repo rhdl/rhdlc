@@ -1,13 +1,9 @@
-use std::collections::HashSet;
 use std::rc::Rc;
 
 use petgraph::{graph::NodeIndex, Direction};
-use syn::{visit::Visit, Ident, Path, UseGlob, UseName, UsePath, UseRename, UseTree};
+use syn::Path;
 
-use super::{
-    r#use::{UseResolver, UseType},
-    Node, ScopeGraph,
-};
+use super::{r#use::UseType, Node, ScopeGraph};
 use crate::error::*;
 use crate::find_file::File;
 

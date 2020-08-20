@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use log::error;
 use petgraph::{graph::NodeIndex, Direction};
-use syn::{visit::Visit, Ident, ItemUse, UseGlob, UseName, UsePath, UseRename, UseTree};
+use syn::{UseName, UseRename, UseTree};
 
 use super::{
     path::{r#mut::PathFinder, TracingContext},

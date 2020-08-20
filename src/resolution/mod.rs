@@ -39,7 +39,7 @@ use std::rc::Rc;
 use petgraph::{graph::NodeIndex, Direction, Graph};
 use syn::{
     visit::Visit, Ident, ItemConst, ItemEnum, ItemFn, ItemImpl, ItemMod, ItemStruct, ItemTrait,
-    ItemType, ItemUse, Type, UseName, UseRename,
+    ItemType, ItemUse, UseName, UseRename,
 };
 
 use crate::error::{InvalidRawIdentifierError, MultipleDefinitionError, ResolutionError};
@@ -52,7 +52,6 @@ mod r#use;
 use r#use::UseType;
 
 mod path;
-use path::PathFinder;
 mod build;
 mod r#pub;
 mod type_existence;

@@ -82,12 +82,14 @@ impl<'ast> Name<'ast> {
         }
     }
 
-    pub fn to_string(&self) -> String {
-        self.ident().to_string()
-    }
-
     pub fn span(&self) -> proc_macro2::Span {
         self.ident().span()
+    }
+}
+
+impl<'ast> std::fmt::Display for Name<'ast> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        write!(f, "{}", self.ident())
     }
 }
 
