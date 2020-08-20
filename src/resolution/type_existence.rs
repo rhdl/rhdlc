@@ -67,6 +67,10 @@ impl<'a, 'c, 'ast> Visit<'c> for TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
         // purposefully do nothing so we don't recurse out of this scope
     }
 
+    fn visit_item(&mut self, item: &'c Item) {
+        // purposefully do nothing so we don't recurse out of this scope
+    }
+
     fn visit_item_impl(&mut self, item_impl: &'c ItemImpl) {
         self.visit_generics(&item_impl.generics);
         if let Some((_, path, _)) = &item_impl.trait_ {
