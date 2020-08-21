@@ -7,7 +7,7 @@ use syn::{
 };
 
 use crate::error::ResolutionError;
-use crate::resolution::{path::PathFinder, ScopeGraph};
+use crate::resolution::{path::PathFinder, Node, ScopeGraph};
 
 pub struct TypeExistenceChecker<'a, 'ast> {
     pub scope_graph: &'a ScopeGraph<'ast>,
@@ -136,6 +136,9 @@ impl<'a, 'c, 'ast> Visit<'c> for TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
                 self.visit_type(default);
             }
         }
+        if let Some(where_clause) = &generics.where_clause {
+            self.visit_where_clause(where_clause);
+        }
     }
 
     fn visit_type_param(&mut self, type_param: &'c TypeParam) {
@@ -157,6 +160,25 @@ impl<'a, 'c, 'ast> Visit<'c> for TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
     }
 
     fn visit_type_path(&mut self, type_path: &'c TypePath) {
+        if let Some(ident) = type_path.path.get_ident() {
+            if ident == "Self" {
+                let is_impl_or_trait = match self.scope_graph[self.scope] {
+                    Node::Impl { .. } | Node::Trait { .. } => true,
+                    _ => false,
+                };
+                if is_impl_or_trait {
+                    return;
+                }
+            }
+            let is_type_param = self.generics.iter().rev().any(|generic| {
+                generic
+                    .type_params()
+                    .any(|type_param| type_param.ident == *ident)
+            });
+            if is_type_param {
+                return;
+            }
+        }
         let res = {
             let path_finder = PathFinder {
                 scope_graph: &self.scope_graph,
