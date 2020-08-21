@@ -186,9 +186,6 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                                 }
                             };
                         if found_children.len() > 1 {
-                            found_children.iter().for_each(|child| {
-                                eprintln!("{:?}", self.scope_graph[*child].names());
-                            });
                             todo!("disambiguation error");
                         }
                         *found_children.first().unwrap()

@@ -15,6 +15,7 @@ const UNKNOWN_DIRECTORY: &str = "???";
 const ARROW: &str = "-->";
 const PIPE: &str = "|";
 
+#[derive(Debug)]
 pub enum Reference {
     Error,
     Warning,

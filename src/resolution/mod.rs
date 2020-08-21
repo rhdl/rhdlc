@@ -132,7 +132,16 @@ impl<'ast> Resolver<'ast> {
         self.errors.append(&mut self.find_invalid_names());
         for node in self.scope_graph.node_indices() {
             let file = match &self.scope_graph[node] {
-                Node::Root { file, .. } | Node::Mod { file, .. } => file,
+                Node::Root { file, .. }
+                | Node::Mod {
+                    file,
+                    content_file: None,
+                    ..
+                } => file,
+                Node::Mod {
+                    content_file: Some(content_file),
+                    ..
+                } => content_file,
                 Node::Impl { .. } => Node::file(&self.scope_graph, node),
                 _ => continue,
             };
