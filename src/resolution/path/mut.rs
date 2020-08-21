@@ -78,7 +78,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                 .collect();
             local_nodes
                 .iter()
-                .map(|child| self.matches(&child, ident, paths_only, false))
+                .map(|child| self.matches(ctx, &child, ident, paths_only, false))
                 .flatten()
                 .collect()
         } else {
@@ -92,7 +92,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                 .collect();
             global_nodes
                 .iter()
-                .map(|child| self.matches(&child, ident, paths_only, false))
+                .map(|child| self.matches(ctx, &child, ident, paths_only, false))
                 .flatten()
                 .collect()
         } else {
@@ -143,7 +143,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                         .collect();
                     let local_from_globs: Vec<NodeIndex> = local_nodes
                         .iter()
-                        .map(|child| self.matches(&child, &ident, paths_only, true))
+                        .map(|child| self.matches(ctx, &child, &ident, paths_only, true))
                         .flatten()
                         .collect();
                     let visible_local_from_globs: Vec<NodeIndex> = local_from_globs
@@ -195,6 +195,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
 
     fn matches(
         &mut self,
+        ctx: &TracingContext,
         node: &NodeIndex,
         ident_to_look_for: &syn::Ident,
         paths_only: bool,
@@ -204,6 +205,9 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
             Node::Use {
                 item_use, imports, ..
             } => {
+                if !super::super::r#pub::is_target_visible(self.scope_graph, ctx.dest, *node) {
+                    return vec![];
+                }
                 let mut checker = UseMightMatchChecker {
                     ident_to_look_for,
                     might_match: false,
@@ -244,7 +248,6 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
             Node::Use { imports, .. } => imports.clone(),
             bad => panic!("this should not be reached: {:?}", bad),
         };
-        // TODO: try to avoid recursing into private use matches
         imports
             .values()
             .map(|use_types| {
@@ -256,7 +259,13 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                                 indices
                                     .iter()
                                     .map(|i| {
-                                        self.matches(i, ident_to_look_for, paths_only, glob_only)
+                                        self.matches(
+                                            ctx,
+                                            i,
+                                            ident_to_look_for,
+                                            paths_only,
+                                            glob_only,
+                                        )
                                     })
                                     .flatten()
                                     .collect::<Vec<NodeIndex>>()
@@ -269,7 +278,9 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                             if rename.rename == *ident_to_look_for {
                                 indices
                                     .iter()
-                                    .map(|i| self.matches(i, &rename.ident, paths_only, glob_only))
+                                    .map(|i| {
+                                        self.matches(ctx, i, &rename.ident, paths_only, glob_only)
+                                    })
                                     .flatten()
                                     .collect::<Vec<NodeIndex>>()
                             } else {
@@ -286,6 +297,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                                     .iter()
                                     .map(|child| {
                                         let nonglob_matches = self.matches(
+                                            ctx,
                                             &child,
                                             ident_to_look_for,
                                             paths_only,
@@ -293,6 +305,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                                         );
                                         if nonglob_matches.is_empty() {
                                             self.matches(
+                                                ctx,
                                                 &child,
                                                 ident_to_look_for,
                                                 paths_only,
