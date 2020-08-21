@@ -1,7 +1,10 @@
+use std::collections::HashMap;
+
 use petgraph::graph::NodeIndex;
 use syn::{
-    visit::Visit, Generics, ImplItemMethod, ImplItemType, Item, ItemFn, ItemImpl, ItemMod, Path,
-    PathSegment, TraitBound, TraitItemMethod, TraitItemType, TypeParam, TypeParamBound, TypePath,
+    visit::Visit, File, Generics, ImplItemMethod, ImplItemType, Item, ItemFn, ItemImpl, ItemMod,
+    Path, PathSegment, TraitBound, TraitItemMethod, TraitItemType, TypeParam, TypeParamBound,
+    TypePath,
 };
 
 use crate::error::ResolutionError;
@@ -17,21 +20,29 @@ struct TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
     pub errors: &'a mut Vec<ResolutionError>,
     scope: NodeIndex,
     generics: Vec<&'c Generics>,
+    found_type_paths: HashMap<&'c Path, Vec<NodeIndex>>,
 }
 
 impl<'a, 'ast> TypeExistenceChecker<'a, 'ast> {
     pub fn visit_all(&mut self) {
-        for node in self.scope_graph.node_indices() {
-            let mut ctx_checker = TypeExistenceCheckerVisitor {
-                scope_graph: self.scope_graph,
-                errors: self.errors,
-                scope: node,
-                generics: vec![],
-            };
-            self.scope_graph[node].visit(&mut ctx_checker);
+        for scope in self.scope_graph.node_indices() {
+            if !self.scope_graph[scope].is_nameless_scope() {
+                let mut ctx_checker = TypeExistenceCheckerVisitor {
+                    scope_graph: self.scope_graph,
+                    errors: self.errors,
+                    scope: scope,
+                    generics: Default::default(),
+                    found_type_paths: Default::default(),
+                };
+                for node in self.scope_graph.neighbors(scope) {
+                    self.scope_graph[node].visit(&mut ctx_checker);
+                }
+                ctx_checker.generics.clear();
+            }
         }
     }
 }
+
 impl<'a, 'c, 'ast> TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
     fn find_trait(&self, path: &Path) -> Result<NodeIndex, ResolutionError> {
         let res = {
@@ -57,6 +68,10 @@ impl<'a, 'c, 'ast> TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
     }
 }
 impl<'a, 'c, 'ast> Visit<'c> for TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
+    fn visit_file(&mut self, _file: &'c File) {
+        // purposefully do nothing so we don't recurse out of this scope
+    }
+
     fn visit_item_mod(&mut self, _item_mod: &'c ItemMod) {
         // purposefully do nothing so we don't recurse out of this scope
     }
@@ -181,30 +196,32 @@ impl<'a, 'c, 'ast> Visit<'c> for TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
                 return;
             }
         }
-        let res = {
+
+        if !self.found_type_paths.contains_key(&type_path.path) {
             let mut path_finder = PathFinder {
                 scope_graph: &self.scope_graph,
                 visited_glob_scopes: Default::default(),
             };
-            path_finder.find_at_path(self.scope, &type_path.path)
-        };
-        match res {
-            Ok(matching) => {
-                let num_matching = matching
-                    .iter()
-                    .filter(|i| self.scope_graph[**i].is_type())
-                    .count();
-                if num_matching == 0 {
-                    todo!("no such type");
-                } else if num_matching > 1 {
-                    todo!(
-                        "ambiguous type: {:?} {:?}",
-                        self.scope_graph[self.scope].names(),
-                        self.scope_graph[*matching.first().unwrap()].names()
-                    );
+            match path_finder.find_at_path(self.scope, &type_path.path) {
+                Ok(matching) => {
+                    self.found_type_paths.insert(&type_path.path, matching);
                 }
+                Err(err) => return self.errors.push(err),
             }
-            Err(err) => self.errors.push(err),
+        }
+        let matching = self.found_type_paths.get(&type_path.path).unwrap();
+        let num_matching = matching
+            .iter()
+            .filter(|i| self.scope_graph[**i].is_type())
+            .count();
+        if num_matching == 0 {
+            todo!("no such type");
+        } else if num_matching > 1 {
+            todo!(
+                "ambiguous type: {:?} {:?}",
+                self.scope_graph[self.scope].names(),
+                self.scope_graph[*matching.first().unwrap()].names()
+            );
         }
     }
 }
