@@ -37,7 +37,7 @@ impl<'a, 'c, 'ast> TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
         let res = {
             let mut path_finder = PathFinder {
                 scope_graph: &self.scope_graph,
-                visited_uses: Default::default(),
+                visited_glob_scopes: Default::default(),
             };
             path_finder.find_at_path(self.scope, &path)
         };
@@ -184,7 +184,7 @@ impl<'a, 'c, 'ast> Visit<'c> for TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
         let res = {
             let mut path_finder = PathFinder {
                 scope_graph: &self.scope_graph,
-                visited_uses: Default::default(),
+                visited_glob_scopes: Default::default(),
             };
             path_finder.find_at_path(self.scope, &type_path.path)
         };

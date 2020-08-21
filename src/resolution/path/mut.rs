@@ -14,7 +14,7 @@ pub struct PathFinder<'a, 'ast> {
     pub scope_graph: &'a mut ScopeGraph<'ast>,
     pub errors: &'a mut Vec<ResolutionError>,
     pub resolved_uses: &'a mut HashSet<NodeIndex>,
-    pub visited_uses: HashSet<NodeIndex>
+    pub visited_glob_scopes: HashSet<NodeIndex>,
 }
 
 impl<'a, 'ast> Into<UseResolver<'a, 'ast>> for &'a mut PathFinder<'a, 'ast> {
@@ -36,7 +36,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
         ident: &syn::Ident,
         paths_only: bool,
     ) -> Result<Vec<NodeIndex>, ResolutionError> {
-        self.visited_uses.clear();
+        self.visited_glob_scopes.clear();
         let is_entry = ctx.previous_idents.is_empty();
         let local = if !is_entry || !ctx.has_leading_colon {
             let local_nodes: Vec<NodeIndex> = self
@@ -169,11 +169,6 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
         paths_only: bool,
         glob_only: bool,
     ) -> Vec<NodeIndex> {
-        if self.visited_uses.contains(node) {
-            return vec![];
-        } else {
-            self.visited_uses.insert(*node);
-        }
         let rebuilt_ctx_opt = match &self.scope_graph[*node] {
             Node::Use {
                 item_use, imports, ..
@@ -262,6 +257,11 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                         }
                         UseType::Glob { scope } => {
                             if glob_only {
+                                if self.visited_glob_scopes.contains(node) {
+                                    return vec![];
+                                } else {
+                                    self.visited_glob_scopes.insert(*node);
+                                }
                                 let neighbors = self
                                     .scope_graph
                                     .neighbors(*scope)

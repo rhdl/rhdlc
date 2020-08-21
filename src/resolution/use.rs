@@ -175,7 +175,7 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                             scope_graph: self.scope_graph,
                             errors: self.errors,
                             resolved_uses: self.resolved_uses,
-                            visited_uses: Default::default(),
+                            visited_glob_scopes: Default::default(),
                         };
                         let found_children =
                             match path_finder.find_children(ctx, scope, &path.ident, true) {
@@ -219,7 +219,7 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                         scope_graph: self.scope_graph,
                         errors: self.errors,
                         resolved_uses: self.resolved_uses,
-                        visited_uses: Default::default(),
+                        visited_glob_scopes: Default::default(),
                     };
                     match path_finder.find_children(ctx, scope, ident, false) {
                         Ok(v) => v,

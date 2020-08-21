@@ -119,7 +119,6 @@ impl<'ast> Resolver<'ast> {
             })
             .collect();
         for use_index in use_indices {
-            dbg!(&self.scope_graph[use_index]);
             let mut use_resolver = r#use::UseResolver {
                 resolved_uses: &mut self.resolved_uses,
                 scope_graph: &mut self.scope_graph,

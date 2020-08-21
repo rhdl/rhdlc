@@ -39,7 +39,7 @@ impl<'ast> TracingContext<'ast> {
 
 pub struct PathFinder<'a, 'ast> {
     pub scope_graph: &'a ScopeGraph<'ast>,
-    pub visited_uses: HashSet<NodeIndex>,
+    pub visited_glob_scopes: HashSet<NodeIndex>,
 }
 
 impl<'a, 'ast> PathFinder<'a, 'ast> {
@@ -48,7 +48,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
         dest: NodeIndex,
         path: &Path,
     ) -> Result<Vec<NodeIndex>, ResolutionError> {
-        self.visited_uses.clear();
+        self.visited_glob_scopes.clear();
         let mut ctx = TracingContext::new(self.scope_graph, dest, path.leading_colon.is_some());
         let mut dest_scope = dest;
         while self.scope_graph[dest_scope].is_nameless_scope() {
@@ -207,7 +207,6 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
         paths_only: bool,
         glob_only: bool,
     ) -> Vec<NodeIndex> {
-
         let imports = match &self.scope_graph[*node] {
             Node::Use { imports, .. } => imports,
             _ => {
@@ -218,11 +217,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                 };
             }
         };
-        if self.visited_uses.contains(node) {
-            return vec![];
-        } else {
-            self.visited_uses.insert(*node);
-        }
+
         if !super::r#pub::is_target_visible(self.scope_graph, ctx.dest, *node) {
             return vec![];
         }
@@ -267,6 +262,11 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                         }
                         UseType::Glob { scope } => {
                             if glob_only {
+                                if self.visited_glob_scopes.contains(node) {
+                                    return vec![];
+                                } else {
+                                    self.visited_glob_scopes.insert(*node);
+                                }
                                 let neighbors = self
                                     .scope_graph
                                     .neighbors(*scope)
