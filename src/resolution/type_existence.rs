@@ -35,6 +35,7 @@ impl<'a, 'ast> TypeExistenceChecker<'a, 'ast> {
                     found_type_paths: Default::default(),
                 };
                 for node in self.scope_graph.neighbors(scope) {
+                    ctx_checker.scope = node;
                     self.scope_graph[node].visit(&mut ctx_checker);
                 }
                 ctx_checker.generics.clear();
@@ -208,6 +209,12 @@ impl<'a, 'c, 'ast> Visit<'c> for TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
                 }
                 Err(err) => return self.errors.push(err),
             }
+            // TODO: path tracing can be expensive in modules that have a lot of items
+            // so instead, it might be better to have the path finder return a common
+            // visibility issue (privacy or unresolved or disambiguation)
+            // which can then be converted into the appropriate error to display to the user
+            // this doesn't matter short-term because it only affects crates with many many items in a scope
+            // i.e. winapi
         }
         let matching = self.found_type_paths.get(&type_path.path).unwrap();
         let num_matching = matching
