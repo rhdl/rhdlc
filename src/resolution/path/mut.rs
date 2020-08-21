@@ -197,11 +197,13 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                 }
             }
             _ => {
-                return if self.matches_exact(node, ident_to_look_for, paths_only) {
+                return if glob_only {
+                    vec![]
+                } else if self.matches_exact(node, ident_to_look_for, paths_only) {
                     vec![*node]
                 } else {
                     vec![]
-                }
+                };
             }
         };
         if let Some(mut rebuilt_ctx) = rebuilt_ctx_opt {
@@ -223,7 +225,9 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                     .iter()
                     .map(|use_type| match use_type {
                         UseType::Name { name, indices } => {
-                            if name.ident == *ident_to_look_for {
+                            if glob_only {
+                                vec![]
+                            } else if name.ident == *ident_to_look_for {
                                 indices
                                     .iter()
                                     .map(|i| {
@@ -243,7 +247,9 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                         }
                         UseType::Rename { rename, indices } => {
                             // match on new name, recurse on original name
-                            if rename.rename == *ident_to_look_for {
+                            if glob_only {
+                                vec![]
+                            } else if rename.rename == *ident_to_look_for {
                                 indices
                                     .iter()
                                     .map(|i| {

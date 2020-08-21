@@ -210,7 +210,9 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
         let imports = match &self.scope_graph[*node] {
             Node::Use { imports, .. } => imports,
             _ => {
-                return if self.matches_exact(node, ident_to_look_for, paths_only) {
+                return if glob_only {
+                    vec![]
+                } else if self.matches_exact(node, ident_to_look_for, paths_only) {
                     vec![*node]
                 } else {
                     vec![]
@@ -228,7 +230,9 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                     .iter()
                     .map(|use_type| match use_type {
                         UseType::Name { name, indices } => {
-                            if name.ident == *ident_to_look_for {
+                            if glob_only {
+                                vec![]
+                            } else if name.ident == *ident_to_look_for {
                                 indices
                                     .iter()
                                     .map(|i| {
@@ -248,11 +252,19 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                         }
                         UseType::Rename { rename, indices } => {
                             // match on new name, recurse on original name
-                            if rename.rename == *ident_to_look_for {
+                            if glob_only {
+                                vec![]
+                            } else if rename.rename == *ident_to_look_for {
                                 indices
                                     .iter()
                                     .map(|i| {
-                                        self.matches(ctx, i, &rename.ident, paths_only, glob_only)
+                                        self.matches(
+                                            ctx,
+                                            i,
+                                            ident_to_look_for,
+                                            paths_only,
+                                            glob_only,
+                                        )
                                     })
                                     .flatten()
                                     .collect::<Vec<NodeIndex>>()
@@ -318,10 +330,11 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
             // TODO: look for associated consts, but NOT for uses
             _ => false,
         };
-        // Node::Use { .. } | Node::Impl { .. } | Node::MacroUsage { .. } => false,
-        let names = self.scope_graph[*node].names();
-        (is_path || !paths_only)
-            && names.len() == 1
-            && names.first().unwrap().ident() == ident_to_look_for
+        if is_path || !paths_only {
+            let names = self.scope_graph[*node].names();
+            names.len() == 1 && names.first().unwrap().ident() == ident_to_look_for
+        } else {
+            false
+        }
     }
 }
