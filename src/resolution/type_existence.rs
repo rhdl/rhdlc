@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use petgraph::graph::NodeIndex;
 use syn::{
     visit::Visit, Generics, ImplItemMethod, ImplItemType, Item, ItemFn, ItemImpl, ItemMod, Path,
@@ -12,13 +10,11 @@ use crate::resolution::{path::PathFinder, Node, ScopeGraph};
 pub struct TypeExistenceChecker<'a, 'ast> {
     pub scope_graph: &'a ScopeGraph<'ast>,
     pub errors: &'a mut Vec<ResolutionError>,
-    pub visited_uses: &'a mut HashSet<NodeIndex>,
 }
 
 struct TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
     pub scope_graph: &'a ScopeGraph<'ast>,
     pub errors: &'a mut Vec<ResolutionError>,
-    pub visited_uses: &'a mut HashSet<NodeIndex>,
     scope: NodeIndex,
     generics: Vec<&'c Generics>,
 }
@@ -29,7 +25,6 @@ impl<'a, 'ast> TypeExistenceChecker<'a, 'ast> {
             let mut ctx_checker = TypeExistenceCheckerVisitor {
                 scope_graph: self.scope_graph,
                 errors: self.errors,
-                visited_uses: self.visited_uses,
                 scope: node,
                 generics: vec![],
             };
@@ -40,8 +35,9 @@ impl<'a, 'ast> TypeExistenceChecker<'a, 'ast> {
 impl<'a, 'c, 'ast> TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
     fn find_trait(&self, path: &Path) -> Result<NodeIndex, ResolutionError> {
         let res = {
-            let path_finder = PathFinder {
+            let mut path_finder = PathFinder {
                 scope_graph: &self.scope_graph,
+                visited_uses: Default::default(),
             };
             path_finder.find_at_path(self.scope, &path)
         };
@@ -82,7 +78,6 @@ impl<'a, 'c, 'ast> Visit<'c> for TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
         }
         self.visit_type(item_impl.self_ty.as_ref());
         for item in item_impl.items.iter() {
-            // TODO: pull out the individual visits so the generics can be popped off
             self.visit_impl_item(item);
         }
     }
@@ -170,6 +165,13 @@ impl<'a, 'c, 'ast> Visit<'c> for TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
                     return;
                 }
             }
+            // Check that there is a single type match
+            // TODO: need *concrete* types + generics here.
+            // * is_type includes type aliases which could actually point to trait
+            // * also need to skip self so the type alias doesn't point to itself
+            // * also avoid T that uses T in its type param bound
+            // TODO: I'd like a way to aggressively gate duplicate ident errors early on
+            // so they aren't being seen here
             let is_type_param = self.generics.iter().rev().any(|generic| {
                 generic
                     .type_params()
@@ -180,20 +182,14 @@ impl<'a, 'c, 'ast> Visit<'c> for TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
             }
         }
         let res = {
-            let path_finder = PathFinder {
+            let mut path_finder = PathFinder {
                 scope_graph: &self.scope_graph,
+                visited_uses: Default::default(),
             };
             path_finder.find_at_path(self.scope, &type_path.path)
         };
         match res {
             Ok(matching) => {
-                // Check that there is a single type match
-                // TODO: need *concrete* types + generics here.
-                // * is_type includes type aliases which could actually point to trait
-                // * also need to skip self so the type alias doesn't point to itself
-                // * also avoid T that uses T in its type param bound
-                // TODO: I'd like a way to aggressively gate duplicate ident errors early on
-                // so they aren't being seen here
                 let num_matching = matching
                     .iter()
                     .filter(|i| self.scope_graph[**i].is_type())
@@ -201,7 +197,11 @@ impl<'a, 'c, 'ast> Visit<'c> for TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
                 if num_matching == 0 {
                     todo!("no such type");
                 } else if num_matching > 1 {
-                    todo!("ambiguous type");
+                    todo!(
+                        "ambiguous type: {:?} {:?}",
+                        self.scope_graph[self.scope].names(),
+                        self.scope_graph[*matching.first().unwrap()].names()
+                    );
                 }
             }
             Err(err) => self.errors.push(err),

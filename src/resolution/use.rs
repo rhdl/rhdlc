@@ -34,7 +34,7 @@ pub enum UseType<'ast> {
 pub struct UseResolver<'a, 'ast> {
     pub scope_graph: &'a mut ScopeGraph<'ast>,
     pub errors: &'a mut Vec<ResolutionError>,
-    pub visited_uses: &'a mut HashSet<NodeIndex>,
+    pub resolved_uses: &'a mut HashSet<NodeIndex>,
 }
 
 impl<'a, 'ast> UseResolver<'a, 'ast> {
@@ -56,10 +56,10 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
             Node::Use { item_use, .. } => &item_use.tree,
             _ => return,
         };
-        if self.visited_uses.contains(&ctx.dest) {
+        if self.resolved_uses.contains(&ctx.dest) {
             return;
         }
-        self.visited_uses.insert(ctx.dest);
+        self.resolved_uses.insert(ctx.dest);
         let scope = if ctx.has_leading_colon {
             // just give any old dummy node because it'll have to be ignored in path/name finding
             NodeIndex::new(0)
@@ -174,7 +174,8 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                         let mut path_finder = PathFinder {
                             scope_graph: self.scope_graph,
                             errors: self.errors,
-                            visited_uses: self.visited_uses,
+                            resolved_uses: self.resolved_uses,
+                            visited_uses: Default::default(),
                         };
                         let found_children =
                             match path_finder.find_children(ctx, scope, &path.ident, true) {
@@ -185,6 +186,9 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                                 }
                             };
                         if found_children.len() > 1 {
+                            found_children.iter().for_each(|child| {
+                                eprintln!("{:?}", self.scope_graph[*child].names());
+                            });
                             todo!("disambiguation error");
                         }
                         *found_children.first().unwrap()
@@ -214,7 +218,8 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                     let mut path_finder = PathFinder {
                         scope_graph: self.scope_graph,
                         errors: self.errors,
-                        visited_uses: self.visited_uses,
+                        resolved_uses: self.resolved_uses,
+                        visited_uses: Default::default(),
                     };
                     match path_finder.find_children(ctx, scope, ident, false) {
                         Ok(v) => v,

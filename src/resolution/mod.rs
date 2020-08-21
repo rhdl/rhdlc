@@ -51,8 +51,8 @@ use name::Name;
 mod r#use;
 use r#use::UseType;
 
-mod path;
 mod build;
+mod path;
 mod r#pub;
 mod type_existence;
 
@@ -63,7 +63,7 @@ pub struct Resolver<'ast> {
     file_graph: &'ast FileGraph,
     pub scope_graph: ScopeGraph<'ast>,
     pub errors: Vec<ResolutionError>,
-    visited_uses: HashSet<NodeIndex>,
+    resolved_uses: HashSet<NodeIndex>,
 }
 
 impl<'ast> From<&'ast FileGraph> for Resolver<'ast> {
@@ -72,7 +72,7 @@ impl<'ast> From<&'ast FileGraph> for Resolver<'ast> {
             file_graph,
             scope_graph: Default::default(),
             errors: vec![],
-            visited_uses: Default::default(),
+            resolved_uses: Default::default(),
         }
     }
 }
@@ -118,12 +118,13 @@ impl<'ast> Resolver<'ast> {
                 _ => false,
             })
             .collect();
-        let mut use_resolver = r#use::UseResolver {
-            visited_uses: &mut self.visited_uses,
-            scope_graph: &mut self.scope_graph,
-            errors: &mut self.errors,
-        };
         for use_index in use_indices {
+            dbg!(&self.scope_graph[use_index]);
+            let mut use_resolver = r#use::UseResolver {
+                resolved_uses: &mut self.resolved_uses,
+                scope_graph: &mut self.scope_graph,
+                errors: &mut self.errors,
+            };
             use_resolver.resolve_use(use_index);
         }
     }
@@ -143,7 +144,6 @@ impl<'ast> Resolver<'ast> {
         let mut type_existence_checker = type_existence::TypeExistenceChecker {
             scope_graph: &mut self.scope_graph,
             errors: &mut self.errors,
-            visited_uses: &mut self.visited_uses,
         };
         type_existence_checker.visit_all();
     }

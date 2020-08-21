@@ -13,7 +13,8 @@ use crate::error::*;
 pub struct PathFinder<'a, 'ast> {
     pub scope_graph: &'a mut ScopeGraph<'ast>,
     pub errors: &'a mut Vec<ResolutionError>,
-    pub visited_uses: &'a mut HashSet<NodeIndex>,
+    pub resolved_uses: &'a mut HashSet<NodeIndex>,
+    pub visited_uses: HashSet<NodeIndex>
 }
 
 impl<'a, 'ast> Into<UseResolver<'a, 'ast>> for &'a mut PathFinder<'a, 'ast> {
@@ -21,46 +22,12 @@ impl<'a, 'ast> Into<UseResolver<'a, 'ast>> for &'a mut PathFinder<'a, 'ast> {
         UseResolver {
             scope_graph: self.scope_graph,
             errors: self.errors,
-            visited_uses: self.visited_uses,
+            resolved_uses: self.resolved_uses,
         }
     }
 }
 
 impl<'a, 'ast> PathFinder<'a, 'ast> {
-    pub fn find_at_path(
-        &mut self,
-        dest: NodeIndex,
-        path: &Path,
-    ) -> Result<Vec<NodeIndex>, ResolutionError> {
-        let mut ctx = TracingContext::new(self.scope_graph, dest, path.leading_colon.is_some());
-        let mut dest_scope = dest;
-        while self.scope_graph[dest_scope].is_nameless_scope() {
-            dest_scope = self
-                .scope_graph
-                .neighbors_directed(dest_scope, Direction::Incoming)
-                .next()
-                .unwrap();
-        }
-        let mut scopes = vec![dest_scope];
-        for (i, segment) in path.segments.iter().enumerate() {
-            let ident = &segment.ident;
-            let mut results: Vec<Result<Vec<NodeIndex>, ResolutionError>> = scopes
-                .iter()
-                .map(|scope| self.find_children(&ctx, *scope, ident, i + 1 != path.segments.len()))
-                .collect();
-            if results.iter().all(|res| res.is_err()) {
-                return results.drain(..).next().unwrap();
-            }
-            scopes = results
-                .drain(..)
-                .filter_map(|res| res.ok())
-                .flatten()
-                .collect();
-            ctx.previous_idents.push(&segment.ident);
-        }
-        Ok(scopes)
-    }
-
     /// Ok is guaranteed to have >= 1 node, else an unresolved error will be returned
     pub fn find_children(
         &mut self,
@@ -69,6 +36,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
         ident: &syn::Ident,
         paths_only: bool,
     ) -> Result<Vec<NodeIndex>, ResolutionError> {
+        self.visited_uses.clear();
         let is_entry = ctx.previous_idents.is_empty();
         let local = if !is_entry || !ctx.has_leading_colon {
             let local_nodes: Vec<NodeIndex> = self
@@ -201,6 +169,11 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
         paths_only: bool,
         glob_only: bool,
     ) -> Vec<NodeIndex> {
+        if self.visited_uses.contains(node) {
+            return vec![];
+        } else {
+            self.visited_uses.insert(*node);
+        }
         let rebuilt_ctx_opt = match &self.scope_graph[*node] {
             Node::Use {
                 item_use, imports, ..
@@ -212,7 +185,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                     ident_to_look_for,
                     might_match: false,
                 };
-                if self.visited_uses.contains(node) || !imports.is_empty() {
+                if self.resolved_uses.contains(node) || !imports.is_empty() {
                     None
                 } else if {
                     checker.visit_item_use(item_use);
@@ -240,7 +213,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
             let mut use_resolver = UseResolver {
                 scope_graph: self.scope_graph,
                 errors: self.errors,
-                visited_uses: self.visited_uses,
+                resolved_uses: self.resolved_uses,
             };
             use_resolver.trace_use_entry_reenterable(&mut rebuilt_ctx);
         }

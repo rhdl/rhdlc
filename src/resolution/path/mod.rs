@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::rc::Rc;
 
 use petgraph::{graph::NodeIndex, Direction};
@@ -38,14 +39,16 @@ impl<'ast> TracingContext<'ast> {
 
 pub struct PathFinder<'a, 'ast> {
     pub scope_graph: &'a ScopeGraph<'ast>,
+    pub visited_uses: HashSet<NodeIndex>,
 }
 
 impl<'a, 'ast> PathFinder<'a, 'ast> {
     pub fn find_at_path(
-        &self,
+        &mut self,
         dest: NodeIndex,
         path: &Path,
     ) -> Result<Vec<NodeIndex>, ResolutionError> {
+        self.visited_uses.clear();
         let mut ctx = TracingContext::new(self.scope_graph, dest, path.leading_colon.is_some());
         let mut dest_scope = dest;
         while self.scope_graph[dest_scope].is_nameless_scope() {
@@ -76,8 +79,8 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
     }
 
     /// Ok is guaranteed to have >= 1 node, else an unresolved error will be returned
-    pub fn find_children(
-        &self,
+    fn find_children(
+        &mut self,
         ctx: &TracingContext,
         scope: NodeIndex,
         ident: &syn::Ident,
@@ -197,13 +200,14 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
     }
 
     fn matches(
-        &self,
+        &mut self,
         ctx: &TracingContext,
         node: &NodeIndex,
         ident_to_look_for: &syn::Ident,
         paths_only: bool,
         glob_only: bool,
     ) -> Vec<NodeIndex> {
+
         let imports = match &self.scope_graph[*node] {
             Node::Use { imports, .. } => imports,
             _ => {
@@ -214,6 +218,11 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                 };
             }
         };
+        if self.visited_uses.contains(node) {
+            return vec![];
+        } else {
+            self.visited_uses.insert(*node);
+        }
         if !super::r#pub::is_target_visible(self.scope_graph, ctx.dest, *node) {
             return vec![];
         }
