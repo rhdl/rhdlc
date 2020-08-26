@@ -2,4 +2,4 @@ error: unresolved item `c`
  --> top.rhdl:5:11
   |
 5 | use a::{b, c, self};
-  |            ^ no `c` in `a`
+  |            ^ no `c` item in `a`

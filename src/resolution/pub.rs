@@ -9,7 +9,7 @@ use syn::{spanned::Spanned, Visibility};
 
 use super::{Node, ScopeGraph};
 use crate::error::{
-    IncorrectVisibilityError, NonAncestralError, ResolutionError, ScopeVisibilityError,
+    IncorrectVisibilityError, ItemHint, NonAncestralError, ResolutionError, ScopeVisibilityError,
     SpecialIdentNotAtStartOfPathError, TooManySupersError, UnresolvedItemError, UnsupportedError,
 };
 use crate::find_file::File;
@@ -185,15 +185,14 @@ fn apply_visibility_in<'ast>(
             if export_dest_children.is_empty() {
                 return Err(UnresolvedItemError {
                     file,
-                    previous_idents: path
+                    previous_ident: path
                         .segments
                         .iter()
-                        .take(i + 1)
-                        .map(|s| s.ident.clone())
-                        .collect(),
+                        .skip(i)
+                        .next()
+                        .map(|seg| seg.ident.clone()),
                     unresolved_ident: segment.ident.clone(),
-                    has_leading_colon: false,
-                    paths_only: true,
+                    hint: ItemHint::InternalNamedScope,
                 }
                 .into());
             } else if let Some(export_dest_child) = export_dest_children

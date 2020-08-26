@@ -168,14 +168,15 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                     } else if visible_local_from_globs.is_empty() {
                         Err(UnresolvedItemError {
                             file: ctx.file.clone(),
-                            previous_idents: ctx
-                                .previous_idents
-                                .iter()
-                                .map(|ident| (*ident).clone())
-                                .collect(),
+                            previous_ident: ctx.previous_idents.last().cloned().cloned(),
                             unresolved_ident: ident.clone(),
-                            has_leading_colon: ctx.has_leading_colon,
-                            paths_only,
+                            hint: if paths_only && is_entry {
+                                ItemHint::AnyNamedScope
+                            } else if paths_only {
+                                ItemHint::InternalNamedScope
+                            } else {
+                                ItemHint::Item
+                            },
                         }
                         .into())
                     } else {
@@ -184,14 +185,9 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                 } else {
                     Err(UnresolvedItemError {
                         file: ctx.file.clone(),
-                        previous_idents: ctx
-                            .previous_idents
-                            .iter()
-                            .map(|ident| (*ident).clone())
-                            .collect(),
+                        previous_ident: ctx.previous_idents.last().cloned().cloned(),
                         unresolved_ident: ident.clone(),
-                        has_leading_colon: ctx.has_leading_colon,
-                        paths_only,
+                        hint: ItemHint::ExternalNamedScope,
                     }
                     .into())
                 }

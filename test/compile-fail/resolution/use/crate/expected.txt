@@ -2,4 +2,4 @@ error: unresolved item `crate`
  --> top.rhdl:2:7
   |
 2 | use a::crate;
-  |        ^^^^^ no `crate` in `a`
+  |        ^^^^^ no `crate` item in `a`

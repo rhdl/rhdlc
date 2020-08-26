@@ -1,5 +1,4 @@
-use std::fmt;
-use std::fmt::Display;
+use std::fmt::{Display, Error, Formatter, Result};
 use std::path::PathBuf;
 use std::rc::Rc;
 
@@ -38,7 +37,7 @@ macro_rules! error {
         }
 
         impl Display for $name {
-            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            fn fmt(&self, f: &mut Formatter) -> Result {
                 match self {
                     $(
                         Self::$err(err) => {
@@ -64,7 +63,7 @@ pub struct PreciseSynParseError {
 }
 
 impl Display for PreciseSynParseError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter) -> Result {
         let msg = match &self.src {
             FileContentSource::File(_) => "could not parse file".to_string(),
             FileContentSource::Reader(name, _) => format!("could not parse {}", name),
@@ -95,7 +94,7 @@ pub struct DuplicateError {
 }
 
 impl Display for DuplicateError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         let ident = self.span.ident_path.last().unwrap();
         render_location(
             f,
@@ -119,7 +118,7 @@ pub struct WorkingDirectoryError {
 }
 
 impl Display for WorkingDirectoryError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(
             f,
             "{error}{header}",
@@ -140,7 +139,7 @@ pub struct WrappedIoError {
     pub span: Option<SpanSource>,
 }
 impl Display for WrappedIoError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match &self.span {
             Some(span) => {
                 let ident = span.ident_path.last().unwrap();
@@ -194,7 +193,7 @@ pub struct MultipleDefinitionError {
 }
 
 impl Display for MultipleDefinitionError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         render_location(
             f,
             format!("the name `{}` is defined multiple times", self.name),
@@ -221,7 +220,7 @@ pub struct SpecialIdentNotAtStartOfPathError {
 }
 
 impl Display for SpecialIdentNotAtStartOfPathError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         render_location(
             f,
             format!(
@@ -258,7 +257,7 @@ pub enum AmbiguitySource {
 }
 
 impl Display for AmbiguitySource {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         use AmbiguitySource::*;
         match self {
             Name => write!(f, "name"),
@@ -268,7 +267,7 @@ impl Display for AmbiguitySource {
 }
 
 impl Display for DisambiguationError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         render_location(
             f,
             format!(
@@ -286,38 +285,46 @@ impl Display for DisambiguationError {
 #[derive(Debug)]
 pub struct UnresolvedItemError {
     pub file: Rc<File>,
-    pub previous_idents: Vec<syn::Ident>,
-    pub has_leading_colon: bool,
-    pub paths_only: bool,
+    pub previous_ident: Option<syn::Ident>,
     pub unresolved_ident: syn::Ident,
+    pub hint: ItemHint,
+}
+
+#[derive(Debug)]
+pub enum ItemHint {
+    /// mod
+    InternalNamedScope,
+    /// crate
+    ExternalNamedScope,
+    /// mod or crate
+    AnyNamedScope,
+    /// any item
+    Item,
+    /// a trait in particular
+    Trait,
+}
+
+impl Display for ItemHint {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        use ItemHint::*;
+        match self {
+            InternalNamedScope => write!(f, "mod"),
+            ExternalNamedScope => write!(f, "crate"),
+            AnyNamedScope => write!(f, "crate or mod"),
+            Item => write!(f, "item"),
+            Trait => write!(f, "trait"),
+        }
+    }
 }
 
 impl Display for UnresolvedItemError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
-        let reference_msg = match (
-            self.previous_idents.len(),
-            self.has_leading_colon,
-            self.paths_only,
-        ) {
-            (0, false, false) => format!("no `{}` item", self.unresolved_ident),
-            (0, false, true) => format!("no `{}` crate or mod", self.unresolved_ident),
-            (0, true, _) => format!("no `{}` external crate", self.unresolved_ident),
-            (_nonzero, _, false) => format!(
-                "no `{}` in `{}`",
-                self.unresolved_ident,
-                self.previous_idents
-                    .last()
-                    .map(|ident| ident.to_string())
-                    .unwrap()
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        let reference_msg = match self.previous_ident.as_ref() {
+            Some(previous_ident) => format!(
+                "no `{}` {} in `{}`",
+                self.unresolved_ident, self.hint, previous_ident
             ),
-            (_nonzero, _, true) => format!(
-                "no `{}` mod in `{}`",
-                self.unresolved_ident,
-                self.previous_idents
-                    .last()
-                    .map(|ident| ident.to_string())
-                    .unwrap()
-            ),
+            None => format!("no `{}` {}", self.unresolved_ident, self.hint),
         };
         render_location(
             f,
@@ -341,7 +348,7 @@ pub struct SelfNameNotInGroupError {
 }
 
 impl Display for SelfNameNotInGroupError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         render_location(
             f,
             format!(
@@ -363,7 +370,7 @@ pub struct TooManySupersError {
 }
 
 impl Display for TooManySupersError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         render_location(
             f,
             format!("there are too many leading `{}` keywords", self.ident),
@@ -390,7 +397,7 @@ pub struct ItemVisibilityError {
 }
 
 impl Display for ItemVisibilityError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         render_location(
             f,
             format!("{} `{}` is private", "item", self.name_ident),
@@ -413,7 +420,7 @@ pub struct ScopeVisibilityError {
 }
 
 impl Display for ScopeVisibilityError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         render_location(
             f,
             format!("this item is private in `{}`", self.scope_ident),
@@ -436,7 +443,7 @@ pub struct InvalidRawIdentifierError {
 }
 
 impl Display for InvalidRawIdentifierError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         render_location(
             f,
             format!("`{}` cannot be a raw identifier", self.ident),
@@ -455,7 +462,7 @@ pub struct GlobalPathCannotHaveSpecialIdentError {
 }
 
 impl Display for GlobalPathCannotHaveSpecialIdentError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         render_location(
             f,
             format!("global paths cannot start with `{}`", self.path_ident),
@@ -480,7 +487,7 @@ pub struct GlobAtEntryError {
 }
 
 impl Display for GlobAtEntryError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         render_location(
             f,
             "cannot glob-import without a scope",
@@ -514,7 +521,7 @@ pub struct IncorrectVisibilityError {
 }
 
 impl Display for IncorrectVisibilityError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         render_location(
             f,
             "incorrect visibility",
@@ -538,7 +545,7 @@ pub struct UnsupportedError {
 }
 
 impl Display for UnsupportedError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         render_location(
             f,
             "unsupported feature",
@@ -558,7 +565,7 @@ pub struct NonAncestralError {
 }
 
 impl Display for NonAncestralError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         render_location(
             f,
             format!(

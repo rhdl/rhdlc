@@ -2,4 +2,4 @@ error: unresolved item `b`
  --> top.rhdl:3:7
   |
 3 | use a::b;
-  |        ^ no `b` in `a`
+  |        ^ no `b` item in `a`
