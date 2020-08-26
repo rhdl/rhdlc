@@ -52,6 +52,7 @@ mod r#use;
 use r#use::UseType;
 
 mod build;
+mod conflicts;
 mod path;
 mod r#pub;
 mod type_existence;
@@ -130,30 +131,20 @@ impl<'ast> Resolver<'ast> {
 
     pub fn check_graph(&mut self) {
         self.errors.append(&mut self.find_invalid_names());
-        for node in self.scope_graph.node_indices() {
-            let file = match &self.scope_graph[node] {
-                Node::Root { file, .. }
-                | Node::Mod {
-                    file,
-                    content_file: None,
-                    ..
-                } => file,
-                Node::Mod {
-                    content_file: Some(content_file),
-                    ..
-                } => content_file,
-                Node::Impl { .. } => Node::file(&self.scope_graph, node),
-                _ => continue,
+        {
+            let mut conflict_checker = conflicts::ConflictChecker {
+                scope_graph: &self.scope_graph,
+                errors: &mut self.errors,
             };
-            self.errors
-                .append(&mut self.find_name_conflicts_in(node, &file));
-            // self.errors.append(&mut self.find_reimports_in(node, &file));
+            conflict_checker.visit_all();
         }
-        let mut type_existence_checker = type_existence::TypeExistenceChecker {
-            scope_graph: &mut self.scope_graph,
-            errors: &mut self.errors,
-        };
-        type_existence_checker.visit_all();
+        {
+            let mut type_existence_checker = type_existence::TypeExistenceChecker {
+                scope_graph: &self.scope_graph,
+                errors: &mut self.errors,
+            };
+            type_existence_checker.visit_all();
+        }
     }
 
     fn find_invalid_names(&self) -> Vec<ResolutionError> {
@@ -184,86 +175,6 @@ impl<'ast> Resolver<'ast> {
             let mut visitor = IdentVisitor(vec![], file);
             visitor.visit_file(&file.syn);
             errors.append(&mut visitor.0);
-        }
-        errors
-    }
-
-    fn find_name_conflicts_in(&self, node: NodeIndex, file: &Rc<File>) -> Vec<ResolutionError> {
-        // Check the scope for conflicts
-        let mut ident_map: HashMap<String, Vec<Name<'ast>>> = HashMap::default();
-        for child in self.scope_graph.neighbors(node) {
-            for name in self.scope_graph[child].names() {
-                ident_map.entry(name.to_string()).or_default().push(name);
-            }
-        }
-        let mut errors = vec![];
-        for (ident, names) in ident_map.iter() {
-            let mut claimed = vec![false; names.len()];
-            // Unfortunately, need an O(n^2) check here on items with the same name
-            // As per petgraph docs, this is ordered most recent to least recent, so need to iterate in reverse
-            for i in (0..names.len()).rev() {
-                let i_name = &names[i];
-                for j in (0..i).rev() {
-                    // Don't create repetitive errors by "claiming" duplicates for errors
-                    if claimed[j] {
-                        continue;
-                    }
-                    let j_name = &names[j];
-                    if i_name.conflicts_with(&j_name) {
-                        errors.push(
-                            MultipleDefinitionError {
-                                file: file.clone(),
-                                name: ident.clone(),
-                                original: i_name.span(),
-                                duplicate: j_name.span(),
-                            }
-                            .into(),
-                        );
-                        // Optimization: don't need to claim items that won't be seen again
-                        // claimed[i] = true;
-                        claimed[j] = true;
-                        // Stop at the first conflict seen for `i`, since `j` will necessarily become `i` in the future and handle any further conflicts.
-                        break;
-                    }
-                }
-            }
-        }
-        errors
-    }
-
-    // TODO: didn't finish this because reimports are more of a warning than an error
-    // when there's a name conflict, you could specify that it's *because* of a reimport though
-    fn find_reimports_in(&self, node: NodeIndex, file: &Rc<File>) -> Vec<ResolutionError> {
-        let mut errors = vec![];
-        let mut imported: HashMap<NodeIndex, &'ast Ident> = HashMap::default();
-        for child in self.scope_graph.neighbors(node) {
-            match &self.scope_graph[child] {
-                Node::Use { imports, .. } => {
-                    imports.values().for_each(|uses| {
-                        uses.iter().for_each(|r#use| match r#use {
-                            UseType::Name {
-                                indices,
-                                name: UseName { ident, .. },
-                                ..
-                            }
-                            | UseType::Rename {
-                                indices,
-                                rename: UseRename { ident, .. },
-                                ..
-                            } => indices.iter().for_each(|i| {
-                                use std::collections::hash_map::Entry;
-                                if let Entry::Occupied(occupant) = imported.entry(*i) {
-                                    todo!("reimport error: {:?} {:?}", i, occupant);
-                                } else {
-                                    imported.insert(*i, ident);
-                                }
-                            }),
-                            _ => {}
-                        })
-                    });
-                }
-                _ => continue,
-            }
         }
         errors
     }
