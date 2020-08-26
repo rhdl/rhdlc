@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::rc::Rc;
 
 use petgraph::{graph::NodeIndex, Direction};
-use syn::Path;
+use syn::{Ident, Path};
 
 use super::{r#use::UseType, Node, ScopeGraph};
 use crate::error::*;
@@ -14,7 +14,7 @@ pub struct TracingContext<'ast> {
     pub file: Rc<File>,
     pub root: NodeIndex,
     pub dest: NodeIndex,
-    pub previous_idents: Vec<&'ast syn::Ident>,
+    pub previous_idents: Vec<&'ast Ident>,
     pub has_leading_colon: bool,
 }
 
@@ -46,7 +46,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
     pub fn find_at_path(
         &mut self,
         dest: NodeIndex,
-        path: &Path,
+        path: &'a Path,
     ) -> Result<Vec<NodeIndex>, ResolutionError> {
         self.visited_glob_scopes.clear();
         let mut ctx = TracingContext::new(self.scope_graph, dest, path.leading_colon.is_some());
@@ -83,7 +83,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
         &mut self,
         ctx: &TracingContext,
         scope: NodeIndex,
-        ident: &syn::Ident,
+        ident: &Ident,
         paths_only: bool,
     ) -> Result<Vec<NodeIndex>, ResolutionError> {
         let is_entry = ctx.previous_idents.is_empty();
@@ -203,7 +203,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
         &mut self,
         ctx: &TracingContext,
         node: &NodeIndex,
-        ident_to_look_for: &syn::Ident,
+        ident_to_look_for: &Ident,
         paths_only: bool,
         glob_only: bool,
     ) -> Vec<NodeIndex> {
@@ -319,12 +319,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
             .collect()
     }
 
-    fn matches_exact(
-        &self,
-        node: &NodeIndex,
-        ident_to_look_for: &syn::Ident,
-        paths_only: bool,
-    ) -> bool {
+    fn matches_exact(&self, node: &NodeIndex, ident_to_look_for: &Ident, paths_only: bool) -> bool {
         let is_path = match &self.scope_graph[*node] {
             Node::Mod { .. } | Node::Root { .. } => true,
             // TODO: look for associated consts, but NOT for uses

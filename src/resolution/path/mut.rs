@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use petgraph::{graph::NodeIndex, Direction};
-use syn::{visit::Visit, Path, UseGlob, UseName, UsePath, UseRename, UseTree};
+use syn::{visit::Visit, Ident, UseGlob, UseName, UsePath, UseRename, UseTree};
 
 use super::super::{
     r#use::{UseResolver, UseType},
@@ -33,7 +33,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
         &mut self,
         ctx: &TracingContext,
         scope: NodeIndex,
-        ident: &syn::Ident,
+        ident: &Ident,
         paths_only: bool,
     ) -> Result<Vec<NodeIndex>, ResolutionError> {
         self.visited_glob_scopes.clear();
@@ -165,7 +165,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
         &mut self,
         ctx: &TracingContext,
         node: &NodeIndex,
-        ident_to_look_for: &syn::Ident,
+        ident_to_look_for: &Ident,
         paths_only: bool,
         glob_only: bool,
     ) -> Vec<NodeIndex> {
@@ -308,12 +308,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
             .collect()
     }
 
-    fn matches_exact(
-        &self,
-        node: &NodeIndex,
-        ident_to_look_for: &syn::Ident,
-        paths_only: bool,
-    ) -> bool {
+    fn matches_exact(&self, node: &NodeIndex, ident_to_look_for: &Ident, paths_only: bool) -> bool {
         let is_path = match &self.scope_graph[*node] {
             Node::Mod { .. } | Node::Root { .. } => true,
             // TODO: look for associated consts, but NOT for uses
@@ -328,7 +323,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
 }
 
 struct UseMightMatchChecker<'a> {
-    ident_to_look_for: &'a syn::Ident,
+    ident_to_look_for: &'a Ident,
     might_match: bool,
 }
 
