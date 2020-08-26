@@ -42,7 +42,7 @@ use syn::{
     ItemType, ItemUse, UseName, UseRename,
 };
 
-use crate::error::{InvalidRawIdentifierError, MultipleDefinitionError, ResolutionError};
+use crate::error::{InvalidRawIdentifierError, ResolutionError};
 use crate::find_file::{File, FileGraph};
 
 mod name;

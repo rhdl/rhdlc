@@ -47,7 +47,11 @@ impl<'a, 'ast> Visit<'ast> for ScopeBuilder<'a, 'ast> {
                 }
             });
             if is_fn {
-                todo!("mod without content in a fn not allowed")
+                self.errors.push(UnsupportedError {
+                    file: self.file_graph[*self.file_ancestry.last().unwrap()].clone(),
+                    span: item_mod.ident.span(),
+                    reason: "RHDL does not support modules without content inside functions",
+                }.into());
             }
             let mut full_ident_path: Vec<Ident> = self
                 .scope_ancestry

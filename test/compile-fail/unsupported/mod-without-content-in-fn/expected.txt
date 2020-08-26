@@ -1,0 +1,5 @@
+error: unsupported feature
+ --> top.rhdl:2:8
+  |
+2 |     mod a;
+  |         ^ RHDL does not support modules without content inside functions
