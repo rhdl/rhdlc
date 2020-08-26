@@ -87,6 +87,13 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
         paths_only: bool,
     ) -> Result<Vec<NodeIndex>, ResolutionError> {
         let is_entry = ctx.previous_idents.is_empty();
+        let hint = if paths_only && is_entry {
+            ItemHint::InternalNamedChildOrExternalNamedScope
+        } else if paths_only {
+            ItemHint::InternalNamedChildScope
+        } else {
+            ItemHint::Item
+        };
         let local = if !is_entry || !ctx.has_leading_colon {
             self.scope_graph
                 .neighbors(scope)
@@ -114,8 +121,9 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
             .collect();
         if global.is_empty() && !local.is_empty() && visible_local.is_empty() {
             return Err(ItemVisibilityError {
-                name_file: ctx.file.clone(),
-                name_ident: ident.clone(),
+                file: ctx.file.clone(),
+                ident: ident.clone(),
+                hint,
             }
             .into());
         }
@@ -126,8 +134,9 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
             .collect();
         if local.is_empty() && !global.is_empty() && visible_global.is_empty() {
             return Err(ItemVisibilityError {
-                name_file: ctx.file.clone(),
-                name_ident: ident.clone(),
+                file: ctx.file.clone(),
+                ident: ident.clone(),
+                hint,
             }
             .into());
         }
@@ -161,8 +170,9 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                         .collect();
                     if !local_from_globs.is_empty() && visible_local_from_globs.is_empty() {
                         Err(ItemVisibilityError {
-                            name_file: ctx.file.clone(),
-                            name_ident: ident.clone(),
+                            file: ctx.file.clone(),
+                            ident: ident.clone(),
+                            hint,
                         }
                         .into())
                     } else if visible_local_from_globs.is_empty() {
@@ -170,13 +180,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                             file: ctx.file.clone(),
                             previous_ident: ctx.previous_idents.last().cloned().cloned(),
                             unresolved_ident: ident.clone(),
-                            hint: if paths_only && is_entry {
-                                ItemHint::AnyNamedScope
-                            } else if paths_only {
-                                ItemHint::InternalNamedScope
-                            } else {
-                                ItemHint::Item
-                            },
+                            hint,
                         }
                         .into())
                     } else {

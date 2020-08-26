@@ -1,5 +1,5 @@
-error: item `b` is private
+error: mod `b` is private
  --> top.rhdl:7:7
   |
 7 | use a::b::c;
-  |        ^ private item
+  |        ^ private mod

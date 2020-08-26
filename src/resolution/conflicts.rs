@@ -1,7 +1,7 @@
 use petgraph::graph::NodeIndex;
 use syn::{
-    visit::Visit, Fields, File as SynFile, Generics, Ident, Item, ItemEnum, ItemMod, PatPath, Signature,
-    UseName, UseRename,
+    visit::Visit, Fields, File as SynFile, Generics, Ident, Item, ItemEnum, ItemMod, PatPath,
+    Signature, UseName, UseRename,
 };
 
 use std::{

@@ -1,5 +1,5 @@
-error: this item is private in `a`
+error: this item is not visible in mod `a`
  --> top.rhdl:3:22
   |
 3 |         pub(in crate::a) struct c {}
-  |                       ^ private in this scope
+  |                       ^ not visible in this scope

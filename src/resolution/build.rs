@@ -47,11 +47,14 @@ impl<'a, 'ast> Visit<'ast> for ScopeBuilder<'a, 'ast> {
                 }
             });
             if is_fn {
-                self.errors.push(UnsupportedError {
-                    file: self.file_graph[*self.file_ancestry.last().unwrap()].clone(),
-                    span: item_mod.ident.span(),
-                    reason: "RHDL does not support modules without content inside functions",
-                }.into());
+                self.errors.push(
+                    UnsupportedError {
+                        file: self.file_graph[*self.file_ancestry.last().unwrap()].clone(),
+                        span: item_mod.ident.span(),
+                        reason: "RHDL does not support modules without content inside functions",
+                    }
+                    .into(),
+                );
             }
             let mut full_ident_path: Vec<Ident> = self
                 .scope_ancestry

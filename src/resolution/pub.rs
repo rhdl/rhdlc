@@ -160,7 +160,12 @@ fn apply_visibility_in<'ast>(
                 if !is_target_visible(scope_graph, export_dest_parent, node_parent) {
                     return Err(ScopeVisibilityError {
                         file,
-                        scope_ident: segment.ident.clone(),
+                        ident: segment.ident.clone(),
+                        hint: if first_parent(scope_graph, export_dest_parent).is_none() {
+                            ItemHint::InternalNamedRootScope
+                        } else {
+                            ItemHint::InternalNamedChildScope
+                        },
                     }
                     .into());
                 }
@@ -192,7 +197,7 @@ fn apply_visibility_in<'ast>(
                         .next()
                         .map(|seg| seg.ident.clone()),
                     unresolved_ident: segment.ident.clone(),
-                    hint: ItemHint::InternalNamedScope,
+                    hint: ItemHint::InternalNamedChildScope,
                 }
                 .into());
             } else if let Some(export_dest_child) = export_dest_children
@@ -202,7 +207,8 @@ fn apply_visibility_in<'ast>(
                 if !is_target_visible(scope_graph, *export_dest_child, node_parent) {
                     return Err(ScopeVisibilityError {
                         file,
-                        scope_ident: segment.ident.clone(),
+                        ident: segment.ident.clone(),
+                        hint: ItemHint::InternalNamedChildScope,
                     }
                     .into());
                 }

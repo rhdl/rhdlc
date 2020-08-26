@@ -4,6 +4,7 @@ use std::rc::Rc;
 
 use colored::Colorize;
 use proc_macro2::Span;
+use syn::Ident;
 
 use crate::find_file::{File, FileContentSource};
 
@@ -83,7 +84,7 @@ impl Display for PreciseSynParseError {
 pub struct SpanSource {
     pub file: Rc<File>,
     pub span: Span,
-    pub ident_path: Vec<syn::Ident>,
+    pub ident_path: Vec<Ident>,
 }
 
 #[derive(Debug)]
@@ -216,7 +217,7 @@ impl Display for MultipleDefinitionError {
 #[derive(Debug)]
 pub struct SpecialIdentNotAtStartOfPathError {
     pub file: Rc<File>,
-    pub path_ident: syn::Ident,
+    pub path_ident: Ident,
 }
 
 impl Display for SpecialIdentNotAtStartOfPathError {
@@ -245,7 +246,7 @@ impl Display for SpecialIdentNotAtStartOfPathError {
 #[derive(Debug)]
 pub struct DisambiguationError {
     pub file: Rc<File>,
-    pub ident: syn::Ident,
+    pub ident: Ident,
     pub this: AmbiguitySource,
     pub other: AmbiguitySource,
 }
@@ -285,19 +286,21 @@ impl Display for DisambiguationError {
 #[derive(Debug)]
 pub struct UnresolvedItemError {
     pub file: Rc<File>,
-    pub previous_ident: Option<syn::Ident>,
-    pub unresolved_ident: syn::Ident,
+    pub previous_ident: Option<Ident>,
+    pub unresolved_ident: Ident,
     pub hint: ItemHint,
 }
 
 #[derive(Debug)]
 pub enum ItemHint {
     /// mod
-    InternalNamedScope,
+    InternalNamedChildScope,
+    /// root
+    InternalNamedRootScope,
     /// crate
     ExternalNamedScope,
     /// mod or crate
-    AnyNamedScope,
+    InternalNamedChildOrExternalNamedScope,
     /// any item
     Item,
     /// a trait in particular
@@ -308,9 +311,10 @@ impl Display for ItemHint {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         use ItemHint::*;
         match self {
-            InternalNamedScope => write!(f, "mod"),
+            InternalNamedChildScope => write!(f, "mod"),
+            InternalNamedRootScope => write!(f, "root"),
             ExternalNamedScope => write!(f, "crate"),
-            AnyNamedScope => write!(f, "crate or mod"),
+            InternalNamedChildOrExternalNamedScope => write!(f, "crate or mod"),
             Item => write!(f, "item"),
             Trait => write!(f, "trait"),
         }
@@ -344,7 +348,7 @@ impl Display for UnresolvedItemError {
 #[derive(Debug)]
 pub struct SelfNameNotInGroupError {
     pub file: Rc<File>,
-    pub name_ident: syn::Ident,
+    pub name_ident: Ident,
 }
 
 impl Display for SelfNameNotInGroupError {
@@ -366,7 +370,7 @@ impl Display for SelfNameNotInGroupError {
 #[derive(Debug)]
 pub struct TooManySupersError {
     pub file: Rc<File>,
-    pub ident: syn::Ident,
+    pub ident: Ident,
 }
 
 impl Display for TooManySupersError {
@@ -392,42 +396,45 @@ impl Display for TooManySupersError {
 /// "item `b` is defined here" reference wherever the item is defined
 #[derive(Debug)]
 pub struct ItemVisibilityError {
-    pub name_file: Rc<File>,
-    pub name_ident: syn::Ident,
+    pub file: Rc<File>,
+    pub ident: Ident,
+    pub hint: ItemHint,
 }
 
 impl Display for ItemVisibilityError {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         render_location(
             f,
-            format!("{} `{}` is private", "item", self.name_ident),
+            format!("{} `{}` is private", self.hint, self.ident),
             (
                 Reference::Error,
-                &format!("private {}", "item"),
-                self.name_ident.span(),
+                &format!("private {}", self.hint),
+                self.ident.span(),
             ),
             vec![],
-            &self.name_file.src,
-            &self.name_file.content,
+            &self.file.src,
+            &self.file.content,
         )
     }
 }
 
+
 #[derive(Debug)]
 pub struct ScopeVisibilityError {
     pub file: Rc<File>,
-    pub scope_ident: syn::Ident,
+    pub ident: Ident,
+    pub hint: ItemHint
 }
 
 impl Display for ScopeVisibilityError {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         render_location(
             f,
-            format!("this item is private in `{}`", self.scope_ident),
+            format!("this item is not visible in {} `{}`", self.hint, self.ident),
             (
                 Reference::Error,
-                "private in this scope",
-                self.scope_ident.span(),
+                "not visible in this scope",
+                self.ident.span(),
             ),
             vec![],
             &self.file.src,
@@ -439,7 +446,7 @@ impl Display for ScopeVisibilityError {
 #[derive(Debug)]
 pub struct InvalidRawIdentifierError {
     pub file: Rc<File>,
-    pub ident: syn::Ident,
+    pub ident: Ident,
 }
 
 impl Display for InvalidRawIdentifierError {
@@ -458,7 +465,7 @@ impl Display for InvalidRawIdentifierError {
 #[derive(Debug)]
 pub struct GlobalPathCannotHaveSpecialIdentError {
     pub file: Rc<File>,
-    pub path_ident: syn::Ident,
+    pub path_ident: Ident,
 }
 
 impl Display for GlobalPathCannotHaveSpecialIdentError {
@@ -483,7 +490,7 @@ pub struct GlobAtEntryError {
     pub file: Rc<File>,
     pub star_span: Span,
     pub has_leading_colon: bool,
-    pub previous_ident: Option<syn::Ident>,
+    pub previous_ident: Option<Ident>,
 }
 
 impl Display for GlobAtEntryError {
@@ -560,8 +567,8 @@ impl Display for UnsupportedError {
 #[derive(Debug)]
 pub struct NonAncestralError {
     pub file: Rc<File>,
-    pub segment_ident: syn::Ident,
-    pub prev_segment_ident: Option<syn::Ident>,
+    pub segment_ident: Ident,
+    pub prev_segment_ident: Option<Ident>,
 }
 
 impl Display for NonAncestralError {
