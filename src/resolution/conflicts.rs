@@ -1,6 +1,6 @@
 use petgraph::graph::NodeIndex;
 use syn::{
-    visit::Visit, Fields, File as SynFile, Generics, Ident, Item, ItemEnum, ItemMod, PatPath,
+    visit::Visit, Fields, File as SynFile, Generics, Ident, Item, ItemEnum, ItemMod, PatIdent,
     Signature, UseName, UseRename,
 };
 
@@ -186,22 +186,36 @@ impl<'a, 'ast> Visit<'ast> for ConflictCheckerVisitor<'a, 'ast> {
 
     /// Rebound more than once error
     fn visit_signature(&mut self, sig: &'ast Signature) {
-        #[derive(Default)]
-        struct SignatureVisitor<'ast> {
+        struct SignatureVisitor<'a, 'ast> {
+            file: &'a Rc<File>,
+            errors: &'a mut Vec<ResolutionError>,
             seen_idents: HashSet<&'ast Ident>,
         }
-        impl<'ast> Visit<'ast> for SignatureVisitor<'ast> {
-            fn visit_pat_path(&mut self, pat_path: &'ast PatPath) {
-                if let Some(ident) = pat_path.path.get_ident() {
-                    if let Some(previous_ident) = self.seen_idents.get(&ident) {
-                        // error
-                    }
-                    self.seen_idents.insert(ident);
+        impl<'a, 'ast> Visit<'ast> for SignatureVisitor<'a, 'ast> {
+            fn visit_pat_ident(&mut self, pat_ident: &'ast PatIdent) {
+                if let Some(previous_ident) = self.seen_idents.get(&pat_ident.ident) {
+                    // error
+                    self.errors.push(
+                        MultipleDefinitionError {
+                            file: self.file.clone(),
+                            name: pat_ident.ident.to_string(),
+                            original: previous_ident.span(),
+                            duplicate: pat_ident.ident.span(),
+                            hint: DuplicateHint::NameBinding,
+                        }
+                        .into(),
+                    );
                 }
+                self.seen_idents.insert(&pat_ident.ident);
             }
         }
-        let mut signature_visitor = SignatureVisitor::default();
+        let mut signature_visitor = SignatureVisitor {
+            file: self.file,
+            errors: self.errors,
+            seen_idents: Default::default(),
+        };
         signature_visitor.visit_signature(sig);
+        dbg!(sig);
         self.visit_generics(&sig.generics);
     }
 

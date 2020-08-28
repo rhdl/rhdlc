@@ -1,0 +1,7 @@
+error: the name `x` is bound multiple times
+ --> top.rhdl:1:11
+  |
+1 | fn a(x: b, x: c) {}
+  |      - previous binding of the name `x` here
+1 | fn a(x: b, x: c) {}
+  |            ^ `x` rebound here

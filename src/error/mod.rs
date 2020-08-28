@@ -194,13 +194,14 @@ pub struct MultipleDefinitionError {
     pub hint: DuplicateHint,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum DuplicateHint {
     Variant,
     Name,
     Lifetime,
     TypeParam,
     Field,
+    NameBinding,
 }
 
 impl Display for DuplicateHint {
@@ -212,6 +213,7 @@ impl Display for DuplicateHint {
             Lifetime => write!(f, "lifetime"),
             TypeParam => write!(f, "type parameter"),
             Field => write!(f, "field"),
+            NameBinding => write!(f, "name"),
         }
     }
 }
@@ -221,19 +223,39 @@ impl Display for MultipleDefinitionError {
         render_location(
             f,
             format!(
-                "the {} `{}` is defined multiple times",
-                self.hint, self.name
+                "the {} `{}` is {} multiple times",
+                self.hint,
+                self.name,
+                if self.hint == DuplicateHint::NameBinding {
+                    "bound"
+                } else {
+                    "defined"
+                }
             ),
             (
                 Reference::Error,
-                &format!("`{}` redefined here", self.name),
+                &format!(
+                    "`{}` {} here",
+                    self.name,
+                    if self.hint == DuplicateHint::NameBinding {
+                        "rebound"
+                    } else {
+                        "redefined"
+                    }
+                ),
                 self.duplicate,
             ),
             vec![(
                 Reference::Info,
                 &format!(
-                    "previous definition of the {} `{}` here",
-                    self.hint, self.name
+                    "previous {} of the {} `{}` here",
+                    if self.hint == DuplicateHint::NameBinding {
+                        "binding"
+                    } else {
+                        "definition"
+                    },
+                    self.hint,
+                    self.name
                 ),
                 self.original,
             )],
