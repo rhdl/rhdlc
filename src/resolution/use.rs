@@ -10,7 +10,8 @@ use super::{
 };
 use crate::error::{
     AmbiguitySource, DisambiguationError, GlobAtEntryError, GlobalPathCannotHaveSpecialIdentError,
-    ItemHint, SelfNameNotInGroupError, SpecialIdentNotAtStartOfPathError, TooManySupersError,
+    ItemHint, SelfUsageError, SelfUsageErrorCause, SpecialIdentNotAtStartOfPathError,
+    TooManySupersError,
 };
 
 #[derive(Debug, Clone)]
@@ -214,16 +215,24 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                 let found_children: Vec<NodeIndex> = if ident == "self" {
                     if !in_group {
                         self.errors.push(
-                            SelfNameNotInGroupError {
+                            SelfUsageError {
                                 file: ctx.file.clone(),
                                 name_ident: ident.clone(),
+                                cause: SelfUsageErrorCause::NotInGroup,
                             }
                             .into(),
                         );
                         return;
-                    }
-                    if ctx.previous_idents.is_empty() {
-                        todo!("self in group but the group is the first thing");
+                    } else if ctx.previous_idents.is_empty() {
+                        self.errors.push(
+                            SelfUsageError {
+                                file: ctx.file.clone(),
+                                name_ident: ident.clone(),
+                                cause: SelfUsageErrorCause::InGroupAtRoot,
+                            }
+                            .into(),
+                        );
+                        return;
                     }
                     vec![scope]
                 } else {

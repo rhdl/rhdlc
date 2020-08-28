@@ -39,7 +39,7 @@ use std::rc::Rc;
 use petgraph::{graph::NodeIndex, Direction, Graph};
 use syn::{
     visit::Visit, Ident, ItemConst, ItemEnum, ItemFn, ItemImpl, ItemMod, ItemStruct, ItemTrait,
-    ItemType, ItemUse, UseName, UseRename,
+    ItemType, ItemUse,
 };
 
 use crate::error::{InvalidRawIdentifierError, ResolutionError};

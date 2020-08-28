@@ -396,19 +396,31 @@ impl Display for UnresolvedItemError {
 }
 
 #[derive(Debug)]
-pub struct SelfNameNotInGroupError {
+pub struct SelfUsageError {
     pub file: Rc<File>,
     pub name_ident: Ident,
+    pub cause: SelfUsageErrorCause,
+}
+#[derive(Debug)]
+pub enum SelfUsageErrorCause {
+    NotInGroup,
+    InGroupAtRoot,
 }
 
-impl Display for SelfNameNotInGroupError {
+impl Display for SelfUsageError {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         render_location(
             f,
-            format!(
-                "`{}` imports are only allowed within a {{ }} list",
-                self.name_ident
-            ),
+            match self.cause {
+                SelfUsageErrorCause::InGroupAtRoot => format!(
+                    "`{}` imports are only allowed in a {{ }} list with a non-empty prefix",
+                    self.name_ident
+                ),
+                SelfUsageErrorCause::NotInGroup => format!(
+                    "`{}` imports are only allowed within a {{ }} list",
+                    self.name_ident
+                ),
+            },
             (Reference::Error, "", self.name_ident.span()),
             vec![],
             &self.file.src,
@@ -648,7 +660,7 @@ error!(ResolutionError {
     MultipleDefinitionError => MultipleDefinitionError,
     DisambiguationError => DisambiguationError,
     SpecialIdentNotAtStartOfPathError => SpecialIdentNotAtStartOfPathError,
-    SelfNameNotInGroupError => SelfNameNotInGroupError,
+    SelfUsageError => SelfUsageError,
     UnresolvedItemError => UnresolvedItemError,
     TooManySupersError => TooManySupersError,
     ItemVisibilityError => ItemVisibilityError,
