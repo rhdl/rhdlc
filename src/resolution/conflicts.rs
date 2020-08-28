@@ -10,19 +10,28 @@ use std::{
 };
 
 use super::{r#use::UseType, File, Name, Node, ResolutionError, ScopeGraph};
-use crate::error::MultipleDefinitionError;
+use crate::error::{DuplicateHint, MultipleDefinitionError};
 
 pub struct ConflictChecker<'a, 'ast> {
     pub scope_graph: &'a ScopeGraph<'ast>,
     pub errors: &'a mut Vec<ResolutionError>,
 }
 
+struct ConflictCheckerVisitor<'a, 'ast> {
+    scope_graph: &'a ScopeGraph<'ast>,
+    errors: &'a mut Vec<ResolutionError>,
+    file: &'a Rc<File>,
+}
+
 impl<'a, 'ast> ConflictChecker<'a, 'ast> {
     pub fn visit_all(&mut self) {
         for node in self.scope_graph.node_indices() {
-            if !self.scope_graph[node].is_nameless_scope() {
-                self.scope_graph[node].visit(self);
-            }
+            let mut visitor = ConflictCheckerVisitor {
+                scope_graph: self.scope_graph,
+                errors: self.errors,
+                file: Node::file(self.scope_graph, node),
+            };
+            self.scope_graph[node].visit(&mut visitor);
             let file = match &self.scope_graph[node] {
                 Node::Root { file, .. }
                 | Node::Mod {
@@ -40,6 +49,7 @@ impl<'a, 'ast> ConflictChecker<'a, 'ast> {
             self.find_name_conflicts_in(node, file);
         }
     }
+
     fn find_name_conflicts_in(&mut self, node: NodeIndex, file: &Rc<File>) {
         // Check the scope for conflicts
         let mut ident_map: HashMap<String, Vec<Name<'ast>>> = HashMap::default();
@@ -67,6 +77,7 @@ impl<'a, 'ast> ConflictChecker<'a, 'ast> {
                                 name: ident.clone(),
                                 original: i_name.span(),
                                 duplicate: j_name.span(),
+                                hint: DuplicateHint::Name,
                             }
                             .into(),
                         );
@@ -119,7 +130,7 @@ impl<'a, 'ast> ConflictChecker<'a, 'ast> {
     }
 }
 
-impl<'a, 'ast> Visit<'ast> for ConflictChecker<'a, 'ast> {
+impl<'a, 'ast> Visit<'ast> for ConflictCheckerVisitor<'a, 'ast> {
     fn visit_file(&mut self, _file: &'ast SynFile) {
         // purposefully do nothing so we don't recurse out of this scope
     }
@@ -133,11 +144,20 @@ impl<'a, 'ast> Visit<'ast> for ConflictChecker<'a, 'ast> {
     }
 
     fn visit_fields(&mut self, fields: &'ast Fields) {
-        let mut seen_idents = HashSet::new();
+        let mut seen_idents: HashSet<&Ident> = HashSet::new();
         for field in fields.iter() {
             if let Some(ident) = field.ident.as_ref() {
                 if let Some(previous_ident) = seen_idents.get(ident) {
-                    // error
+                    self.errors.push(
+                        MultipleDefinitionError {
+                            file: self.file.clone(),
+                            name: ident.to_string(),
+                            original: previous_ident.span(),
+                            duplicate: ident.span(),
+                            hint: DuplicateHint::Field,
+                        }
+                        .into(),
+                    );
                 }
                 seen_idents.insert(ident);
             }
@@ -145,11 +165,20 @@ impl<'a, 'ast> Visit<'ast> for ConflictChecker<'a, 'ast> {
     }
 
     fn visit_item_enum(&mut self, item_enum: &'ast ItemEnum) {
-        let mut seen_idents = HashSet::new();
+        let mut seen_idents: HashSet<&Ident> = HashSet::new();
         for variant in item_enum.variants.iter() {
             self.visit_fields(&variant.fields);
             if let Some(previous_ident) = seen_idents.get(&variant.ident) {
-                // error
+                self.errors.push(
+                    MultipleDefinitionError {
+                        file: self.file.clone(),
+                        name: variant.ident.to_string(),
+                        original: previous_ident.span(),
+                        duplicate: variant.ident.span(),
+                        hint: DuplicateHint::Variant,
+                    }
+                    .into(),
+                );
             }
             seen_idents.insert(&variant.ident);
         }
@@ -173,14 +202,24 @@ impl<'a, 'ast> Visit<'ast> for ConflictChecker<'a, 'ast> {
         }
         let mut signature_visitor = SignatureVisitor::default();
         signature_visitor.visit_signature(sig);
+        self.visit_generics(&sig.generics);
     }
 
     /// Conflicting generics/lifetimes
     fn visit_generics(&mut self, generics: &'ast Generics) {
-        let mut seen_idents = HashSet::new();
+        let mut seen_idents: HashSet<&Ident> = HashSet::new();
         for type_param in generics.type_params() {
             if let Some(previous_ident) = seen_idents.get(&type_param.ident) {
-                // error
+                self.errors.push(
+                    MultipleDefinitionError {
+                        file: self.file.clone(),
+                        name: type_param.ident.to_string(),
+                        original: previous_ident.span(),
+                        duplicate: type_param.ident.span(),
+                        hint: DuplicateHint::TypeParam,
+                    }
+                    .into(),
+                );
             }
             seen_idents.insert(&type_param.ident);
         }
@@ -188,7 +227,16 @@ impl<'a, 'ast> Visit<'ast> for ConflictChecker<'a, 'ast> {
         seen_idents.clear();
         for lifetime in generics.lifetimes() {
             if let Some(previous_ident) = seen_idents.get(&lifetime.lifetime.ident) {
-                // error
+                self.errors.push(
+                    MultipleDefinitionError {
+                        file: self.file.clone(),
+                        name: lifetime.lifetime.ident.to_string(),
+                        original: previous_ident.span(),
+                        duplicate: lifetime.lifetime.ident.span(),
+                        hint: DuplicateHint::Lifetime,
+                    }
+                    .into(),
+                );
             }
             seen_idents.insert(&lifetime.lifetime.ident);
         }

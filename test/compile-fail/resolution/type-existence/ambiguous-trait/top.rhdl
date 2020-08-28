@@ -1,0 +1,3 @@
+struct a<T: b> {}
+trait b {}
+trait b {}

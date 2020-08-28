@@ -7,7 +7,9 @@ use syn::{
     TypePath,
 };
 
-use crate::error::ResolutionError;
+use crate::error::{
+    AmbiguitySource, DisambiguationError, ItemHint, ResolutionError, UnresolvedItemError,
+};
 use crate::resolution::{path::PathFinder, Node, ScopeGraph};
 
 pub struct TypeExistenceChecker<'a, 'ast> {
@@ -16,8 +18,8 @@ pub struct TypeExistenceChecker<'a, 'ast> {
 }
 
 struct TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
-    pub scope_graph: &'a ScopeGraph<'ast>,
-    pub errors: &'a mut Vec<ResolutionError>,
+    scope_graph: &'a ScopeGraph<'ast>,
+    errors: &'a mut Vec<ResolutionError>,
     scope: NodeIndex,
     generics: Vec<&'c Generics>,
     found_type_paths: HashMap<&'c Path, Vec<NodeIndex>>,
@@ -45,7 +47,7 @@ impl<'a, 'ast> TypeExistenceChecker<'a, 'ast> {
 }
 
 impl<'a, 'c, 'ast> TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
-    fn find_trait(&self, path: &Path) -> Result<NodeIndex, ResolutionError> {
+    fn find_trait(&mut self, path: &Path) -> Result<NodeIndex, ResolutionError> {
         let res = {
             let mut path_finder = PathFinder {
                 scope_graph: &self.scope_graph,
@@ -59,12 +61,38 @@ impl<'a, 'c, 'ast> TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
                 .iter()
                 .filter(|i| self.scope_graph[**i].is_trait())
                 .count();
-            if num_matching == 0 {
-                todo!("no such trait");
-            } else if num_matching > 1 {
-                todo!("ambiguous trait name");
+            if num_matching != 1 {
+                let file = Node::file(self.scope_graph, self.scope).clone();
+                let previous_ident = path
+                    .segments
+                    .iter()
+                    .rev()
+                    .skip(1)
+                    .next()
+                    .map(|seg| seg.ident.clone());
+                let ident = path.segments.iter().last().unwrap().ident.clone();
+                if num_matching == 0 {
+                    Err(UnresolvedItemError {
+                        file,
+                        previous_ident,
+                        unresolved_ident: ident,
+                        hint: ItemHint::Trait,
+                    }
+                    .into())
+                } else {
+                    Err(DisambiguationError {
+                        file,
+                        ident,
+                        src: AmbiguitySource::Item(ItemHint::Trait),
+                    }
+                    .into())
+                }
+            } else {
+                Ok(*matching.iter()
+                    .filter(|i| self.scope_graph[**i].is_trait())
+                    .next()
+                    .unwrap())
             }
-            Ok(*matching.first().unwrap())
         })
     }
 }

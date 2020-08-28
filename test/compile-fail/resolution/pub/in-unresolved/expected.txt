@@ -1,4 +1,4 @@
-error: unresolved item `b`
+error: unresolved mod `b`
  --> top.rhdl:1:14
   |
 1 | pub(in crate::b) struct a {}

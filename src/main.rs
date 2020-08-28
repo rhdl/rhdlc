@@ -82,8 +82,13 @@ mod test {
     }
 
     #[test]
-    fn compile_fail_resolution_redefinition() {
-        fail_test_looper("./test/compile-fail/resolution/redefinition")
+    fn compile_fail_resolution_conflicts() {
+        fail_test_looper("./test/compile-fail/resolution/conflicts")
+    }
+
+    #[test]
+    fn compile_fail_resolution_type_existence() {
+        fail_test_looper("./test/compile-fail/resolution/type-existence")
     }
 
     #[test]

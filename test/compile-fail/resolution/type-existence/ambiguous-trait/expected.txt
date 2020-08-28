@@ -1,0 +1,12 @@
+error: the name `b` is defined multiple times
+ --> top.rhdl:3:6
+  |
+2 | trait b {}
+  |       - previous definition of the name `b` here
+3 | trait b {}
+  |       ^ `b` redefined here
+error: `b` is ambiguous (trait versus other traits found during resolution)
+ --> top.rhdl:1:12
+  |
+1 | struct a<T: b> {}
+  |             ^ ambiguous name

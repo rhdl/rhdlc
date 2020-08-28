@@ -74,7 +74,7 @@ impl<'ast> Name<'ast> {
         self.in_same_name_class(other) && self.has_same_ident(other)
     }
 
-    pub fn ident(&self) -> &syn::Ident {
+    pub fn ident(&self) -> &'ast syn::Ident {
         use Name::*;
         match self {
             Fn(ident) | Var(ident) | Macro(ident) | Type(ident) | Mod(ident) | Crate(ident)

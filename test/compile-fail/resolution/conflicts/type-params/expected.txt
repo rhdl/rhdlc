@@ -1,0 +1,7 @@
+error: the type parameter `T` is defined multiple times
+ --> top.rhdl:1:8
+  |
+1 | fn a<T, T>() {}
+  |      - previous definition of the type parameter `T` here
+1 | fn a<T, T>() {}
+  |         ^ `T` redefined here

@@ -1,4 +1,4 @@
-error: unresolved item `a`
+error: unresolved crate or mod `a`
  --> top.rhdl:1:4
   |
 1 | use a::b;

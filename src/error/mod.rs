@@ -191,13 +191,39 @@ pub struct MultipleDefinitionError {
     pub name: String,
     pub original: Span,
     pub duplicate: Span,
+    pub hint: DuplicateHint,
+}
+
+#[derive(Debug)]
+pub enum DuplicateHint {
+    Variant,
+    Name,
+    Lifetime,
+    TypeParam,
+    Field,
+}
+
+impl Display for DuplicateHint {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        use DuplicateHint::*;
+        match self {
+            Variant => write!(f, "variant"),
+            Name => write!(f, "name"),
+            Lifetime => write!(f, "lifetime"),
+            TypeParam => write!(f, "type parameter"),
+            Field => write!(f, "field"),
+        }
+    }
 }
 
 impl Display for MultipleDefinitionError {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         render_location(
             f,
-            format!("the name `{}` is defined multiple times", self.name),
+            format!(
+                "the {} `{}` is defined multiple times",
+                self.hint, self.name
+            ),
             (
                 Reference::Error,
                 &format!("`{}` redefined here", self.name),
@@ -205,7 +231,10 @@ impl Display for MultipleDefinitionError {
             ),
             vec![(
                 Reference::Info,
-                &format!("previous definition of the type `{}` here", self.name),
+                &format!(
+                    "previous definition of the {} `{}` here",
+                    self.hint, self.name
+                ),
                 self.original,
             )],
             &self.file.src,
@@ -247,13 +276,12 @@ impl Display for SpecialIdentNotAtStartOfPathError {
 pub struct DisambiguationError {
     pub file: Rc<File>,
     pub ident: Ident,
-    pub this: AmbiguitySource,
-    pub other: AmbiguitySource,
+    pub src: AmbiguitySource,
 }
 
 #[derive(Debug)]
 pub enum AmbiguitySource {
-    Name,
+    Item(ItemHint),
     Glob,
 }
 
@@ -261,7 +289,7 @@ impl Display for AmbiguitySource {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         use AmbiguitySource::*;
         match self {
-            Name => write!(f, "name"),
+            Item(hint) => write!(f, "{}", hint),
             Glob => write!(f, "glob"),
         }
     }
@@ -273,7 +301,7 @@ impl Display for DisambiguationError {
             f,
             format!(
                 "`{}` is ambiguous ({} versus other {}s found during resolution)",
-                self.ident, self.this, self.other
+                self.ident, self.src, self.src
             ),
             (Reference::Error, "ambiguous name", self.ident.span()),
             vec![],
@@ -332,7 +360,7 @@ impl Display for UnresolvedItemError {
         };
         render_location(
             f,
-            format!("unresolved item `{}`", self.unresolved_ident),
+            format!("unresolved {} `{}`", self.hint, self.unresolved_ident),
             (
                 Reference::Error,
                 &reference_msg,
@@ -418,12 +446,11 @@ impl Display for ItemVisibilityError {
     }
 }
 
-
 #[derive(Debug)]
 pub struct ScopeVisibilityError {
     pub file: Rc<File>,
     pub ident: Ident,
-    pub hint: ItemHint
+    pub hint: ItemHint,
 }
 
 impl Display for ScopeVisibilityError {
@@ -611,5 +638,4 @@ error!(ResolutionError {
     NonAncestralError => NonAncestralError,
     ScopeVisibilityError => ScopeVisibilityError,
 });
-
 error!(TypeError {});

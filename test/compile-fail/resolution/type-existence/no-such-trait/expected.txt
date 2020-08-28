@@ -1,0 +1,5 @@
+error: unresolved trait `b`
+ --> top.rhdl:1:12
+  |
+1 | struct a<T: b> {}
+  |             ^ no `b` trait

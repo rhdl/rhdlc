@@ -146,8 +146,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
             (false, false) => Err(DisambiguationError {
                 file: ctx.file.clone(),
                 ident: ident.clone(),
-                this: AmbiguitySource::Name,
-                other: AmbiguitySource::Name,
+                src: AmbiguitySource::Item(hint),
             }
             .into()),
             (true, false) => Ok(local),

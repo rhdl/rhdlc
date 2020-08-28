@@ -2,6 +2,6 @@ error: the name `b` is defined multiple times
  --> top.rhdl:2:3
   |
 1 | struct b {}
-  |        - previous definition of the type `b` here
+  |        - previous definition of the name `b` here
 2 | fn b() {}
   |    ^ `b` redefined here

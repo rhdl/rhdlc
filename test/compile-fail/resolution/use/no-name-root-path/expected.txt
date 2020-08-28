@@ -1,4 +1,4 @@
-error: unresolved item `c`
+error: unresolved crate `c`
  --> top.rhdl:6:14
   |
 6 |         use ::c::d;
