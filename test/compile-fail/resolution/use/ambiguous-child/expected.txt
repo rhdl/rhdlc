@@ -1,0 +1,12 @@
+error: `b` is ambiguous (mod versus other mods found during resolution)
+  --> top.rhdl:10:7
+   |
+10 | use a::b::c;
+   |        ^ ambiguous name
+error: the name `b` is defined multiple times
+ --> top.rhdl:5:12
+  |
+2 |     pub mod b {
+  |             - previous definition of the name `b` here
+5 |     pub mod b {
+  |             ^ `b` redefined here

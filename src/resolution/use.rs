@@ -9,8 +9,8 @@ use super::{
     Node, ResolutionError, ScopeGraph,
 };
 use crate::error::{
-    GlobAtEntryError, GlobalPathCannotHaveSpecialIdentError, SelfNameNotInGroupError,
-    SpecialIdentNotAtStartOfPathError, TooManySupersError,
+    AmbiguitySource, DisambiguationError, GlobAtEntryError, GlobalPathCannotHaveSpecialIdentError,
+    ItemHint, SelfNameNotInGroupError, SpecialIdentNotAtStartOfPathError, TooManySupersError,
 };
 
 #[derive(Debug, Clone)]
@@ -186,7 +186,22 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                                 }
                             };
                         if found_children.len() > 1 {
-                            todo!("disambiguation error");
+                            self.errors.push(
+                                DisambiguationError {
+                                    file: ctx.file.clone(),
+                                    ident: path.ident.clone(),
+                                    src: AmbiguitySource::Item(
+                                        if is_entry && ctx.has_leading_colon {
+                                            ItemHint::ExternalNamedScope
+                                        } else if is_entry {
+                                            ItemHint::InternalNamedChildOrExternalNamedScope
+                                        } else {
+                                            ItemHint::InternalNamedChildScope
+                                        },
+                                    ),
+                                }
+                                .into(),
+                            );
                         }
                         *found_children.first().unwrap()
                     }

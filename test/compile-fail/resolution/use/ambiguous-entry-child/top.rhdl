@@ -1,0 +1,8 @@
+mod a {
+    pub mod b {}
+}
+mod a {
+    pub mod b {}
+}
+
+use a::b;
