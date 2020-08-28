@@ -1,0 +1,5 @@
+error: unresolved item `b`
+ --> top.rhdl:1:10
+  |
+1 | fn a() -> b {}
+  |           ^ no `b` item

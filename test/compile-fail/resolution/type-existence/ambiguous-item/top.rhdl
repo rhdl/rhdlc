@@ -1,0 +1,6 @@
+struct a {
+    b: d,
+    c: d,
+}
+enum d {}
+struct d {}

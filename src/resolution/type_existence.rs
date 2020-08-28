@@ -88,7 +88,8 @@ impl<'a, 'c, 'ast> TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
                     .into())
                 }
             } else {
-                Ok(*matching.iter()
+                Ok(*matching
+                    .iter()
                     .filter(|i| self.scope_graph[**i].is_trait())
                     .next()
                     .unwrap())
@@ -249,14 +250,37 @@ impl<'a, 'c, 'ast> Visit<'c> for TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
             .iter()
             .filter(|i| self.scope_graph[**i].is_type())
             .count();
-        if num_matching == 0 {
-            todo!("no such type");
-        } else if num_matching > 1 {
-            todo!(
-                "ambiguous type: {:?} {:?}",
-                self.scope_graph[self.scope].names(),
-                self.scope_graph[*matching.first().unwrap()].names()
-            );
+        if num_matching != 1 {
+            let file = Node::file(self.scope_graph, self.scope).clone();
+            let previous_ident = type_path
+                .path
+                .segments
+                .iter()
+                .rev()
+                .skip(1)
+                .next()
+                .map(|seg| seg.ident.clone());
+            let ident = type_path.path.segments.iter().last().unwrap().ident.clone();
+            if num_matching == 0 {
+                self.errors.push(
+                    UnresolvedItemError {
+                        file,
+                        previous_ident,
+                        unresolved_ident: ident,
+                        hint: ItemHint::Trait,
+                    }
+                    .into(),
+                );
+            } else if num_matching > 1 {
+                self.errors.push(
+                    DisambiguationError {
+                        file,
+                        ident,
+                        src: AmbiguitySource::Item(ItemHint::Item),
+                    }
+                    .into(),
+                );
+            }
         }
     }
 }
