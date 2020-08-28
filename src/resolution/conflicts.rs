@@ -215,7 +215,6 @@ impl<'a, 'ast> Visit<'ast> for ConflictCheckerVisitor<'a, 'ast> {
             seen_idents: Default::default(),
         };
         signature_visitor.visit_signature(sig);
-        dbg!(sig);
         self.visit_generics(&sig.generics);
     }
 

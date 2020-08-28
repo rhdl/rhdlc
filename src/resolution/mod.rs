@@ -259,6 +259,13 @@ impl<'ast> Node<'ast> {
         }
     }
 
+    fn is_impl(&self) -> bool {
+        match self {
+            Self::Impl { .. } => true,
+            _ => false,
+        }
+    }
+
     fn is_type(&self) -> bool {
         match self {
             Self::Struct { .. } | Self::Type { .. } | Self::Enum { .. } => true,

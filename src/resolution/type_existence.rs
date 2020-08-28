@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use petgraph::graph::NodeIndex;
 use syn::{
     visit::Visit, File, Generics, ImplItemMethod, ImplItemType, Item, ItemFn, ItemImpl, ItemMod,
-    Path, PathSegment, TraitBound, TraitItemMethod, TraitItemType, TypeParam, TypeParamBound,
-    TypePath,
+    Path, PathSegment, Receiver, TraitBound, TraitItemMethod, TraitItemType, TypeParam,
+    TypeParamBound, TypePath,
 };
 
 use crate::error::{
@@ -215,8 +215,6 @@ impl<'a, 'c, 'ast> Visit<'c> for TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
             // * is_type includes type aliases which could actually point to trait
             // * also need to skip self so the type alias doesn't point to itself
             // * also avoid T that uses T in its type param bound
-            // TODO: I'd like a way to aggressively gate duplicate ident errors early on
-            // so they aren't being seen here
             let is_type_param = self.generics.iter().rev().any(|generic| {
                 generic
                     .type_params()

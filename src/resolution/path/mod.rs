@@ -260,7 +260,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                                         self.matches(
                                             ctx,
                                             i,
-                                            ident_to_look_for,
+                                            &rename.ident,
                                             paths_only,
                                             glob_only,
                                         )
