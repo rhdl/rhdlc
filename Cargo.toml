@@ -17,6 +17,7 @@ env_logger = "0"
 petgraph = "0.5"
 strsim = "0.10"
 clap = "2"
+fnv = "1"
 
 [features]
 no-color = ["colored/no-color"]

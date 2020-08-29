@@ -1,13 +1,11 @@
+use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
 use petgraph::graph::NodeIndex;
 use syn::{
     visit::Visit, Fields, File as SynFile, Generics, Ident, Item, ItemEnum, ItemMod, PatIdent,
     Signature, UseName, UseRename,
 };
 
-use std::{
-    collections::{HashMap, HashSet},
-    rc::Rc,
-};
+use std::rc::Rc;
 
 use super::{r#use::UseType, File, Name, Node, ResolutionError, ScopeGraph};
 use crate::error::{DuplicateHint, MultipleDefinitionError};
@@ -144,7 +142,7 @@ impl<'a, 'ast> Visit<'ast> for ConflictCheckerVisitor<'a, 'ast> {
     }
 
     fn visit_fields(&mut self, fields: &'ast Fields) {
-        let mut seen_idents: HashSet<&Ident> = HashSet::new();
+        let mut seen_idents: HashSet<&Ident> = HashSet::default();
         for field in fields.iter() {
             if let Some(ident) = field.ident.as_ref() {
                 if let Some(previous_ident) = seen_idents.get(ident) {
@@ -165,7 +163,7 @@ impl<'a, 'ast> Visit<'ast> for ConflictCheckerVisitor<'a, 'ast> {
     }
 
     fn visit_item_enum(&mut self, item_enum: &'ast ItemEnum) {
-        let mut seen_idents: HashSet<&Ident> = HashSet::new();
+        let mut seen_idents: HashSet<&Ident> = HashSet::default();
         for variant in item_enum.variants.iter() {
             self.visit_fields(&variant.fields);
             if let Some(previous_ident) = seen_idents.get(&variant.ident) {
@@ -220,7 +218,7 @@ impl<'a, 'ast> Visit<'ast> for ConflictCheckerVisitor<'a, 'ast> {
 
     /// Conflicting generics/lifetimes
     fn visit_generics(&mut self, generics: &'ast Generics) {
-        let mut seen_idents: HashSet<&Ident> = HashSet::new();
+        let mut seen_idents: HashSet<&Ident> = HashSet::default();
         for type_param in generics.type_params() {
             if let Some(previous_ident) = seen_idents.get(&type_param.ident) {
                 self.errors.push(

@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use fnv::FnvHashSet as HashSet;
 use std::rc::Rc;
 
 use petgraph::{graph::NodeIndex, Direction};

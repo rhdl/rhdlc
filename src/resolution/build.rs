@@ -1,5 +1,4 @@
-use std::collections::HashMap;
-
+use fnv::FnvHashMap as HashMap;
 use log::error;
 use petgraph::{graph::NodeIndex, visit::EdgeRef};
 use syn::{

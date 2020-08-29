@@ -31,11 +31,11 @@
 ///             * use [strsim](https://docs.rs/strsim/0.10.0/strsim/) for Ident similarity
 ///             * heuristic guess by type (fn, struct, var, mod, etc.)
 ///         * fall back all the way to "not found" if nothing is similar
-use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
 use std::fmt::Display;
 use std::rc::Rc;
 
+use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
 use petgraph::{graph::NodeIndex, Direction, Graph};
 use syn::{
     visit::Visit, Ident, ItemConst, ItemEnum, ItemFn, ItemImpl, ItemMod, ItemStruct, ItemTrait,
