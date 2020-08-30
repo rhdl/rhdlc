@@ -3,7 +3,7 @@ use std::rc::Rc;
 
 use syn::{Ident, Path};
 
-use super::{r#use::UseType, Branch, ResolutionGraph, ResolutionIndex, ResolutionNode};
+use super::{ResolutionGraph, ResolutionIndex};
 use crate::error::*;
 use crate::find_file::File;
 
@@ -24,7 +24,7 @@ impl<'ast> TracingContext<'ast> {
         has_leading_colon: bool,
     ) -> Self {
         let mut root = dest;
-        while let Some(parent) = resolution_graph.inner[dest].parent() {
+        while let Some(parent) = resolution_graph.inner[root].parent() {
             root = parent;
         }
         Self {
