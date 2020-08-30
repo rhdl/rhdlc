@@ -4,7 +4,7 @@ use std::io::Read;
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use petgraph::{graph::NodeIndex, Graph};
+use fnv::FnvHashMap as HashMap;
 use syn::{spanned::Spanned, Ident, Item, ItemMod};
 
 use crate::error::{
@@ -17,9 +17,39 @@ pub struct File {
     pub content: String,
     pub syn: syn::File,
     pub src: FileContentSource,
+    pub parent: Option<FileGraphIndex>,
 }
 
-pub type FileGraph = Graph<Rc<File>, Vec<Ident>>;
+#[derive(Default, Debug)]
+pub struct FileGraph {
+    pub inner: Vec<Rc<File>>,
+    pub roots: Vec<FileGraphIndex>,
+    pub children: HashMap<FileGraphIndex, Vec<(Vec<Ident>, FileGraphIndex)>>,
+}
+
+impl FileGraph {
+    fn add_node(&mut self, file: Rc<File>, parent: Option<FileGraphIndex>) -> FileGraphIndex {
+        let idx = self.inner.len();
+        self.inner.push(file);
+        if let None = parent {
+            self.roots.push(idx);
+        }
+        idx
+    }
+
+    fn add_edge(&mut self, parent: FileGraphIndex, idents: Vec<Ident>, child: FileGraphIndex) {
+        self.children
+            .entry(parent)
+            .or_default()
+            .push((idents, child));
+    }
+
+    pub fn node_indices(&self) -> impl Iterator<Item = FileGraphIndex> {
+        0..self.inner.len()
+    }
+}
+
+pub type FileGraphIndex = usize;
 
 const STDIN_FALLBACK_EXTENSION: &str = "rhdl";
 
@@ -31,7 +61,7 @@ pub struct FileFinder {
     pub file_graph: FileGraph,
     pub errors: Vec<FileFindingError>,
     cwd: PathBuf,
-    ancestry: Vec<NodeIndex>,
+    ancestry: Vec<FileGraphIndex>,
     extension: String,
 }
 
@@ -58,11 +88,13 @@ impl FileFinder {
             FileContentSource::File(path) => Some(path.clone()),
             _ => None,
         };
-        match Self::find(src, None) {
+        match Self::find(src, None, None) {
             Ok(file) => {
-                let idx = self.file_graph.add_node(file.into());
+                let idx = self
+                    .file_graph
+                    .add_node(file.into(), self.ancestry.last().cloned());
                 self.ancestry.push(idx);
-                let mods: Vec<ItemMod> = self.file_graph[idx]
+                let mods: Vec<ItemMod> = self.file_graph.inner[idx]
                     .syn
                     .items
                     .iter()
@@ -97,7 +129,7 @@ impl FileFinder {
                     .unwrap_or_else(|| STDIN_FALLBACK_EXTENSION.to_owned());
 
                 for m in mods {
-                    let file = self.file_graph[idx].clone();
+                    let file = self.file_graph.inner[idx].clone();
                     let module_span = m.span();
                     if m.content.is_none() {
                         self.find_mod(
@@ -140,10 +172,12 @@ impl FileFinder {
             Self::find(
                 FileContentSource::File(mod_file_path.clone()),
                 Some(span.clone()),
+                self.ancestry.last().cloned(),
             ),
             Self::find(
                 FileContentSource::File(mod_folder_file_path.clone()),
                 Some(span.clone()),
+                self.ancestry.last().cloned(),
             ),
         ) {
             (Ok(found_file), Err(_)) | (Err(_), Ok(found_file)) => found_file,
@@ -219,17 +253,18 @@ impl FileFinder {
             })
             .cloned()
             .collect();
-        let idx = self.file_graph.add_node(found_file.into());
-        if let Some(parent) = self.ancestry.last() {
-            // Ok to use the cloned ident
+        let idx = self
+            .file_graph
+            .add_node(found_file.into(), self.ancestry.last().cloned());
+        if let Some(parent) = self.ancestry.last().cloned() {
             self.file_graph
-                .add_edge(*parent, idx, span.ident_path.clone());
+                .add_edge(parent, span.ident_path.clone(), idx);
         }
 
         self.ancestry.push(idx);
         for m in mods {
             let module_span = m.span();
-            let file = self.file_graph[idx].clone();
+            let file = self.file_graph.inner[idx].clone();
             if m.content.is_none() {
                 self.find_mod(
                     m,
@@ -287,6 +322,7 @@ impl FileFinder {
     fn find(
         mut src: FileContentSource,
         span: Option<SpanSource>,
+        parent: Option<FileGraphIndex>,
     ) -> Result<File, FileFindingError> {
         let content = match &mut src {
             FileContentSource::File(path) => fs::File::open(&path).and_then(|mut f| {
@@ -307,7 +343,12 @@ impl FileFinder {
                     src,
                 }
                 .into()),
-                Ok(syn) => Ok(File { src, content, syn }),
+                Ok(syn) => Ok(File {
+                    src,
+                    content,
+                    syn,
+                    parent,
+                }),
             },
             Err(cause) => Err(WrappedIoError { cause, src, span }.into()),
         }

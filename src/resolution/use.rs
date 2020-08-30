@@ -1,12 +1,11 @@
 use fnv::FnvHashSet as HashSet;
 
 use log::error;
-use petgraph::{graph::NodeIndex, Direction};
 use syn::{UseName, UseRename, UseTree};
 
 use super::{
     path::{r#mut::PathFinder, TracingContext},
-    Node, ResolutionError, ScopeGraph,
+    Branch, ResolutionError, ResolutionGraph, ResolutionIndex, ResolutionNode,
 };
 use crate::error::{
     AmbiguitySource, DisambiguationError, GlobAtEntryError, GlobalPathCannotHaveSpecialIdentError,
@@ -20,41 +19,47 @@ pub enum UseType<'ast> {
     /// Could be ambiguous
     Name {
         name: &'ast UseName,
-        indices: Vec<NodeIndex>,
+        indices: Vec<ResolutionIndex>,
     },
     /// Optionally include all items/mods from the scope
-    Glob { scope: NodeIndex },
+    Glob { scope: ResolutionIndex },
     /// Pull a particular name into scope, but give it a new name (so as to avoid any conflicts)
     /// Could be ambiguous
     Rename {
         rename: &'ast UseRename,
-        indices: Vec<NodeIndex>,
+        indices: Vec<ResolutionIndex>,
     },
 }
 
 pub struct UseResolver<'a, 'ast> {
-    pub scope_graph: &'a mut ScopeGraph<'ast>,
+    pub resolution_graph: &'a mut ResolutionGraph<'ast>,
     pub errors: &'a mut Vec<ResolutionError>,
-    pub resolved_uses: &'a mut HashSet<NodeIndex>,
+    pub resolved_uses: &'a mut HashSet<ResolutionIndex>,
 }
 
 impl<'a, 'ast> UseResolver<'a, 'ast> {
-    pub fn resolve_use(&mut self, dest: NodeIndex) {
-        let item_use = match &self.scope_graph[dest] {
-            Node::Use { item_use, .. } => item_use,
+    pub fn resolve_use(&mut self, dest: ResolutionIndex) {
+        let item_use = match &self.resolution_graph.inner[dest] {
+            ResolutionNode::Branch {
+                branch: Branch::Use(item_use),
+                ..
+            } => item_use,
             _ => return,
         };
         let has_leading_colon = item_use.leading_colon.is_some();
         self.trace_use_entry_reenterable(&mut TracingContext::new(
-            self.scope_graph,
+            self.resolution_graph,
             dest,
             has_leading_colon,
         ));
     }
 
     pub fn trace_use_entry_reenterable(&mut self, ctx: &mut TracingContext<'ast>) {
-        let tree = match &self.scope_graph[ctx.dest] {
-            Node::Use { item_use, .. } => &item_use.tree,
+        let tree = match &self.resolution_graph.inner[ctx.dest] {
+            ResolutionNode::Branch {
+                branch: Branch::Use(item_use),
+                ..
+            } => &item_use.tree,
             _ => return,
         };
         if self.resolved_uses.contains(&ctx.dest) {
@@ -63,15 +68,11 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
         self.resolved_uses.insert(ctx.dest);
         let scope = if ctx.has_leading_colon {
             // just give any old dummy node because it'll have to be ignored in path/name finding
-            NodeIndex::new(0)
+            0
         } else {
             let mut scope = ctx.dest;
-            while self.scope_graph[scope].is_nameless_scope() {
-                scope = self
-                    .scope_graph
-                    .neighbors_directed(scope, Direction::Incoming)
-                    .next()
-                    .unwrap();
+            while !self.resolution_graph.inner[scope].is_valid_use_path_segment() {
+                scope = self.resolution_graph.inner[scope].parent().unwrap();
             }
             scope
         };
@@ -82,7 +83,7 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
     fn trace_use(
         &mut self,
         ctx: &mut TracingContext<'ast>,
-        scope: NodeIndex,
+        scope: ResolutionIndex,
         tree: &'ast UseTree,
         in_group: bool,
     ) {
@@ -126,22 +127,15 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                         if path_ident == "self" {
                             scope
                         } else if path_ident == "super" {
-                            let mut use_grandparent = self
-                                .scope_graph
-                                .neighbors_directed(scope, Direction::Incoming)
-                                .next();
+                            let mut use_grandparent = self.resolution_graph.inner[scope].parent();
                             while use_grandparent
-                                .as_ref()
-                                .map(|i| self.scope_graph[*i].is_nameless_scope())
+                                .map(|i| {
+                                    !self.resolution_graph.inner[i].is_valid_use_path_segment()
+                                })
                                 .unwrap_or_default()
                             {
-                                use_grandparent = self
-                                    .scope_graph
-                                    .neighbors_directed(
-                                        *use_grandparent.as_ref().unwrap(),
-                                        Direction::Incoming,
-                                    )
-                                    .next();
+                                use_grandparent =
+                                    self.resolution_graph.inner[use_grandparent.unwrap()].parent();
                             }
                             if let Some(use_grandparent) = use_grandparent {
                                 use_grandparent
@@ -157,10 +151,7 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                             }
                         } else if path_ident == "crate" {
                             let mut root = scope;
-                            while let Some(next_parent) = self
-                                .scope_graph
-                                .neighbors_directed(root, Direction::Incoming)
-                                .next()
+                            while let Some(next_parent) = self.resolution_graph.inner[root].parent()
                             {
                                 root = next_parent;
                             }
@@ -173,7 +164,7 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                     // Default case: enter the matching child scope
                     false => {
                         let mut path_finder = PathFinder {
-                            scope_graph: self.scope_graph,
+                            resolution_graph: self.resolution_graph,
                             errors: self.errors,
                             resolved_uses: self.resolved_uses,
                             visited_glob_scopes: Default::default(),
@@ -212,7 +203,7 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                 ctx.previous_idents.pop();
             }
             Name(UseName { ident, .. }) | Rename(UseRename { ident, .. }) => {
-                let found_children: Vec<NodeIndex> = if ident == "self" {
+                let found_children: Vec<ResolutionIndex> = if ident == "self" {
                     if !in_group {
                         self.errors.push(
                             SelfUsageError {
@@ -237,7 +228,7 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                     vec![scope]
                 } else {
                     let mut path_finder = PathFinder {
-                        scope_graph: self.scope_graph,
+                        resolution_graph: self.resolution_graph,
                         errors: self.errors,
                         resolved_uses: self.resolved_uses,
                         visited_glob_scopes: Default::default(),
@@ -250,16 +241,16 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                         }
                     }
                 };
-                if let Node::Use { imports, .. } = &mut self.scope_graph[ctx.dest] {
+                if let Some(children) = self.resolution_graph.inner[ctx.dest].children_mut() {
                     match tree {
-                        Name(name) => imports.entry(scope).or_default().push(UseType::Name {
-                            name,
-                            indices: found_children,
-                        }),
-                        Rename(rename) => imports.entry(scope).or_default().push(UseType::Rename {
-                            rename,
-                            indices: found_children,
-                        }),
+                        Name(name) => children
+                            .entry(Some(&name.ident))
+                            .or_default()
+                            .extend(&found_children),
+                        Rename(rename) => children
+                            .entry(Some(&rename.rename))
+                            .or_default()
+                            .extend(&found_children),
                         _ => {}
                     }
                 }
@@ -287,11 +278,8 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                     );
                     return;
                 }
-                if let Node::Use { imports, .. } = &mut self.scope_graph[ctx.dest] {
-                    imports
-                        .entry(scope)
-                        .or_default()
-                        .push(UseType::Glob { scope })
+                if let Some(mut children) = self.resolution_graph.inner[ctx.dest].children_mut() {
+                    children.entry(None).or_default().push(scope)
                 }
             }
             Group(group) => group

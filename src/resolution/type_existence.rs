@@ -1,6 +1,5 @@
 use fnv::FnvHashMap as HashMap;
 
-use petgraph::graph::NodeIndex;
 use syn::{
     visit::Visit, File, Generics, ImplItemMethod, ImplItemType, Item, ItemFn, ItemImpl, ItemMod,
     Path, PathSegment, Receiver, TraitBound, TraitItemMethod, TraitItemType, TypeParam,
@@ -10,47 +9,43 @@ use syn::{
 use crate::error::{
     AmbiguitySource, DisambiguationError, ItemHint, ResolutionError, UnresolvedItemError,
 };
-use crate::resolution::{path::PathFinder, Node, ScopeGraph};
+use crate::resolution::{
+    path::PathFinder, Branch, ResolutionGraph, ResolutionIndex, ResolutionNode,
+};
 
 pub struct TypeExistenceChecker<'a, 'ast> {
-    pub scope_graph: &'a ScopeGraph<'ast>,
+    pub resolution_graph: &'a ResolutionGraph<'ast>,
     pub errors: &'a mut Vec<ResolutionError>,
 }
 
 struct TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
-    scope_graph: &'a ScopeGraph<'ast>,
+    resolution_graph: &'a ResolutionGraph<'ast>,
     errors: &'a mut Vec<ResolutionError>,
-    scope: NodeIndex,
+    scope: ResolutionIndex,
     generics: Vec<&'c Generics>,
-    found_type_paths: HashMap<&'c Path, Vec<NodeIndex>>,
 }
 
 impl<'a, 'ast> TypeExistenceChecker<'a, 'ast> {
     pub fn visit_all(&mut self) {
-        for scope in self.scope_graph.node_indices() {
-            if !self.scope_graph[scope].is_nameless_scope() {
+        for scope in self.resolution_graph.node_indices() {
+            if self.resolution_graph.inner[scope].is_type_existence_checking_candidate() {
                 let mut ctx_checker = TypeExistenceCheckerVisitor {
-                    scope_graph: self.scope_graph,
+                    resolution_graph: self.resolution_graph,
                     errors: self.errors,
-                    scope: scope,
+                    scope,
                     generics: Default::default(),
-                    found_type_paths: Default::default(),
                 };
-                for node in self.scope_graph.neighbors(scope) {
-                    ctx_checker.scope = node;
-                    self.scope_graph[node].visit(&mut ctx_checker);
-                }
-                ctx_checker.generics.clear();
+                self.resolution_graph.inner[scope].visit(&mut ctx_checker);
             }
         }
     }
 }
 
 impl<'a, 'c, 'ast> TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
-    fn find_trait(&mut self, path: &Path) -> Result<NodeIndex, ResolutionError> {
+    fn find_trait(&mut self, path: &Path) -> Result<ResolutionIndex, ResolutionError> {
         let res = {
             let mut path_finder = PathFinder {
-                scope_graph: &self.scope_graph,
+                resolution_graph: &self.resolution_graph,
                 visited_glob_scopes: Default::default(),
             };
             path_finder.find_at_path(self.scope, &path)
@@ -59,10 +54,10 @@ impl<'a, 'c, 'ast> TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
             // Check that there is a single trait match
             let num_matching = matching
                 .iter()
-                .filter(|i| self.scope_graph[**i].is_trait())
+                .filter(|i| self.resolution_graph.inner[**i].is_trait())
                 .count();
             if num_matching != 1 {
-                let file = Node::file(self.scope_graph, self.scope).clone();
+                let file = self.resolution_graph.inner[self.scope].file(self.resolution_graph);
                 let previous_ident = path
                     .segments
                     .iter()
@@ -90,7 +85,7 @@ impl<'a, 'c, 'ast> TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
             } else {
                 Ok(*matching
                     .iter()
-                    .filter(|i| self.scope_graph[**i].is_trait())
+                    .filter(|i| self.resolution_graph.inner[**i].is_trait())
                     .next()
                     .unwrap())
             }
@@ -202,8 +197,15 @@ impl<'a, 'c, 'ast> Visit<'c> for TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
     fn visit_type_path(&mut self, type_path: &'c TypePath) {
         if let Some(ident) = type_path.path.get_ident() {
             if ident == "Self" {
-                let is_impl_or_trait = match self.scope_graph[self.scope] {
-                    Node::Impl { .. } | Node::Trait { .. } => true,
+                let is_impl_or_trait = match self.resolution_graph.inner[self.scope] {
+                    ResolutionNode::Branch {
+                        branch: Branch::Trait(_),
+                        ..
+                    }
+                    | ResolutionNode::Branch {
+                        branch: Branch::Use(_),
+                        ..
+                    } => true,
                     _ => false,
                 };
                 if is_impl_or_trait {
@@ -225,31 +227,20 @@ impl<'a, 'c, 'ast> Visit<'c> for TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
             }
         }
 
-        if !self.found_type_paths.contains_key(&type_path.path) {
-            let mut path_finder = PathFinder {
-                scope_graph: &self.scope_graph,
-                visited_glob_scopes: Default::default(),
-            };
-            match path_finder.find_at_path(self.scope, &type_path.path) {
-                Ok(matching) => {
-                    self.found_type_paths.insert(&type_path.path, matching);
-                }
-                Err(err) => return self.errors.push(err),
-            }
-            // TODO: path tracing can be expensive in modules that have a lot of items
-            // so instead, it might be better to have the path finder return a common
-            // visibility issue (privacy or unresolved or disambiguation)
-            // which can then be converted into the appropriate error to display to the user
-            // this doesn't matter short-term because it only affects crates with many many items in a scope
-            // i.e. winapi
-        }
-        let matching = self.found_type_paths.get(&type_path.path).unwrap();
+        let mut path_finder = PathFinder {
+            resolution_graph: &self.resolution_graph,
+            visited_glob_scopes: Default::default(),
+        };
+        let matching = match path_finder.find_at_path(self.scope, &type_path.path) {
+            Ok(matching) => matching,
+            Err(err) => return self.errors.push(err),
+        };
         let num_matching = matching
             .iter()
-            .filter(|i| self.scope_graph[**i].is_type())
+            .filter(|i| self.resolution_graph.inner[**i].is_type())
             .count();
         if num_matching != 1 {
-            let file = Node::file(self.scope_graph, self.scope).clone();
+            let file = self.resolution_graph.inner[self.scope].file(self.resolution_graph);
             let previous_ident = type_path
                 .path
                 .segments

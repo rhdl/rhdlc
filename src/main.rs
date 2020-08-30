@@ -1,8 +1,6 @@
 #![forbid(unsafe_code)]
 
 use clap::{clap_app, crate_authors, crate_description, crate_version};
-#[cfg(not(test))]
-use petgraph::dot::Dot;
 
 use std::env;
 
@@ -58,8 +56,8 @@ fn entry(src: FileContentSource) -> String {
         .map(|err| format!("{}", err))
         .for_each(|err| acc += &err);
 
-    #[cfg(not(test))]
-    println!("{}", Dot::new(&scope_builder.scope_graph));
+    // #[cfg(not(test))]
+    // println!("{}", Dot::new(&scope_builder.resolution_graph));
 
     acc
 }

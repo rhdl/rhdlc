@@ -1,5 +1,4 @@
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
-use petgraph::graph::NodeIndex;
 use syn::{
     visit::Visit, Fields, File as SynFile, Generics, Ident, Item, ItemEnum, ItemMod, PatIdent,
     Signature, UseName, UseRename,
@@ -7,55 +6,75 @@ use syn::{
 
 use std::rc::Rc;
 
-use super::{r#use::UseType, File, Name, Node, ResolutionError, ScopeGraph};
+use super::{
+    r#use::UseType, Branch, File, Name, ResolutionError, ResolutionGraph, ResolutionIndex,
+    ResolutionNode,
+};
 use crate::error::{DuplicateHint, MultipleDefinitionError};
 
 pub struct ConflictChecker<'a, 'ast> {
-    pub scope_graph: &'a ScopeGraph<'ast>,
+    pub resolution_graph: &'a ResolutionGraph<'ast>,
     pub errors: &'a mut Vec<ResolutionError>,
 }
 
 struct ConflictCheckerVisitor<'a, 'ast> {
-    scope_graph: &'a ScopeGraph<'ast>,
+    resolution_graph: &'a ResolutionGraph<'ast>,
     errors: &'a mut Vec<ResolutionError>,
-    file: &'a Rc<File>,
+    file: Rc<File>,
 }
 
 impl<'a, 'ast> ConflictChecker<'a, 'ast> {
     pub fn visit_all(&mut self) {
-        for node in self.scope_graph.node_indices() {
+        for node in self.resolution_graph.node_indices() {
             let mut visitor = ConflictCheckerVisitor {
-                scope_graph: self.scope_graph,
+                resolution_graph: self.resolution_graph,
                 errors: self.errors,
-                file: Node::file(self.scope_graph, node),
+                file: self.resolution_graph.inner[node].file(self.resolution_graph),
             };
-            self.scope_graph[node].visit(&mut visitor);
-            let file = match &self.scope_graph[node] {
-                Node::Root { file, .. }
-                | Node::Mod {
-                    file,
-                    content_file: None,
+            self.resolution_graph.inner[node].visit(&mut visitor);
+            let file = match &self.resolution_graph.inner[node] {
+                ResolutionNode::Root { file, .. } => file.clone(),
+                ResolutionNode::Branch {
+                    branch: Branch::Mod(_, None),
                     ..
-                } => file,
-                Node::Mod {
-                    content_file: Some(content_file),
+                }
+                | ResolutionNode::Branch {
+                    branch: Branch::Impl(_),
                     ..
-                } => content_file,
-                Node::Impl { .. } => Node::file(&self.scope_graph, node),
+                }
+                | ResolutionNode::Branch {
+                    branch: Branch::Trait(_),
+                    ..
+                } => self.resolution_graph.inner[node].file(self.resolution_graph),
+                ResolutionNode::Branch {
+                    branch: Branch::Mod(_, Some(content_file)),
+                    ..
+                } => content_file.clone(),
                 _ => continue,
             };
             self.find_name_conflicts_in(node, file);
         }
     }
 
-    fn find_name_conflicts_in(&mut self, node: NodeIndex, file: &Rc<File>) {
+    fn find_name_conflicts_in(&mut self, node: ResolutionIndex, file: Rc<File>) {
         // Check the scope for conflicts
-        let mut ident_map: HashMap<String, Vec<Name<'ast>>> = HashMap::default();
-        for child in self.scope_graph.neighbors(node) {
-            for name in self.scope_graph[child].names() {
-                ident_map.entry(name.to_string()).or_default().push(name);
-            }
-        }
+        let mut ident_map: HashMap<&'ast Ident, Vec<&'ast Ident>> = self.resolution_graph.inner
+            [node]
+            .children()
+            .unwrap()
+            .iter()
+            .filter_map(|(ident_opt, with_ident)| {
+                ident_opt.map(|ident| {
+                    (
+                        ident,
+                        with_ident
+                            .iter()
+                            .filter_map(|child| self.resolution_graph.inner[*child].name())
+                            .collect::<Vec<&'ast Ident>>(),
+                    )
+                })
+            })
+            .collect();
         for (ident, names) in ident_map.iter() {
             let mut claimed = vec![false; names.len()];
             // Unfortunately, need an O(n^2) check here on items with the same name
@@ -68,11 +87,12 @@ impl<'a, 'ast> ConflictChecker<'a, 'ast> {
                         continue;
                     }
                     let j_name = &names[j];
-                    if i_name.conflicts_with(&j_name) {
+                    // TODO: go back to conflicts with logic
+                    if i_name == j_name {
                         self.errors.push(
                             MultipleDefinitionError {
                                 file: file.clone(),
-                                name: ident.clone(),
+                                name: ident.to_string(),
                                 original: i_name.span(),
                                 duplicate: j_name.span(),
                                 hint: DuplicateHint::Name,
@@ -92,40 +112,40 @@ impl<'a, 'ast> ConflictChecker<'a, 'ast> {
 
     // TODO: didn't finish this because reimports are more of a warning than an error
     // when there's a name conflict, you could specify that it's *because* of a reimport though
-    fn find_reimports_in(&self, node: NodeIndex, file: &Rc<File>) -> Vec<ResolutionError> {
-        let mut errors = vec![];
-        let mut imported: HashMap<NodeIndex, &'ast Ident> = HashMap::default();
-        for child in self.scope_graph.neighbors(node) {
-            match &self.scope_graph[child] {
-                Node::Use { imports, .. } => {
-                    imports.values().for_each(|uses| {
-                        uses.iter().for_each(|r#use| match r#use {
-                            UseType::Name {
-                                indices,
-                                name: UseName { ident, .. },
-                                ..
-                            }
-                            | UseType::Rename {
-                                indices,
-                                rename: UseRename { ident, .. },
-                                ..
-                            } => indices.iter().for_each(|i| {
-                                use std::collections::hash_map::Entry;
-                                if let Entry::Occupied(occupant) = imported.entry(*i) {
-                                    todo!("reimport error: {:?} {:?}", i, occupant);
-                                } else {
-                                    imported.insert(*i, ident);
-                                }
-                            }),
-                            _ => {}
-                        })
-                    });
-                }
-                _ => continue,
-            }
-        }
-        errors
-    }
+    // fn find_reimports_in(&self, node: ResolutionIndex, file: &Rc<File>) -> Vec<ResolutionError> {
+    //     let mut errors = vec![];
+    //     let mut imported: HashMap<ResolutionIndex, &'ast Ident> = HashMap::default();
+    //     for child in self.resolution_graph.neighbors(node) {
+    //         match &self.resolution_graph.inner[child] {
+    //             Node::Use { imports, .. } => {
+    //                 imports.values().for_each(|uses| {
+    //                     uses.iter().for_each(|r#use| match r#use {
+    //                         UseType::Name {
+    //                             indices,
+    //                             name: UseName { ident, .. },
+    //                             ..
+    //                         }
+    //                         | UseType::Rename {
+    //                             indices,
+    //                             rename: UseRename { ident, .. },
+    //                             ..
+    //                         } => indices.iter().for_each(|i| {
+    //                             use std::collections::hash_map::Entry;
+    //                             if let Entry::Occupied(occupant) = imported.entry(*i) {
+    //                                 todo!("reimport error: {:?} {:?}", i, occupant);
+    //                             } else {
+    //                                 imported.insert(*i, ident);
+    //                             }
+    //                         }),
+    //                         _ => {}
+    //                     })
+    //                 });
+    //             }
+    //             _ => continue,
+    //         }
+    //     }
+    //     errors
+    // }
 }
 
 impl<'a, 'ast> Visit<'ast> for ConflictCheckerVisitor<'a, 'ast> {
@@ -185,7 +205,7 @@ impl<'a, 'ast> Visit<'ast> for ConflictCheckerVisitor<'a, 'ast> {
     /// Rebound more than once error
     fn visit_signature(&mut self, sig: &'ast Signature) {
         struct SignatureVisitor<'a, 'ast> {
-            file: &'a Rc<File>,
+            file: Rc<File>,
             errors: &'a mut Vec<ResolutionError>,
             seen_idents: HashSet<&'ast Ident>,
         }
@@ -208,7 +228,7 @@ impl<'a, 'ast> Visit<'ast> for ConflictCheckerVisitor<'a, 'ast> {
             }
         }
         let mut signature_visitor = SignatureVisitor {
-            file: self.file,
+            file: self.file.clone(),
             errors: self.errors,
             seen_idents: Default::default(),
         };

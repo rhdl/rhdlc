@@ -1,30 +1,18 @@
 use fnv::FnvHashSet as HashSet;
+use std::rc::Rc;
 
-use petgraph::{graph::NodeIndex, Direction};
-use syn::{visit::Visit, Ident, UseGlob, UseName, UsePath, UseRename, UseTree};
+use syn::{visit::Visit, Ident, Path, UseGlob, UseName, UsePath, UseRename, UseTree};
 
-use super::super::{
-    r#use::{UseResolver, UseType},
-    Node, ScopeGraph,
-};
+use super::super::{Branch, ResolutionGraph, ResolutionIndex, ResolutionNode};
 use super::TracingContext;
 use crate::error::*;
+use crate::find_file::File;
 
 pub struct PathFinder<'a, 'ast> {
-    pub scope_graph: &'a mut ScopeGraph<'ast>,
+    pub resolution_graph: &'a ResolutionGraph<'ast>,
+    pub visited_glob_scopes: HashSet<ResolutionIndex>,
     pub errors: &'a mut Vec<ResolutionError>,
-    pub resolved_uses: &'a mut HashSet<NodeIndex>,
-    pub visited_glob_scopes: HashSet<NodeIndex>,
-}
-
-impl<'a, 'ast> Into<UseResolver<'a, 'ast>> for &'a mut PathFinder<'a, 'ast> {
-    fn into(self) -> UseResolver<'a, 'ast> {
-        UseResolver {
-            scope_graph: self.scope_graph,
-            errors: self.errors,
-            resolved_uses: self.resolved_uses,
-        }
-    }
+    pub resolved_uses: &'a mut HashSet<ResolutionIndex>,
 }
 
 impl<'a, 'ast> PathFinder<'a, 'ast> {
@@ -32,11 +20,10 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
     pub fn find_children(
         &mut self,
         ctx: &TracingContext,
-        scope: NodeIndex,
+        scope: ResolutionIndex,
         ident: &Ident,
         paths_only: bool,
-    ) -> Result<Vec<NodeIndex>, ResolutionError> {
-        self.visited_glob_scopes.clear();
+    ) -> Result<Vec<ResolutionIndex>, ResolutionError> {
         let is_entry = ctx.previous_idents.is_empty();
         let hint = if paths_only && is_entry {
             ItemHint::InternalNamedChildOrExternalNamedScope
@@ -46,36 +33,52 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
             ItemHint::Item
         };
         let local = if !is_entry || !ctx.has_leading_colon {
-            let local_nodes: Vec<NodeIndex> = self
-                .scope_graph
-                .neighbors(scope)
-                .filter(|child| *child != ctx.dest)
-                .collect();
-            local_nodes
-                .iter()
-                .map(|child| self.matches(ctx, &child, ident, paths_only, false))
-                .flatten()
-                .collect()
+            if let Some(children) = self.resolution_graph.inner[scope].children() {
+                let mut local = children
+                    .get(&Some(ident))
+                    .map(|children_with_name| {
+                        children_with_name
+                            .iter()
+                            .filter(|child| {
+                                !paths_only
+                                    || self.resolution_graph.inner[**child]
+                                        .is_valid_use_path_segment()
+                            })
+                            .cloned()
+                            .collect::<Vec<ResolutionIndex>>()
+                    })
+                    .unwrap_or_default();
+                children.get(&None).map(|children_unnamed| {
+                    children_unnamed.iter().for_each(|child| {
+                        local
+                            .extend(&self.matching_from_use(ctx, *child, ident, paths_only, false));
+                    })
+                });
+                local
+            } else {
+                vec![]
+            }
         } else {
             vec![]
         };
         let global = if is_entry {
-            let global_nodes: Vec<NodeIndex> = self
-                .scope_graph
-                .externals(Direction::Incoming)
-                .filter(|child| *child != ctx.root)
-                .collect();
-            global_nodes
+            self.resolution_graph
+                .roots
                 .iter()
-                .map(|child| self.matches(ctx, &child, ident, paths_only, false))
-                .flatten()
+                .filter(|child| **child != ctx.root)
+                .filter(|child| {
+                    !paths_only || self.resolution_graph.inner[**child].is_valid_use_path_segment()
+                })
+                .cloned()
                 .collect()
         } else {
             vec![]
         };
-        let visible_local: Vec<NodeIndex> = local
+        let visible_local: Vec<ResolutionIndex> = local
             .iter()
-            .filter(|i| super::super::r#pub::is_target_visible(self.scope_graph, ctx.dest, **i))
+            .filter(|i| {
+                super::super::r#pub::is_target_visible(self.resolution_graph, ctx.dest, **i)
+            })
             .cloned()
             .collect();
         if global.is_empty() && !local.is_empty() && visible_local.is_empty() {
@@ -86,9 +89,11 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
             }
             .into());
         }
-        let visible_global: Vec<NodeIndex> = global
+        let visible_global: Vec<ResolutionIndex> = global
             .iter()
-            .filter(|i| super::super::r#pub::is_target_visible(self.scope_graph, ctx.dest, **i))
+            .filter(|i| {
+                super::super::r#pub::is_target_visible(self.resolution_graph, ctx.dest, **i)
+            })
             .cloned()
             .collect();
         if local.is_empty() && !global.is_empty() && visible_global.is_empty() {
@@ -112,20 +117,27 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
             (false, true) => Ok(global),
             (true, true) => {
                 if !(ctx.has_leading_colon && is_entry) {
-                    let local_nodes: Vec<NodeIndex> = self
-                        .scope_graph
-                        .neighbors(scope)
-                        .filter(|child| *child != ctx.dest)
-                        .collect();
-                    let local_from_globs: Vec<NodeIndex> = local_nodes
-                        .iter()
-                        .map(|child| self.matches(ctx, &child, &ident, paths_only, true))
-                        .flatten()
-                        .collect();
-                    let visible_local_from_globs: Vec<NodeIndex> = local_from_globs
+                    let local_from_globs = self.resolution_graph.inner[scope]
+                        .children()
+                        .and_then(|children| children.get(&None))
+                        .map(|children_unnamed| {
+                            children_unnamed
+                                .iter()
+                                .map(|child| {
+                                    self.matching_from_use(ctx, *child, ident, paths_only, true)
+                                })
+                                .flatten()
+                                .collect::<Vec<ResolutionIndex>>()
+                        })
+                        .unwrap_or_default();
+                    let visible_local_from_globs: Vec<ResolutionIndex> = local_from_globs
                         .iter()
                         .filter(|i| {
-                            super::super::r#pub::is_target_visible(self.scope_graph, ctx.dest, **i)
+                            super::super::r#pub::is_target_visible(
+                                self.resolution_graph,
+                                ctx.dest,
+                                **i,
+                            )
                         })
                         .cloned()
                         .collect();
@@ -160,164 +172,103 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
         }
     }
 
-    fn matches(
-        &mut self,
+    fn matching_from_use(
+        &self,
         ctx: &TracingContext,
-        node: &NodeIndex,
+        use_index: ResolutionIndex,
         ident_to_look_for: &Ident,
         paths_only: bool,
         glob_only: bool,
-    ) -> Vec<NodeIndex> {
-        let rebuilt_ctx_opt = match &self.scope_graph[*node] {
-            Node::Use {
-                item_use, imports, ..
-            } => {
-                if !super::super::r#pub::is_target_visible(self.scope_graph, ctx.dest, *node) {
-                    return vec![];
-                }
-                let mut checker = UseMightMatchChecker {
-                    ident_to_look_for,
-                    might_match: false,
-                };
-                if self.resolved_uses.contains(node) || !imports.is_empty() {
-                    None
-                } else if {
-                    checker.visit_item_use(item_use);
-                    checker.might_match
-                } {
-                    Some(TracingContext::new(
-                        self.scope_graph,
-                        *node,
-                        item_use.leading_colon.is_some(),
-                    ))
-                } else {
-                    // claim: if might not match returned empty, it definitely will not match
-                    return vec![];
-                }
-            }
-            _ => {
-                return if glob_only {
-                    vec![]
-                } else if self.matches_exact(node, ident_to_look_for, paths_only) {
-                    vec![*node]
-                } else {
-                    vec![]
-                };
-            }
-        };
-        if let Some(mut rebuilt_ctx) = rebuilt_ctx_opt {
-            let mut use_resolver = UseResolver {
-                scope_graph: self.scope_graph,
-                errors: self.errors,
-                resolved_uses: self.resolved_uses,
-            };
-            use_resolver.trace_use_entry_reenterable(&mut rebuilt_ctx);
-        }
-        let imports = match &self.scope_graph[*node] {
-            Node::Use { imports, .. } => imports.clone(),
-            bad => panic!("this should not be reached: {:?}", bad),
-        };
-        imports
-            .values()
-            .map(|use_types| {
-                use_types
-                    .iter()
-                    .map(|use_type| match use_type {
-                        UseType::Name { name, indices } => {
-                            if glob_only {
-                                vec![]
-                            } else if name.ident == *ident_to_look_for {
-                                indices
-                                    .iter()
-                                    .map(|i| {
-                                        self.matches(
-                                            ctx,
-                                            i,
-                                            ident_to_look_for,
-                                            paths_only,
-                                            glob_only,
+    ) -> Vec<ResolutionIndex> {
+        if !self.resolution_graph.inner[use_index].is_use() {
+            vec![]
+        } else if !super::super::r#pub::is_target_visible(
+            self.resolution_graph,
+            ctx.dest,
+            use_index,
+        ) {
+            vec![]
+        } else {
+            let use_children = self.resolution_graph.inner[use_index].children().unwrap();
+            let matches: Vec<ResolutionIndex> = if glob_only {
+                use_children
+                    .get(&None)
+                    .map(|globs| {
+                        globs
+                            .iter()
+                            .map(|glob| {
+                                let glob_src_children =
+                                    self.resolution_graph.inner[*glob].children().unwrap();
+                                let mut matches = glob_src_children
+                                    .get(&Some(ident_to_look_for))
+                                    .map(|glob_src_children_with_name| {
+                                        glob_src_children_with_name
+                                            .iter()
+                                            .filter(|child| {
+                                                !paths_only
+                                                    || self.resolution_graph.inner[**child]
+                                                        .is_valid_use_path_segment()
+                                            })
+                                            .cloned()
+                                            .collect::<Vec<ResolutionIndex>>()
+                                    })
+                                    .unwrap_or_default();
+                                glob_src_children
+                                    .get(&None)
+                                    .map(|glob_src_children_unnamed| {
+                                        matches.extend(
+                                            glob_src_children_unnamed
+                                                .iter()
+                                                .filter(|child| {
+                                                    self.resolution_graph.inner[**child].is_use()
+                                                })
+                                                .map(|child| {
+                                                    let mut matches_from_dest_uses = self
+                                                        .matching_from_use(
+                                                            ctx,
+                                                            *child,
+                                                            ident_to_look_for,
+                                                            paths_only,
+                                                            true,
+                                                        );
+                                                    matches_from_dest_uses.extend(
+                                                        self.matching_from_use(
+                                                            ctx,
+                                                            *child,
+                                                            ident_to_look_for,
+                                                            paths_only,
+                                                            false,
+                                                        ),
+                                                    );
+                                                    matches_from_dest_uses
+                                                })
+                                                .flatten(),
                                         )
-                                    })
-                                    .flatten()
-                                    .collect::<Vec<NodeIndex>>()
-                            } else {
-                                vec![]
-                            }
-                        }
-                        UseType::Rename { rename, indices } => {
-                            // match on new name, recurse on original name
-                            if glob_only {
-                                vec![]
-                            } else if rename.rename == *ident_to_look_for {
-                                indices
-                                    .iter()
-                                    .map(|i| {
-                                        self.matches(ctx, i, &rename.ident, paths_only, glob_only)
-                                    })
-                                    .flatten()
-                                    .collect::<Vec<NodeIndex>>()
-                            } else {
-                                vec![]
-                            }
-                        }
-                        UseType::Glob { scope } => {
-                            if glob_only {
-                                if self.visited_glob_scopes.contains(node) {
-                                    return vec![];
-                                } else {
-                                    self.visited_glob_scopes.insert(*node);
-                                }
-                                let neighbors = self
-                                    .scope_graph
-                                    .neighbors(*scope)
-                                    .collect::<Vec<NodeIndex>>();
-                                neighbors
-                                    .iter()
-                                    .map(|child| {
-                                        let nonglob_matches = self.matches(
-                                            ctx,
-                                            &child,
-                                            ident_to_look_for,
-                                            paths_only,
-                                            false,
-                                        );
-                                        if nonglob_matches.is_empty() {
-                                            self.matches(
-                                                ctx,
-                                                &child,
-                                                ident_to_look_for,
-                                                paths_only,
-                                                true,
-                                            )
-                                        } else {
-                                            nonglob_matches
-                                        }
-                                    })
-                                    .flatten()
-                                    .collect()
-                            } else {
-                                vec![]
-                            }
-                        }
+                                    });
+                                matches
+                            })
+                            .flatten()
+                            .collect()
                     })
-                    .flatten()
-                    .collect::<Vec<NodeIndex>>()
-            })
-            .flatten()
-            .collect()
-    }
-
-    fn matches_exact(&self, node: &NodeIndex, ident_to_look_for: &Ident, paths_only: bool) -> bool {
-        let is_path = match &self.scope_graph[*node] {
-            Node::Mod { .. } | Node::Root { .. } => true,
-            // TODO: look for associated consts, but NOT for uses
-            _ => false,
-        };
-        // Node::Use { .. } | Node::Impl { .. } | Node::MacroUsage { .. } => false,
-        let names = self.scope_graph[*node].names();
-        (is_path || !paths_only)
-            && names.len() == 1
-            && names.first().unwrap().ident() == ident_to_look_for
+                    .unwrap_or_default()
+            } else {
+                use_children
+                    .get(&Some(ident_to_look_for))
+                    .map(|named| {
+                        named
+                            .iter()
+                            .filter(|child| {
+                                !paths_only
+                                    || self.resolution_graph.inner[**child]
+                                        .is_valid_use_path_segment()
+                            })
+                            .cloned()
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            };
+            matches
+        }
     }
 }
 
