@@ -1,12 +1,8 @@
-//! Note that the parent(s) iteration is overkill so no unwrap()s are done.
-//! Ideally, the scope graph is a tree and there cannot be multiple parents.
-
 use std::rc::Rc;
 
-use log::error;
 use syn::{spanned::Spanned, Visibility};
 
-use super::{ResolutionGraph, ResolutionIndex, ResolutionNode};
+use super::{ResolutionGraph, ResolutionIndex};
 use crate::error::{
     IncorrectVisibilityError, ItemHint, NonAncestralError, ResolutionError, ScopeVisibilityError,
     SpecialIdentNotAtStartOfPathError, TooManySupersError, UnresolvedItemError, UnsupportedError,
@@ -266,14 +262,18 @@ pub fn is_target_visible<'ast>(
         return true;
     }
 
-    // let target_parent_ancestry = build_ancestry(resolution_graph, target_parent);
+    let target_parent_ancestry = build_ancestry(resolution_graph, target_parent);
     resolution_graph
         .exports
         .get(&target)
         .map(|export_dest_opt| {
-            // exported to one of the dest ancestry, or out of the crate
+            // exported to dest/dest_ancestry, out of the crate, or to target grandparent
             export_dest_opt
-                .map(|export_dest| dest_ancestry.contains(&export_dest))
+                .map(|export_dest| {
+                    export_dest == dest
+                        || target_parent_ancestry.contains(&export_dest)
+                        || dest_ancestry.contains(&export_dest)
+                })
                 .unwrap_or(true)
         })
         .unwrap_or_default()
