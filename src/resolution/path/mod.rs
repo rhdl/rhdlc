@@ -224,7 +224,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
     }
 
     fn matching_from_use(
-        &self,
+        &mut self,
         ctx: &TracingContext,
         use_index: ResolutionIndex,
         ident_to_look_for: &Ident,
@@ -243,7 +243,11 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                     .map(|globs| {
                         globs
                             .iter()
-                            .map(|glob| {
+                            .filter_map(|glob| {
+                                if self.visited_glob_scopes.contains(glob) {
+                                    return None;
+                                }
+                                self.visited_glob_scopes.insert(*glob);
                                 let glob_src_children =
                                     self.resolution_graph.inner[*glob].children().unwrap();
                                 let mut matches = glob_src_children
@@ -266,33 +270,35 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                                         matches.extend(
                                             glob_src_children_unnamed
                                                 .iter()
-                                                .filter(|child| {
-                                                    self.resolution_graph.inner[**child].is_use()
-                                                })
-                                                .map(|child| {
-                                                    let mut matches_from_dest_uses = self
-                                                        .matching_from_use(
-                                                            ctx,
-                                                            *child,
-                                                            ident_to_look_for,
-                                                            paths_only,
-                                                            true,
+                                                .filter_map(|child| {
+                                                    if self.resolution_graph.inner[*child].is_use()
+                                                    {
+                                                        let mut matches_from_dest_uses = self
+                                                            .matching_from_use(
+                                                                ctx,
+                                                                *child,
+                                                                ident_to_look_for,
+                                                                paths_only,
+                                                                true,
+                                                            );
+                                                        matches_from_dest_uses.extend(
+                                                            self.matching_from_use(
+                                                                ctx,
+                                                                *child,
+                                                                ident_to_look_for,
+                                                                paths_only,
+                                                                false,
+                                                            ),
                                                         );
-                                                    matches_from_dest_uses.extend(
-                                                        self.matching_from_use(
-                                                            ctx,
-                                                            *child,
-                                                            ident_to_look_for,
-                                                            paths_only,
-                                                            false,
-                                                        ),
-                                                    );
-                                                    matches_from_dest_uses
+                                                        Some(matches_from_dest_uses)
+                                                    } else {
+                                                        None
+                                                    }
                                                 })
                                                 .flatten(),
                                         )
                                     });
-                                matches
+                                Some(matches)
                             })
                             .flatten()
                             .collect()
