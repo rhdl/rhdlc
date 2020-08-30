@@ -1,14 +1,13 @@
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
 use syn::{
     visit::Visit, Fields, File as SynFile, Generics, Ident, Item, ItemEnum, ItemMod, PatIdent,
-    Signature, UseName, UseRename,
+    Signature,
 };
 
 use std::rc::Rc;
 
 use super::{
-    r#use::UseType, Branch, File, Name, ResolutionError, ResolutionGraph, ResolutionIndex,
-    ResolutionNode,
+    Branch, File, Name, ResolutionError, ResolutionGraph, ResolutionIndex, ResolutionNode,
 };
 use crate::error::{DuplicateHint, MultipleDefinitionError};
 

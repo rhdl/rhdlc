@@ -5,8 +5,6 @@ use syn::{
     Ident, ImplItem, Item, ItemConst, ItemEnum, ItemFn, ItemMod, ItemStruct, ItemTrait, ItemType,
 };
 
-use super::r#use::UseType;
-
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Name<'ast> {
     Fn(&'ast Ident),
@@ -132,18 +130,6 @@ impl<'ast> From<&'ast ItemEnum> for Name<'ast> {
 impl<'ast> From<&'ast ItemTrait> for Name<'ast> {
     fn from(item_trait: &'ast ItemTrait) -> Self {
         Self::Type(&item_trait.ident)
-    }
-}
-
-impl<'ast> TryFrom<&UseType<'ast>> for Name<'ast> {
-    type Error = ();
-    fn try_from(use_type: &UseType<'ast>) -> Result<Self, Self::Error> {
-        use UseType::*;
-        match use_type {
-            Name { name, .. } => Ok(Self::UseName(&name.ident)),
-            Rename { rename, .. } => Ok(Self::UseRename(&rename.rename)),
-            _ => Err(()),
-        }
     }
 }
 

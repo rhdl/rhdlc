@@ -13,24 +13,6 @@ use crate::error::{
     TooManySupersError,
 };
 
-#[derive(Debug, Clone)]
-pub enum UseType<'ast> {
-    /// Pull a particular name into scope
-    /// Could be ambiguous
-    Name {
-        name: &'ast UseName,
-        indices: Vec<ResolutionIndex>,
-    },
-    /// Optionally include all items/mods from the scope
-    Glob { scope: ResolutionIndex },
-    /// Pull a particular name into scope, but give it a new name (so as to avoid any conflicts)
-    /// Could be ambiguous
-    Rename {
-        rename: &'ast UseRename,
-        indices: Vec<ResolutionIndex>,
-    },
-}
-
 pub struct UseResolver<'a, 'ast> {
     pub resolution_graph: &'a mut ResolutionGraph<'ast>,
     pub errors: &'a mut Vec<ResolutionError>,
@@ -91,7 +73,6 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
         let is_entry = ctx.previous_idents.is_empty();
         match tree {
             Path(path) => {
-                let path_ident = path.ident.to_string();
                 let new_scope = match path.ident == "self"
                     || path.ident == "super"
                     || path.ident == "crate"
@@ -103,7 +84,7 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                             .last()
                             .map(|ident| *ident == "super")
                             .unwrap_or(true)
-                            && path_ident == "super";
+                            && path.ident == "super";
                         if !is_entry && !is_chained_supers {
                             self.errors.push(
                                 SpecialIdentNotAtStartOfPathError {
@@ -124,9 +105,9 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                             );
                             return;
                         }
-                        if path_ident == "self" {
+                        if path.ident == "self" {
                             scope
-                        } else if path_ident == "super" {
+                        } else if path.ident == "super" {
                             let mut use_grandparent = self.resolution_graph.inner[scope].parent();
                             while use_grandparent
                                 .map(|i| {
@@ -149,7 +130,7 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                                 );
                                 return;
                             }
-                        } else if path_ident == "crate" {
+                        } else if path.ident == "crate" {
                             let mut root = scope;
                             while let Some(next_parent) = self.resolution_graph.inner[root].parent()
                             {
@@ -278,7 +259,7 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                     );
                     return;
                 }
-                if let Some(mut children) = self.resolution_graph.inner[ctx.dest].children_mut() {
+                if let Some(children) = self.resolution_graph.inner[ctx.dest].children_mut() {
                     children.entry(None).or_default().push(scope)
                 }
             }

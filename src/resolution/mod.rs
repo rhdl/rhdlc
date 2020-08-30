@@ -31,14 +31,11 @@
 ///             * use [strsim](https://docs.rs/strsim/0.10.0/strsim/) for Ident similarity
 ///             * heuristic guess by type (fn, struct, var, mod, etc.)
 ///         * fall back all the way to "not found" if nothing is similar
-use std::convert::TryFrom;
-use std::fmt::Display;
 use std::rc::Rc;
 
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
 use syn::{
-    visit::Visit, Ident, ItemConst, ItemEnum, ItemFn, ItemImpl, ItemMod, ItemStruct, ItemTrait,
-    ItemType, ItemUse,
+    visit::Visit, Ident
 };
 
 use crate::error::{InvalidRawIdentifierError, ResolutionError};
@@ -48,7 +45,6 @@ mod name;
 use name::Name;
 
 mod r#use;
-use r#use::UseType;
 
 mod build;
 mod conflicts;
@@ -114,13 +110,7 @@ impl<'ast> Resolver<'ast> {
         let use_indices: Vec<ResolutionIndex> = self
             .resolution_graph
             .node_indices()
-            .filter(|i| match self.resolution_graph.inner[*i] {
-                ResolutionNode::Branch {
-                    branch: Branch::Use { .. },
-                    ..
-                } => true,
-                _ => false,
-            })
+            .filter(|i| self.resolution_graph.inner[*i].is_use())
             .collect();
         for use_index in use_indices {
             let mut use_resolver = r#use::UseResolver {
