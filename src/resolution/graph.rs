@@ -375,7 +375,7 @@ pub enum Leaf<'ast> {
     Type(&'ast dyn SomeType<'ast>),
 }
 
-trait SomeItem<'ast> {
+pub trait SomeItem<'ast> {
     fn ident(&'ast self) -> Option<&'ast Ident>;
 }
 

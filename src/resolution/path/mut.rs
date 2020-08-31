@@ -50,8 +50,9 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                     .unwrap_or_default();
                 children.get(&None).map(|children_unnamed| {
                     children_unnamed.iter().for_each(|child| {
-                        local
-                            .extend(&self.matching_from_use(ctx, *child, ident, paths_only, false));
+                        local.append(
+                            &mut self.matching_from_use(ctx, *child, ident, paths_only, false),
+                        );
                     })
                 });
                 local
@@ -191,19 +192,19 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
         } else {
             let use_children = self.resolution_graph.inner[use_index].children().unwrap();
             let matches: Vec<ResolutionIndex> = if glob_only {
+                let mut matches = vec![];
                 use_children
                     .get(&None)
                     .map(|globs| {
-                        globs
-                            .iter()
-                            .filter_map(|glob| {
-                                if self.visited_glob_scopes.contains(glob) {
-                                    return None;
-                                }
-                                self.visited_glob_scopes.insert(*glob);
-                                let glob_src_children =
-                                    self.resolution_graph.inner[*glob].children().unwrap();
-                                let mut matches = glob_src_children
+                        globs.iter().for_each(|glob| {
+                            if self.visited_glob_scopes.contains(glob) {
+                                return;
+                            }
+                            self.visited_glob_scopes.insert(*glob);
+                            let glob_src_children =
+                                self.resolution_graph.inner[*glob].children().unwrap();
+                            matches.append(
+                                &mut glob_src_children
                                     .get(&Some(ident_to_look_for))
                                     .map(|glob_src_children_with_name| {
                                         glob_src_children_with_name
@@ -216,47 +217,34 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                                             .cloned()
                                             .collect::<Vec<ResolutionIndex>>()
                                     })
-                                    .unwrap_or_default();
-                                glob_src_children
-                                    .get(&None)
-                                    .map(|glob_src_children_unnamed| {
-                                        matches.extend(
-                                            glob_src_children_unnamed
-                                                .iter()
-                                                .filter_map(|child| {
-                                                    if self.resolution_graph.inner[*child].is_use()
-                                                    {
-                                                        let mut matches_from_dest_uses = self
-                                                            .matching_from_use(
-                                                                ctx,
-                                                                *child,
-                                                                ident_to_look_for,
-                                                                paths_only,
-                                                                true,
-                                                            );
-                                                        matches_from_dest_uses.extend(
-                                                            self.matching_from_use(
-                                                                ctx,
-                                                                *child,
-                                                                ident_to_look_for,
-                                                                paths_only,
-                                                                false,
-                                                            ),
-                                                        );
-                                                        Some(matches_from_dest_uses)
-                                                    } else {
-                                                        None
-                                                    }
-                                                })
-                                                .flatten(),
-                                        )
+                                    .unwrap_or_default(),
+                            );
+                            glob_src_children
+                                .get(&None)
+                                .map(|glob_src_children_unnamed| {
+                                    glob_src_children_unnamed.iter().for_each(|child| {
+                                        if self.resolution_graph.inner[*child].is_use() {
+                                            matches.append(&mut self.matching_from_use(
+                                                ctx,
+                                                *child,
+                                                ident_to_look_for,
+                                                paths_only,
+                                                true,
+                                            ));
+                                            matches.append(&mut self.matching_from_use(
+                                                ctx,
+                                                *child,
+                                                ident_to_look_for,
+                                                paths_only,
+                                                false,
+                                            ));
+                                        }
                                     });
-                                Some(matches)
-                            })
-                            .flatten()
-                            .collect()
+                                });
+                        });
                     })
-                    .unwrap_or_default()
+                    .unwrap_or_default();
+                matches
             } else {
                 use_children
                     .get(&Some(ident_to_look_for))

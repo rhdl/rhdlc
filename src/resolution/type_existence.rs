@@ -43,6 +43,7 @@ impl<'a, 'ast> TypeExistenceChecker<'a, 'ast> {
 
 impl<'a, 'c, 'ast> TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
     fn find_trait(&mut self, path: &Path) -> Result<ResolutionIndex, ResolutionError> {
+        // TODO: private trait in public trait declaration
         let res = {
             let mut path_finder = PathFinder {
                 resolution_graph: &self.resolution_graph,

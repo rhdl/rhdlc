@@ -48,7 +48,7 @@ mod path;
 mod r#pub;
 mod type_existence;
 
-use graph::{Branch, Leaf, ResolutionGraph, ResolutionIndex, ResolutionNode};
+use graph::{Branch, ResolutionGraph, ResolutionIndex, ResolutionNode};
 
 #[derive(Debug)]
 pub struct Resolver<'ast> {
