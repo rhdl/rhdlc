@@ -6,9 +6,7 @@ use syn::{
 
 use std::rc::Rc;
 
-use super::{
-    Branch, File, ResolutionError, ResolutionGraph, ResolutionIndex, ResolutionNode,
-};
+use super::{Branch, File, ResolutionError, ResolutionGraph, ResolutionIndex, ResolutionNode};
 use crate::error::{DuplicateHint, MultipleDefinitionError};
 
 pub struct ConflictChecker<'a, 'ast> {

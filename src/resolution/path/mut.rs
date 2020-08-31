@@ -32,7 +32,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
         } else {
             ItemHint::Item
         };
-        let local = if !is_entry || !ctx.has_leading_colon {
+        let mut local = if !is_entry || !ctx.has_leading_colon {
             if let Some(children) = self.resolution_graph.inner[scope].children() {
                 let mut local = children
                     .get(&Some(ident))
@@ -62,7 +62,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
         } else {
             vec![]
         };
-        let global = if is_entry {
+        let mut global = if is_entry {
             self.resolution_graph
                 .roots
                 .iter()
@@ -75,14 +75,11 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
         } else {
             vec![]
         };
-        let visible_local: Vec<ResolutionIndex> = local
-            .iter()
-            .filter(|i| {
-                super::super::r#pub::is_target_visible(self.resolution_graph, ctx.dest, **i)
-            })
-            .cloned()
-            .collect();
-        if global.is_empty() && !local.is_empty() && visible_local.is_empty() {
+        let local_is_empty = local.is_empty();
+        local.retain(|i| {
+            super::super::r#pub::is_target_visible(self.resolution_graph, ctx.dest, *i)
+        });
+        if global.is_empty() && !local_is_empty && local.is_empty() {
             return Err(ItemVisibilityError {
                 file: ctx.file.clone(),
                 ident: ident.clone(),
@@ -90,14 +87,11 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
             }
             .into());
         }
-        let visible_global: Vec<ResolutionIndex> = global
-            .iter()
-            .filter(|i| {
-                super::super::r#pub::is_target_visible(self.resolution_graph, ctx.dest, **i)
-            })
-            .cloned()
-            .collect();
-        if local.is_empty() && !global.is_empty() && visible_global.is_empty() {
+        let global_is_empty = global.is_empty();
+        global.retain(|i| {
+            super::super::r#pub::is_target_visible(self.resolution_graph, ctx.dest, *i)
+        });
+        if local.is_empty() && !global_is_empty && global.is_empty() {
             return Err(ItemVisibilityError {
                 file: ctx.file.clone(),
                 ident: ident.clone(),
@@ -105,8 +99,6 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
             }
             .into());
         }
-        let local = visible_local;
-        let global = visible_global;
         match (global.is_empty(), local.is_empty()) {
             (false, false) => Err(DisambiguationError {
                 file: ctx.file.clone(),
@@ -118,38 +110,32 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
             (false, true) => Ok(global),
             (true, true) => {
                 if !(ctx.has_leading_colon && is_entry) {
-                    let local_from_globs = self.resolution_graph.inner[scope]
+                    let mut local_from_globs = self.resolution_graph.inner[scope]
                         .children()
                         .and_then(|children| children.get(&None))
                         .map(|children_unnamed| {
-                            children_unnamed
-                                .iter()
-                                .map(|child| {
-                                    self.matching_from_use(ctx, *child, ident, paths_only, true)
-                                })
-                                .flatten()
-                                .collect::<Vec<ResolutionIndex>>()
+                            let mut local_from_globs = vec![];
+                            children_unnamed.iter().for_each(|child| {
+                                local_from_globs.append(
+                                    &mut self
+                                        .matching_from_use(ctx, *child, ident, paths_only, true),
+                                );
+                            });
+                            local_from_globs
                         })
                         .unwrap_or_default();
-                    let visible_local_from_globs: Vec<ResolutionIndex> = local_from_globs
-                        .iter()
-                        .filter(|i| {
-                            super::super::r#pub::is_target_visible(
-                                self.resolution_graph,
-                                ctx.dest,
-                                **i,
-                            )
-                        })
-                        .cloned()
-                        .collect();
-                    if !local_from_globs.is_empty() && visible_local_from_globs.is_empty() {
+                    let local_from_globs_is_empty = local_from_globs.is_empty();
+                    local_from_globs.retain(|i| {
+                        super::super::r#pub::is_target_visible(self.resolution_graph, ctx.dest, *i)
+                    });
+                    if !local_from_globs_is_empty && local_from_globs.is_empty() {
                         Err(ItemVisibilityError {
                             file: ctx.file.clone(),
                             ident: ident.clone(),
                             hint,
                         }
                         .into())
-                    } else if visible_local_from_globs.is_empty() {
+                    } else if local_from_globs.is_empty() {
                         Err(UnresolvedItemError {
                             file: ctx.file.clone(),
                             previous_ident: ctx.previous_idents.last().cloned().cloned(),
@@ -158,7 +144,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                         }
                         .into())
                     } else {
-                        Ok(visible_local_from_globs)
+                        Ok(local_from_globs)
                     }
                 } else {
                     Err(UnresolvedItemError {
