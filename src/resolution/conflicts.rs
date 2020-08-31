@@ -32,10 +32,6 @@ impl<'a, 'ast> ConflictChecker<'a, 'ast> {
             let file = match &self.resolution_graph.inner[node] {
                 ResolutionNode::Root { .. }
                 | ResolutionNode::Branch {
-                    branch: Branch::Mod(_),
-                    ..
-                }
-                | ResolutionNode::Branch {
                     branch: Branch::Impl(_),
                     ..
                 }
@@ -43,6 +39,16 @@ impl<'a, 'ast> ConflictChecker<'a, 'ast> {
                     branch: Branch::Trait(_),
                     ..
                 } => self.resolution_graph.file(node),
+                ResolutionNode::Branch {
+                    branch: Branch::Mod(_),
+                    ..
+                } => {
+                    if let Some(content_file) = self.resolution_graph.content_files.get(&node) {
+                        content_file.clone()
+                    } else {
+                        self.resolution_graph.file(node)
+                    }
+                }
                 _ => continue,
             };
             self.find_name_conflicts_in(node, file);
