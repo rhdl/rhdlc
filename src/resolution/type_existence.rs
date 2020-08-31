@@ -56,7 +56,7 @@ impl<'a, 'c, 'ast> TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
                 .filter(|i| self.resolution_graph.inner[**i].is_trait())
                 .count();
             if num_matching != 1 {
-                let file = self.resolution_graph.inner[self.scope].file(self.resolution_graph);
+                let file = self.resolution_graph.file(self.scope);
                 let previous_ident = path
                     .segments
                     .iter()
@@ -239,7 +239,7 @@ impl<'a, 'c, 'ast> Visit<'c> for TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
             .filter(|i| self.resolution_graph.inner[**i].is_type())
             .count();
         if num_matching != 1 {
-            let file = self.resolution_graph.inner[self.scope].file(self.resolution_graph);
+            let file = self.resolution_graph.file(self.scope);
             let previous_ident = type_path
                 .path
                 .segments

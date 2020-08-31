@@ -18,7 +18,7 @@ pub fn apply_visibility<'ast>(
 ) -> Result<(), ResolutionError> {
     let export_dest = if let Some(vis) = resolution_graph.inner[node].visibility() {
         use Visibility::*;
-        let file = resolution_graph.inner[node].file(resolution_graph);
+        let file = resolution_graph.file(node);
         match vis {
             Public(_) => apply_visibility_pub(resolution_graph, node),
             Crate(_) => apply_visibility_crate(resolution_graph, node),
@@ -270,8 +270,7 @@ pub fn is_target_visible<'ast>(
             // exported to dest/dest_ancestry, out of the crate, or to target grandparent
             export_dest_opt
                 .map(|export_dest| {
-                    export_dest == dest
-                        || target_parent_ancestry.contains(&export_dest)
+                    target_parent_ancestry.contains(&export_dest)
                         || dest_ancestry.contains(&export_dest)
                 })
                 .unwrap_or(true)

@@ -26,13 +26,13 @@ impl<'a, 'ast> ConflictChecker<'a, 'ast> {
             let mut visitor = ConflictCheckerVisitor {
                 resolution_graph: self.resolution_graph,
                 errors: self.errors,
-                file: self.resolution_graph.inner[node].file(self.resolution_graph),
+                file: self.resolution_graph.file(node),
             };
             self.resolution_graph.inner[node].visit(&mut visitor);
             let file = match &self.resolution_graph.inner[node] {
-                ResolutionNode::Root { file, .. } => file.clone(),
-                ResolutionNode::Branch {
-                    branch: Branch::Mod(_, None),
+                ResolutionNode::Root { .. }
+                | ResolutionNode::Branch {
+                    branch: Branch::Mod(_),
                     ..
                 }
                 | ResolutionNode::Branch {
@@ -42,11 +42,7 @@ impl<'a, 'ast> ConflictChecker<'a, 'ast> {
                 | ResolutionNode::Branch {
                     branch: Branch::Trait(_),
                     ..
-                } => self.resolution_graph.inner[node].file(self.resolution_graph),
-                ResolutionNode::Branch {
-                    branch: Branch::Mod(_, Some(content_file)),
-                    ..
-                } => content_file.clone(),
+                } => self.resolution_graph.file(node),
                 _ => continue,
             };
             self.find_name_conflicts_in(node, file);
@@ -69,7 +65,7 @@ impl<'a, 'ast> ConflictChecker<'a, 'ast> {
                             }
                             // Skip names that don't conflict
                             if !self.resolution_graph.inner[indices[i]]
-                                .in_same_name_class(&self.resolution_graph.inner[indices[i]])
+                                .in_same_name_class(&self.resolution_graph.inner[indices[j]])
                             {
                                 continue;
                             }

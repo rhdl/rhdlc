@@ -1,9 +1,9 @@
 use fnv::FnvHashMap as HashMap;
 use log::error;
 use syn::{
-    spanned::Spanned, visit::Visit, File, Ident, ItemConst, ItemEnum, ItemExternCrate, ItemFn,
-    ItemImpl, ItemMacro, ItemMacro2, ItemMod, ItemStatic, ItemStruct, ItemTrait, ItemTraitAlias,
-    ItemType, ItemUnion, ItemUse,
+    spanned::Spanned, visit::Visit, Field, File, Ident, ItemConst, ItemEnum, ItemExternCrate,
+    ItemFn, ItemImpl, ItemMacro, ItemMacro2, ItemMod, ItemStatic, ItemStruct, ItemTrait,
+    ItemTraitAlias, ItemType, ItemUnion, ItemUse, Variant,
 };
 
 use super::{graph::*, FileGraph, FileGraphIndex};
@@ -26,7 +26,7 @@ impl<'a, 'ast> Visit<'ast> for ScopeBuilder<'a, 'ast> {
         let parent = *self.scope_ancestry.last().unwrap();
         if let Some((_, items)) = &item_mod.content {
             let mod_idx = self.resolution_graph.add_node(ResolutionNode::Branch {
-                branch: Branch::Mod(item_mod, None),
+                branch: Branch::Mod(item_mod),
                 parent,
                 children: HashMap::default(),
             });
@@ -92,10 +92,11 @@ impl<'a, 'ast> Visit<'ast> for ScopeBuilder<'a, 'ast> {
             if let Some(file_index) = file_index {
                 let content_file = self.file_graph.inner[file_index].clone();
                 let mod_idx = self.resolution_graph.add_node(ResolutionNode::Branch {
-                    branch: Branch::Mod(item_mod, Some(content_file)),
+                    branch: Branch::Mod(item_mod),
                     parent,
                     children: HashMap::default(),
                 });
+                self.resolution_graph.content_files.insert(mod_idx, content_file);
                 self.resolution_graph.add_child(parent, mod_idx);
                 self.scope_ancestry.push(mod_idx);
                 self.file_ancestry.push(file_index);
@@ -104,7 +105,7 @@ impl<'a, 'ast> Visit<'ast> for ScopeBuilder<'a, 'ast> {
                 self.scope_ancestry.pop();
             } else {
                 let mod_idx = self.resolution_graph.add_node(ResolutionNode::Branch {
-                    branch: Branch::Mod(item_mod, None),
+                    branch: Branch::Mod(item_mod),
                     parent,
                     children: HashMap::default(),
                 });
@@ -220,6 +221,27 @@ impl<'a, 'ast> Visit<'ast> for ScopeBuilder<'a, 'ast> {
             .iter()
             .for_each(|impl_item| self.visit_impl_item(impl_item));
         self.scope_ancestry.pop();
+    }
+
+    fn visit_variant(&mut self, variant: &'ast Variant) {
+        let parent = *self.scope_ancestry.last().unwrap();
+
+        let item_idx = self.resolution_graph.add_node(ResolutionNode::Branch {
+            branch: Branch::Variant(variant),
+            parent,
+            children: HashMap::default(),
+        });
+        self.resolution_graph.add_child(parent, item_idx);
+    }
+
+    fn visit_field(&mut self, field: &'ast Field) {
+        let parent = *self.scope_ancestry.last().unwrap();
+
+        let item_idx = self.resolution_graph.add_node(ResolutionNode::Leaf {
+            leaf: Leaf::Field(field),
+            parent,
+        });
+        self.resolution_graph.add_child(parent, item_idx);
     }
 
     fn visit_item_macro(&mut self, item_macro: &'ast ItemMacro) {

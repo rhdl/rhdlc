@@ -80,9 +80,9 @@ impl<'ast> Resolver<'ast> {
             let resolution_index = self.resolution_graph.add_node(ResolutionNode::Root {
                 // TODO: attach a real name
                 name: String::default(),
-                file,
                 children: HashMap::default(),
             });
+            self.resolution_graph.content_files.insert(resolution_index, file);
             let mut builder = build::ScopeBuilder {
                 errors: &mut self.errors,
                 file_graph: &mut self.file_graph,

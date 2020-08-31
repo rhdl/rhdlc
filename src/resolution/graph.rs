@@ -18,6 +18,7 @@ pub struct ResolutionGraph<'ast> {
     /// key is exported to value
     /// if value is None, it is visible from anywhere
     pub exports: HashMap<ResolutionIndex, Option<ResolutionIndex>>,
+    pub content_files: HashMap<ResolutionIndex, Rc<File>>,
 }
 
 impl<'ast> ResolutionGraph<'ast> {
@@ -41,6 +42,31 @@ impl<'ast> ResolutionGraph<'ast> {
     pub fn node_indices(&self) -> impl Iterator<Item = ResolutionIndex> {
         0..self.inner.len()
     }
+
+    pub fn file(&self, node: ResolutionIndex) -> Rc<File> {
+        let mut next_parent = match &self.inner[node] {
+            ResolutionNode::Root { .. } => node,
+            ResolutionNode::Leaf { parent, .. } | ResolutionNode::Branch { parent, .. } => *parent,
+        };
+        loop {
+            next_parent = match &self.inner[next_parent] {
+                ResolutionNode::Root { .. } => return self.content_files[&next_parent].clone(),
+                ResolutionNode::Branch {
+                    branch: Branch::Mod(_),
+                    parent,
+                    ..
+                } => {
+                    if let Some(content_file) = self.content_files.get(&next_parent) {
+                        return content_file.clone();
+                    }
+                    *parent
+                }
+                ResolutionNode::Leaf { parent, .. } | ResolutionNode::Branch { parent, .. } => {
+                    *parent
+                }
+            }
+        }
+    }
 }
 
 pub type ResolutionIndex = usize;
@@ -53,7 +79,6 @@ pub enum ResolutionNode<'ast> {
         /// TODO: figure out how to reconcile library-building behavior of rustc
         /// with the fact that there are no binaries for RHDL...
         name: String,
-        file: Rc<File>,
         children: HashMap<Option<&'ast Ident>, Vec<ResolutionIndex>>,
     },
     Branch {
@@ -69,27 +94,6 @@ pub enum ResolutionNode<'ast> {
 }
 
 impl<'ast> ResolutionNode<'ast> {
-    pub fn file(&self, resolution_graph: &ResolutionGraph<'ast>) -> Rc<File> {
-        let mut parent = match self {
-            ResolutionNode::Root { file, .. } => {
-                return file.clone();
-            }
-            ResolutionNode::Leaf { parent, .. } | ResolutionNode::Branch { parent, .. } => *parent,
-        };
-        loop {
-            parent = match &resolution_graph.inner[parent] {
-                ResolutionNode::Root { file, .. } => return file.clone(),
-                ResolutionNode::Branch {
-                    branch: Branch::Mod(_, Some(content_file)),
-                    ..
-                } => return content_file.clone(),
-                ResolutionNode::Leaf { parent, .. } | ResolutionNode::Branch { parent, .. } => {
-                    *parent
-                }
-            }
-        }
-    }
-
     pub fn visibility(&self) -> Option<&Visibility> {
         match self {
             ResolutionNode::Leaf {
@@ -191,10 +195,10 @@ impl<'ast> ResolutionNode<'ast> {
                 _ => false,
             },
             ResolutionNode::Branch {
-                branch: Mod(_, _), ..
+                branch: Mod(_), ..
             } => match other {
                 ResolutionNode::Branch {
-                    branch: Mod(_, _), ..
+                    branch: Mod(_), ..
                 }
                 | ResolutionNode::Branch {
                     branch: Struct(_), ..
@@ -310,7 +314,7 @@ impl<'ast> ResolutionNode<'ast> {
         match self {
             ResolutionNode::Root { .. } => None,
             ResolutionNode::Branch { branch, .. } => match branch {
-                Branch::Mod(m, _) => Some(&m.ident),
+                Branch::Mod(m) => Some(&m.ident),
                 Branch::Impl(_) => None,
                 Branch::Trait(t) => Some(&t.ident),
                 Branch::Fn(f) => f.ident(),
@@ -334,7 +338,7 @@ impl<'ast> ResolutionNode<'ast> {
         match self {
             ResolutionNode::Root { .. } => {}
             ResolutionNode::Branch { branch, .. } => match branch {
-                Branch::Mod(m, _) => v.visit_item_mod(m),
+                Branch::Mod(m) => v.visit_item_mod(m),
                 Branch::Impl(i) => v.visit_item_impl(i),
                 Branch::Trait(t) => v.visit_item_trait(t),
                 Branch::Fn(f) => f.visit(v),
@@ -354,7 +358,7 @@ impl<'ast> ResolutionNode<'ast> {
 
 #[derive(Debug)]
 pub enum Branch<'ast> {
-    Mod(&'ast ItemMod, Option<Rc<File>>),
+    Mod(&'ast ItemMod),
     Impl(&'ast ItemImpl),
     Trait(&'ast ItemTrait),
     Fn(&'ast dyn SomeFn<'ast>),

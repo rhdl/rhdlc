@@ -28,7 +28,7 @@ impl<'ast> TracingContext<'ast> {
             root = parent;
         }
         Self {
-            file: resolution_graph.inner[dest].file(resolution_graph),
+            file: resolution_graph.file(dest),
             dest,
             root,
             previous_idents: vec![],
