@@ -1,4 +1,4 @@
-use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
+use fnv::FnvHashSet as HashSet;
 use syn::{
     visit::Visit, Fields, File as SynFile, Generics, Ident, Item, ItemEnum, ItemMod, PatIdent,
     Signature,
@@ -7,7 +7,7 @@ use syn::{
 use std::rc::Rc;
 
 use super::{
-    Branch, File, Name, ResolutionError, ResolutionGraph, ResolutionIndex, ResolutionNode,
+    Branch, File, ResolutionError, ResolutionGraph, ResolutionIndex, ResolutionNode,
 };
 use crate::error::{DuplicateHint, MultipleDefinitionError};
 
@@ -57,52 +57,45 @@ impl<'a, 'ast> ConflictChecker<'a, 'ast> {
 
     fn find_name_conflicts_in(&mut self, node: ResolutionIndex, file: Rc<File>) {
         // Check the scope for conflicts
-        let mut ident_map: HashMap<&'ast Ident, Vec<&'ast Ident>> = self.resolution_graph.inner
-            [node]
-            .children()
-            .unwrap()
-            .iter()
-            .filter_map(|(ident_opt, with_ident)| {
-                ident_opt.map(|ident| {
-                    (
-                        ident,
-                        with_ident
-                            .iter()
-                            .filter_map(|child| self.resolution_graph.inner[*child].name())
-                            .collect::<Vec<&'ast Ident>>(),
-                    )
-                })
-            })
-            .collect();
-        for (ident, names) in ident_map.iter() {
-            let mut claimed = vec![false; names.len()];
-            // Unfortunately, need an O(n^2) check here on items with the same name
-            // As per petgraph docs, this is ordered most recent to least recent, so need to iterate in reverse
-            for i in (0..names.len()).rev() {
-                let i_name = &names[i];
-                for j in (0..i).rev() {
-                    // Don't create repetitive errors by "claiming" duplicates for errors
-                    if claimed[j] {
-                        continue;
-                    }
-                    let j_name = &names[j];
-                    // TODO: go back to conflicts with logic
-                    if i_name == j_name {
-                        self.errors.push(
-                            MultipleDefinitionError {
-                                file: file.clone(),
-                                name: ident.to_string(),
-                                original: i_name.span(),
-                                duplicate: j_name.span(),
-                                hint: DuplicateHint::Name,
+        for (ident, indices) in self.resolution_graph.inner[node].children().unwrap().iter() {
+            if let Some(ident) = ident {
+                let mut claimed = vec![false; indices.len()];
+                // Unfortunately, need an O(n^2) check here on items with the same name
+                // As per petgraph docs, this is ordered most recent to least recent, so need to iterate in reverse
+                for i in (0..indices.len()).rev() {
+                    if let Some(i_name) = self.resolution_graph.inner[indices[i]].name() {
+                        for j in (0..i).rev() {
+                            // Don't create repetitive errors by "claiming" duplicates for errors
+                            if claimed[j] {
+                                continue;
                             }
-                            .into(),
-                        );
-                        // Optimization: don't need to claim items that won't be seen again
-                        // claimed[i] = true;
-                        claimed[j] = true;
-                        // Stop at the first conflict seen for `i`, since `j` will necessarily become `i` in the future and handle any further conflicts.
-                        break;
+                            // Skip names that don't conflict
+                            if !self.resolution_graph.inner[indices[i]]
+                                .in_same_name_class(&self.resolution_graph.inner[indices[i]])
+                            {
+                                continue;
+                            }
+                            if let Some(j_name) = self.resolution_graph.inner[indices[j]].name() {
+                                // TODO: go back to conflicts with logic
+                                if i_name == j_name {
+                                    self.errors.push(
+                                        MultipleDefinitionError {
+                                            file: file.clone(),
+                                            name: ident.to_string(),
+                                            original: i_name.span(),
+                                            duplicate: j_name.span(),
+                                            hint: DuplicateHint::Name,
+                                        }
+                                        .into(),
+                                    );
+                                    // Optimization: don't need to claim items that won't be seen again
+                                    // claimed[i] = true;
+                                    claimed[j] = true;
+                                    // Stop at the first conflict seen for `i`, since `j` will necessarily become `i` in the future and handle any further conflicts.
+                                    break;
+                                }
+                            }
+                        }
                     }
                 }
             }

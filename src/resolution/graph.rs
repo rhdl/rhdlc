@@ -162,6 +162,82 @@ impl<'ast> ResolutionNode<'ast> {
         }
     }
 
+    /// The names in a name class must be unique
+    /// * mods can conflict with types, other mods, and crates
+    /// * Fns & Vars can conflict with types
+    /// * types can conflict with anything
+    /// * macros only conflict with macros
+    pub fn in_same_name_class(&self, other: &ResolutionNode) -> bool {
+        use Branch::*;
+        use Leaf::*;
+        match self {
+            ResolutionNode::Root { .. } => match other {
+                ResolutionNode::Root { .. } => true,
+                _ => false,
+            },
+            ResolutionNode::Branch {
+                branch: Impl(_), ..
+            } => false,
+            ResolutionNode::Leaf { leaf: Field(_), .. } => match other {
+                ResolutionNode::Leaf { leaf: Field(_), .. } => true,
+                _ => false,
+            },
+            ResolutionNode::Branch {
+                branch: Variant(_), ..
+            } => match other {
+                ResolutionNode::Branch {
+                    branch: Variant(_), ..
+                } => true,
+                _ => false,
+            },
+            ResolutionNode::Branch {
+                branch: Mod(_, _), ..
+            } => match other {
+                ResolutionNode::Branch {
+                    branch: Mod(_, _), ..
+                }
+                | ResolutionNode::Branch {
+                    branch: Struct(_), ..
+                }
+                | ResolutionNode::Branch {
+                    branch: Enum(_), ..
+                }
+                | ResolutionNode::Branch {
+                    branch: Trait(_), ..
+                }
+                | ResolutionNode::Leaf { leaf: Type(_), .. } => true,
+                _ => false,
+            },
+            ResolutionNode::Leaf { leaf: Const(_), .. }
+            | ResolutionNode::Branch { branch: Fn(_), .. } => match other {
+                ResolutionNode::Leaf { leaf: Const(_), .. }
+                | ResolutionNode::Branch { branch: Fn(_), .. }
+                | ResolutionNode::Branch {
+                    branch: Struct(_), ..
+                }
+                | ResolutionNode::Branch {
+                    branch: Enum(_), ..
+                }
+                | ResolutionNode::Branch {
+                    branch: Trait(_), ..
+                }
+                | ResolutionNode::Leaf { leaf: Type(_), .. } => true,
+                _ => false,
+            },
+            ResolutionNode::Branch {
+                branch: Struct(_), ..
+            }
+            | ResolutionNode::Branch {
+                branch: Enum(_), ..
+            }
+            | ResolutionNode::Branch {
+                branch: Trait(_), ..
+            }
+            | ResolutionNode::Leaf { leaf: Type(_), .. } => true,
+            ResolutionNode::Branch { branch: Use(_), .. } => true,
+        }
+    }
+
     pub fn is_use(&self) -> bool {
         match self {
             ResolutionNode::Branch {

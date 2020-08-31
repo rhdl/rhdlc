@@ -182,7 +182,11 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
     ) -> Vec<ResolutionIndex> {
         if !self.resolution_graph.inner[use_index].is_use() {
             vec![]
-        } else if !super::super::r#pub::is_target_visible(self.resolution_graph, ctx.dest, use_index) {
+        } else if !super::super::r#pub::is_target_visible(
+            self.resolution_graph,
+            ctx.dest,
+            use_index,
+        ) {
             vec![]
         } else {
             let use_children = self.resolution_graph.inner[use_index].children().unwrap();

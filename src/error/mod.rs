@@ -453,7 +453,6 @@ impl Display for TooManySupersError {
 }
 
 /// TODO: support references to other files
-/// TODO: give the actual type of item
 /// this way, there can be a
 /// "item `b` is defined here" reference wherever the item is defined
 #[derive(Debug)]
