@@ -109,9 +109,11 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                     .unwrap_or_default();
                 children.get(&None).map(|children_unnamed| {
                     children_unnamed.iter().for_each(|child| {
-                        local.append(
-                            &mut self.matching_from_use(ctx, *child, ident, paths_only, false),
-                        );
+                        if self.resolution_graph.inner[*child].is_use() {
+                            local.append(
+                                &mut self.matching_from_use(ctx, *child, ident, paths_only, false),
+                            );
+                        }
                     })
                 });
                 local
@@ -165,20 +167,22 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
             (false, true) => Ok(global),
             (true, true) => {
                 if !(ctx.has_leading_colon && is_entry) {
-                    let mut local_from_globs = self.resolution_graph.inner[scope]
-                        .children()
-                        .and_then(|children| children.get(&None))
-                        .map(|children_unnamed| {
-                            let mut local_from_globs = vec![];
-                            children_unnamed.iter().for_each(|child| {
-                                local_from_globs.append(
-                                    &mut self
-                                        .matching_from_use(ctx, *child, ident, paths_only, true),
-                                );
-                            });
-                            local_from_globs
-                        })
-                        .unwrap_or_default();
+                    let mut local_from_globs =
+                        self.resolution_graph.inner[scope]
+                            .children()
+                            .and_then(|children| children.get(&None))
+                            .map(|children_unnamed| {
+                                let mut local_from_globs = vec![];
+                                children_unnamed.iter().for_each(|child| {
+                                    if self.resolution_graph.inner[*child].is_use() {
+                                        local_from_globs.append(&mut self.matching_from_use(
+                                            ctx, *child, ident, paths_only, true,
+                                        ));
+                                    }
+                                });
+                                local_from_globs
+                            })
+                            .unwrap_or_default();
                     let local_from_globs_is_empty = local_from_globs.is_empty();
                     local_from_globs.retain(|i| {
                         super::r#pub::is_target_visible(self.resolution_graph, ctx.dest, *i)
@@ -222,9 +226,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
         paths_only: bool,
         glob_only: bool,
     ) -> Vec<ResolutionIndex> {
-        if !self.resolution_graph.inner[use_index].is_use() {
-            vec![]
-        } else if !super::r#pub::is_target_visible(self.resolution_graph, ctx.dest, use_index) {
+        if !super::r#pub::is_target_visible(self.resolution_graph, ctx.dest, use_index) {
             vec![]
         } else {
             let use_children = self.resolution_graph.inner[use_index].children().unwrap();

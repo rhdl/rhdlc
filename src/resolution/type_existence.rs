@@ -1,8 +1,6 @@
-use fnv::FnvHashMap as HashMap;
-
 use syn::{
     visit::Visit, File, Generics, ImplItemMethod, ImplItemType, Item, ItemFn, ItemImpl, ItemMod,
-    Path, PathSegment, Receiver, TraitBound, TraitItemMethod, TraitItemType, TypeParam,
+    Path, PathSegment, TraitBound, TraitItemMethod, TraitItemType, TypeParam,
     TypeParamBound, TypePath,
 };
 
