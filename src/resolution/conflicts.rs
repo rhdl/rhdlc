@@ -61,21 +61,20 @@ impl<'a, 'ast> ConflictChecker<'a, 'ast> {
             if let Some(ident) = ident {
                 let mut claimed = vec![false; indices.len()];
                 // Unfortunately, need an O(n^2) check here on items with the same name
-                // As per petgraph docs, this is ordered most recent to least recent, so need to iterate in reverse
-                for i in (0..indices.len()).rev() {
-                    if let Some(i_name) = self.resolution_graph.inner[indices[i]].name() {
-                        for j in (0..i).rev() {
+                for (i_pos, i) in indices.iter().enumerate() {
+                    if let Some(i_name) = self.resolution_graph.inner[*i].name() {
+                        for (j_pos, j) in indices.iter().enumerate().skip(i_pos + 1) {
                             // Don't create repetitive errors by "claiming" duplicates for errors
-                            if claimed[j] {
+                            if claimed[j_pos] {
                                 continue;
                             }
                             // Skip names that don't conflict
-                            if !self.resolution_graph.inner[indices[i]]
-                                .in_same_name_class(&self.resolution_graph.inner[indices[j]])
+                            if !self.resolution_graph.inner[*i]
+                                .in_same_name_class(&self.resolution_graph.inner[*j])
                             {
                                 continue;
                             }
-                            if let Some(j_name) = self.resolution_graph.inner[indices[j]].name() {
+                            if let Some(j_name) = self.resolution_graph.inner[*j].name() {
                                 // TODO: go back to conflicts with logic
                                 if i_name == j_name {
                                     self.errors.push(
@@ -90,7 +89,7 @@ impl<'a, 'ast> ConflictChecker<'a, 'ast> {
                                     );
                                     // Optimization: don't need to claim items that won't be seen again
                                     // claimed[i] = true;
-                                    claimed[j] = true;
+                                    claimed[j_pos] = true;
                                     // Stop at the first conflict seen for `i`, since `j` will necessarily become `i` in the future and handle any further conflicts.
                                     break;
                                 }
