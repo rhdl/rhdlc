@@ -1,9 +1,10 @@
 use fnv::FnvHashMap as HashMap;
 use log::error;
 use syn::{
-    spanned::Spanned, visit::Visit, Field, File, Ident, ItemConst, ItemEnum, ItemExternCrate,
-    ItemFn, ItemImpl, ItemMacro, ItemMacro2, ItemMod, ItemStatic, ItemStruct, ItemTrait,
-    ItemTraitAlias, ItemType, ItemUnion, ItemUse, Variant,
+    spanned::Spanned, visit::Visit, Field, File, Ident, ImplItemConst, ImplItemMethod, ItemConst,
+    ItemEnum, ItemExternCrate, ItemFn, ItemImpl, ItemMacro, ItemMacro2, ItemMod, ItemStatic,
+    ItemStruct, ItemTrait, ItemTraitAlias, ItemType, ItemUnion, ItemUse, TraitItemConst,
+    TraitItemMethod, Variant,
 };
 
 use super::{graph::*, FileGraph, FileGraphIndex};
@@ -96,7 +97,9 @@ impl<'a, 'ast> Visit<'ast> for ScopeBuilder<'a, 'ast> {
                     parent,
                     children: HashMap::default(),
                 });
-                self.resolution_graph.content_files.insert(mod_idx, content_file);
+                self.resolution_graph
+                    .content_files
+                    .insert(mod_idx, content_file);
                 self.resolution_graph.add_child(parent, mod_idx);
                 self.scope_ancestry.push(mod_idx);
                 self.file_ancestry.push(file_index);
@@ -137,10 +140,56 @@ impl<'a, 'ast> Visit<'ast> for ScopeBuilder<'a, 'ast> {
         self.scope_ancestry.pop();
     }
 
+    fn visit_impl_item_method(&mut self, impl_item_method: &'ast ImplItemMethod) {
+        let parent = *self.scope_ancestry.last().unwrap();
+        let item_idx = self.resolution_graph.add_node(ResolutionNode::Branch {
+            branch: Branch::Fn(impl_item_method),
+            parent,
+            children: HashMap::default(),
+        });
+        self.resolution_graph.add_child(parent, item_idx);
+        self.scope_ancestry.push(item_idx);
+        self.visit_block(&impl_item_method.block);
+        self.scope_ancestry.pop();
+    }
+
+    fn visit_trait_item_method(&mut self, trait_item_method: &'ast TraitItemMethod) {
+        let parent = *self.scope_ancestry.last().unwrap();
+        let item_idx = self.resolution_graph.add_node(ResolutionNode::Branch {
+            branch: Branch::Fn(trait_item_method),
+            parent,
+            children: HashMap::default(),
+        });
+        self.resolution_graph.add_child(parent, item_idx);
+        self.scope_ancestry.push(item_idx);
+        if let Some(block) = trait_item_method.default.as_ref() {
+            self.visit_block(block);
+        }
+        self.scope_ancestry.pop();
+    }
+
     fn visit_item_const(&mut self, item_const: &'ast ItemConst) {
         let parent = *self.scope_ancestry.last().unwrap();
         let item_idx = self.resolution_graph.add_node(ResolutionNode::Leaf {
             leaf: Leaf::Const(item_const),
+            parent,
+        });
+        self.resolution_graph.add_child(parent, item_idx);
+    }
+
+    fn visit_impl_item_const(&mut self, impl_item_const: &'ast ImplItemConst) {
+        let parent = *self.scope_ancestry.last().unwrap();
+        let item_idx = self.resolution_graph.add_node(ResolutionNode::Leaf {
+            leaf: Leaf::Const(impl_item_const),
+            parent,
+        });
+        self.resolution_graph.add_child(parent, item_idx);
+    }
+
+    fn visit_trait_item_const(&mut self, trait_item_const: &'ast TraitItemConst) {
+        let parent = *self.scope_ancestry.last().unwrap();
+        let item_idx = self.resolution_graph.add_node(ResolutionNode::Leaf {
+            leaf: Leaf::Const(trait_item_const),
             parent,
         });
         self.resolution_graph.add_child(parent, item_idx);
