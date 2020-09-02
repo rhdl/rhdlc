@@ -26,7 +26,11 @@ impl<'a, 'ast> TypeExistenceChecker<'a, 'ast> {
         for scope in self.resolution_graph.node_indices() {
             if self.resolution_graph.inner[scope].is_type_existence_checking_candidate() {
                 // Cannot directly visit methods, functions in traits because RHDL need to have the generics from the impl/trait on the generics stack
-                if self.resolution_graph.inner[scope].parent().map(|parent| self.resolution_graph.inner[parent].is_trait_or_impl()).unwrap_or_default() {
+                if self.resolution_graph.inner[scope]
+                    .parent()
+                    .map(|parent| self.resolution_graph.inner[parent].is_trait_or_impl())
+                    .unwrap_or_default()
+                {
                     continue;
                 }
                 let mut ctx_checker = TypeExistenceCheckerVisitor {
@@ -213,13 +217,7 @@ impl<'a, 'c, 'ast> Visit<'c> for TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
     fn visit_type_path(&mut self, type_path: &'c TypePath) {
         if let Some(ident) = type_path.path.get_ident() {
             if ident == "Self" {
-                let is_within_trait_or_impl = self.resolution_graph.inner[self.scope]
-                    .is_trait_or_impl()
-                    || self.resolution_graph.inner[self.scope]
-                        .parent()
-                        .map(|parent| self.resolution_graph.inner[parent].is_trait_or_impl())
-                        .unwrap_or_default();
-                if is_within_trait_or_impl {
+                if self.resolution_graph.inner[self.scope].is_trait_or_impl() {
                     return;
                 }
             }
