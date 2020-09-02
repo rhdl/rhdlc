@@ -1,4 +1,4 @@
-use fnv::FnvHashSet as HashSet;
+use fxhash::FxHashSet as HashSet;
 use syn::{
     visit::Visit, Fields, File as SynFile, Generics, Ident, Item, ItemEnum, ItemMod, PatIdent,
     Signature,
@@ -59,41 +59,71 @@ impl<'a, 'ast> ConflictChecker<'a, 'ast> {
         // Check the scope for conflicts
         for (ident, indices) in self.resolution_graph.inner[node].children().unwrap().iter() {
             if let Some(ident) = ident {
-                let mut claimed = vec![false; indices.len()];
+                let mut names_and_indices: Vec<(ResolutionIndex, &'ast Ident)> = indices
+                    .iter()
+                    .filter_map(|i| {
+                        self.resolution_graph.inner[*i]
+                            .name()
+                            .map(|name| (*i, name))
+                    })
+                    .collect();
+                self.resolution_graph.inner[node]
+                    .children()
+                    .unwrap()
+                    .get(&None)
+                    .map(|children| {
+                        children
+                            .iter()
+                            .filter(|child| self.resolution_graph.inner[**child].is_use())
+                            .for_each(|child| {
+                                self.resolution_graph.inner[*child]
+                                    .children()
+                                    .unwrap()
+                                    .get(&Some(ident))
+                                    .map(|with_name| {
+                                        with_name
+                                            .iter()
+                                            .filter_map(|i| {
+                                                self.resolution_graph.inner[*i]
+                                                    .name()
+                                                    .map(|name| (*child, name))
+                                            })
+                                            .for_each(|x| names_and_indices.push(x))
+                                    });
+                            })
+                    });
+                names_and_indices.sort_by_key(|x| x.0);
+                let mut claimed = vec![false; names_and_indices.len()];
                 // Unfortunately, need an O(n^2) check here on items with the same name
-                for (i_pos, i) in indices.iter().enumerate() {
-                    if let Some(i_name) = self.resolution_graph.inner[*i].name() {
-                        for (j_pos, j) in indices.iter().enumerate().skip(i_pos + 1) {
-                            // Don't create repetitive errors by "claiming" duplicates for errors
-                            if claimed[j_pos] {
-                                continue;
-                            }
-                            // Skip names that don't conflict
-                            if !self.resolution_graph.inner[*i]
-                                .in_same_name_class(&self.resolution_graph.inner[*j])
-                            {
-                                continue;
-                            }
-                            if let Some(j_name) = self.resolution_graph.inner[*j].name() {
-                                // TODO: go back to conflicts with logic
-                                if i_name == j_name {
-                                    self.errors.push(
-                                        MultipleDefinitionError {
-                                            file: file.clone(),
-                                            name: ident.to_string(),
-                                            original: i_name.span(),
-                                            duplicate: j_name.span(),
-                                            hint: DuplicateHint::Name,
-                                        }
-                                        .into(),
-                                    );
-                                    // Optimization: don't need to claim items that won't be seen again
-                                    // claimed[i] = true;
-                                    claimed[j_pos] = true;
-                                    // Stop at the first conflict seen for `i`, since `j` will necessarily become `i` in the future and handle any further conflicts.
-                                    break;
+                for (i_pos, (i, i_name)) in names_and_indices.iter().enumerate() {
+                    for (j_pos, (j, j_name)) in names_and_indices.iter().enumerate().skip(i_pos + 1)
+                    {
+                        // Don't create repetitive errors by "claiming" duplicates for errors
+                        if claimed[j_pos] {
+                            continue;
+                        }
+                        // Skip names that don't conflict
+                        if !self.resolution_graph.inner[*i]
+                            .in_same_name_class(&self.resolution_graph.inner[*j])
+                        {
+                            continue;
+                        }
+                        if i_name == j_name {
+                            self.errors.push(
+                                MultipleDefinitionError {
+                                    file: file.clone(),
+                                    name: ident.to_string(),
+                                    original: i_name.span(),
+                                    duplicate: j_name.span(),
+                                    hint: DuplicateHint::Name,
                                 }
-                            }
+                                .into(),
+                            );
+                            // Optimization: don't need to claim items that won't be seen again
+                            // claimed[i] = true;
+                            claimed[j_pos] = true;
+                            // Stop at the first conflict seen for `i`, since `j` will necessarily become `i` in the future and handle any further conflicts.
+                            break;
                         }
                     }
                 }

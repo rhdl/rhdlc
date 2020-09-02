@@ -1,9 +1,9 @@
-use fnv::FnvHashSet as HashSet;
+use fxhash::FxHashSet as HashSet;
 use std::rc::Rc;
 
 use syn::{visit::Visit, Ident, Path, UseGlob, UseName, UsePath, UseRename, UseTree};
 
-use super::super::{Branch, ResolutionGraph, ResolutionIndex, ResolutionNode};
+use super::super::{Branch, Leaf, ResolutionGraph, ResolutionIndex, ResolutionNode};
 use super::TracingContext;
 use crate::error::*;
 use crate::find_file::File;
@@ -181,12 +181,19 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                     .get(&None)
                     .map(|globs| {
                         globs.iter().for_each(|glob| {
-                            if self.visited_glob_scopes.contains(glob) {
+                            let glob = match self.resolution_graph.inner[*glob] {
+                                ResolutionNode::Leaf {
+                                    leaf: Leaf::UseGlob(_, glob),
+                                    ..
+                                } => glob,
+                                _ => return,
+                            };
+                            if self.visited_glob_scopes.contains(&glob) {
                                 return;
                             }
-                            self.visited_glob_scopes.insert(*glob);
+                            self.visited_glob_scopes.insert(glob);
                             let glob_src_children =
-                                self.resolution_graph.inner[*glob].children().unwrap();
+                                self.resolution_graph.inner[glob].children().unwrap();
                             matches.append(
                                 &mut glob_src_children
                                     .get(&Some(ident_to_look_for))
@@ -235,6 +242,18 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                     .map(|named| {
                         named
                             .iter()
+                            .filter_map(|child| match &self.resolution_graph.inner[*child] {
+                                ResolutionNode::Leaf {
+                                    leaf: Leaf::UseName(_, imports),
+                                    ..
+                                }
+                                | ResolutionNode::Leaf {
+                                    leaf: Leaf::UseRename(_, imports),
+                                    ..
+                                } => Some(imports),
+                                _ => None
+                            })
+                            .flatten()
                             .filter(|child| {
                                 !paths_only
                                     || self.resolution_graph.inner[**child]

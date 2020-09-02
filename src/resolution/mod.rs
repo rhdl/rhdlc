@@ -33,7 +33,7 @@
 ///         * fall back all the way to "not found" if nothing is similar
 use std::rc::Rc;
 
-use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
+use fxhash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use syn::{visit::Visit, Ident};
 
 use crate::error::{InvalidRawIdentifierError, ResolutionError};
@@ -48,7 +48,7 @@ mod path;
 mod r#pub;
 mod type_existence;
 
-use graph::{Branch, ResolutionGraph, ResolutionIndex, ResolutionNode};
+use graph::{Branch, Leaf, ResolutionGraph, ResolutionIndex, ResolutionNode};
 
 #[derive(Debug)]
 pub struct Resolver<'ast> {
@@ -82,7 +82,9 @@ impl<'ast> Resolver<'ast> {
                 name: String::default(),
                 children: HashMap::default(),
             });
-            self.resolution_graph.content_files.insert(resolution_index, file);
+            self.resolution_graph
+                .content_files
+                .insert(resolution_index, file);
             let mut builder = build::ScopeBuilder {
                 errors: &mut self.errors,
                 file_graph: &mut self.file_graph,

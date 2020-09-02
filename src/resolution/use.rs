@@ -1,11 +1,10 @@
-use fnv::FnvHashSet as HashSet;
-
+use fxhash::FxHashSet as HashSet;
 use log::error;
 use syn::{UseName, UseRename, UseTree};
 
 use super::{
     path::{r#mut::PathFinder, TracingContext},
-    Branch, ResolutionError, ResolutionGraph, ResolutionIndex, ResolutionNode,
+    Branch, Leaf, ResolutionError, ResolutionGraph, ResolutionIndex, ResolutionNode,
 };
 use crate::error::{
     AmbiguitySource, DisambiguationError, GlobAtEntryError, GlobalPathCannotHaveSpecialIdentError,
@@ -222,18 +221,22 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                         }
                     }
                 };
-                if let Some(children) = self.resolution_graph.inner[ctx.dest].children_mut() {
-                    match tree {
-                        Name(name) => children
-                            .entry(Some(&name.ident))
-                            .or_default()
-                            .extend(&found_children),
-                        Rename(rename) => children
-                            .entry(Some(&rename.rename))
-                            .or_default()
-                            .extend(&found_children),
-                        _ => {}
+                match tree {
+                    Name(name) => {
+                        let idx = self.resolution_graph.add_node(ResolutionNode::Leaf {
+                            leaf: Leaf::UseName(name, found_children),
+                            parent: ctx.dest,
+                        });
+                        self.resolution_graph.add_child(ctx.dest, idx);
                     }
+                    Rename(rename) => {
+                        let idx = self.resolution_graph.add_node(ResolutionNode::Leaf {
+                            leaf: Leaf::UseRename(rename, found_children),
+                            parent: ctx.dest,
+                        });
+                        self.resolution_graph.add_child(ctx.dest, idx);
+                    }
+                    _ => {}
                 }
             }
             Glob(glob) => {
@@ -259,9 +262,11 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                     );
                     return;
                 }
-                if let Some(children) = self.resolution_graph.inner[ctx.dest].children_mut() {
-                    children.entry(None).or_default().push(scope)
-                }
+                let glob_idx = self.resolution_graph.add_node(ResolutionNode::Leaf {
+                    leaf: Leaf::UseGlob(glob, scope),
+                    parent: ctx.dest,
+                });
+                self.resolution_graph.add_child(ctx.dest, glob_idx);
             }
             Group(group) => group
                 .items

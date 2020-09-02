@@ -1,4 +1,4 @@
-use fnv::FnvHashMap as HashMap;
+use fxhash::FxHashMap as HashMap;
 use std::fmt::Debug;
 use std::rc::Rc;
 
@@ -6,7 +6,7 @@ use syn::{
     visit::Visit, Field, Ident, ImplItem, ImplItemConst, ImplItemMethod, ImplItemType, Item,
     ItemConst, ItemEnum, ItemFn, ItemImpl, ItemMacro2, ItemMod, ItemStatic, ItemStruct, ItemTrait,
     ItemTraitAlias, ItemType, ItemUnion, ItemUse, Stmt, TraitItem, TraitItemConst, TraitItemMethod,
-    TraitItemType, Variant, Visibility,
+    TraitItemType, UseGlob, UseName, UseRename, Variant, Visibility,
 };
 
 use crate::find_file::File;
@@ -141,6 +141,18 @@ impl<'ast> ResolutionNode<'ast> {
             | ResolutionNode::Branch {
                 branch: Branch::Impl(_),
                 ..
+            }
+            | ResolutionNode::Leaf {
+                leaf: Leaf::UseName(..),
+                ..
+            }
+            | ResolutionNode::Leaf {
+                leaf: Leaf::UseRename(..),
+                ..
+            }
+            | ResolutionNode::Leaf {
+                leaf: Leaf::UseGlob(..),
+                ..
             } => None,
         }
     }
@@ -160,6 +172,30 @@ impl<'ast> ResolutionNode<'ast> {
         match self {
             ResolutionNode::Branch {
                 branch: Branch::Impl { .. },
+                ..
+            }
+            | ResolutionNode::Branch {
+                branch: Branch::Trait { .. },
+                ..
+            }
+            | ResolutionNode::Branch {
+                branch: Branch::Fn { .. },
+                ..
+            }
+            | ResolutionNode::Branch {
+                branch: Branch::Struct { .. },
+                ..
+            }
+            | ResolutionNode::Branch {
+                branch: Branch::Enum { .. },
+                ..
+            }
+            | ResolutionNode::Leaf {
+                leaf: Leaf::Const { .. },
+                ..
+            }
+            | ResolutionNode::Leaf {
+                leaf: Leaf::Type { .. },
                 ..
             } => true,
             _ => false,
@@ -194,12 +230,8 @@ impl<'ast> ResolutionNode<'ast> {
                 } => true,
                 _ => false,
             },
-            ResolutionNode::Branch {
-                branch: Mod(_), ..
-            } => match other {
-                ResolutionNode::Branch {
-                    branch: Mod(_), ..
-                }
+            ResolutionNode::Branch { branch: Mod(_), .. } => match other {
+                ResolutionNode::Branch { branch: Mod(_), .. }
                 | ResolutionNode::Branch {
                     branch: Struct(_), ..
                 }
@@ -209,7 +241,14 @@ impl<'ast> ResolutionNode<'ast> {
                 | ResolutionNode::Branch {
                     branch: Trait(_), ..
                 }
-                | ResolutionNode::Leaf { leaf: Type(_), .. } => true,
+                | ResolutionNode::Leaf { leaf: Type(_), .. }
+                | ResolutionNode::Leaf {
+                    leaf: UseName(..), ..
+                }
+                | ResolutionNode::Leaf {
+                    leaf: UseRename(..),
+                    ..
+                } => true,
                 _ => false,
             },
             ResolutionNode::Leaf { leaf: Const(_), .. }
@@ -225,7 +264,14 @@ impl<'ast> ResolutionNode<'ast> {
                 | ResolutionNode::Branch {
                     branch: Trait(_), ..
                 }
-                | ResolutionNode::Leaf { leaf: Type(_), .. } => true,
+                | ResolutionNode::Leaf { leaf: Type(_), .. }
+                | ResolutionNode::Leaf {
+                    leaf: UseName(..), ..
+                }
+                | ResolutionNode::Leaf {
+                    leaf: UseRename(..),
+                    ..
+                } => true,
                 _ => false,
             },
             ResolutionNode::Branch {
@@ -237,8 +283,18 @@ impl<'ast> ResolutionNode<'ast> {
             | ResolutionNode::Branch {
                 branch: Trait(_), ..
             }
-            | ResolutionNode::Leaf { leaf: Type(_), .. } => true,
-            ResolutionNode::Branch { branch: Use(_), .. } => true,
+            | ResolutionNode::Leaf { leaf: Type(_), .. }
+            | ResolutionNode::Leaf {
+                leaf: UseName(..), ..
+            }
+            | ResolutionNode::Leaf {
+                leaf: UseRename(..),
+                ..
+            } => true,
+            ResolutionNode::Branch { branch: Use(_), .. }
+            | ResolutionNode::Leaf {
+                leaf: UseGlob(..), ..
+            } => false,
         }
     }
 
@@ -327,6 +383,9 @@ impl<'ast> ResolutionNode<'ast> {
                 Leaf::Field(f) => f.ident.as_ref(),
                 Leaf::Const(c) => c.ident(),
                 Leaf::Type(t) => t.ident(),
+                Leaf::UseRename(r, _) => Some(&r.rename),
+                Leaf::UseName(n, _) => Some(&n.ident),
+                Leaf::UseGlob(g, _) => None,
             },
         }
     }
@@ -351,6 +410,9 @@ impl<'ast> ResolutionNode<'ast> {
                 Leaf::Field(f) => v.visit_field(f),
                 Leaf::Const(c) => c.visit(v),
                 Leaf::Type(t) => t.visit(v),
+                Leaf::UseName(n, _) => v.visit_use_name(n),
+                Leaf::UseRename(r, _) => v.visit_use_rename(r),
+                Leaf::UseGlob(g, _) => v.visit_use_glob(g),
             },
         }
     }
@@ -370,6 +432,8 @@ pub enum Branch<'ast> {
     /// renames use the renamed ident
     /// names use the original ident
     Use(&'ast ItemUse),
+    // UsePath(&'ast UsePath),
+    // UseGroup(&'ast UseGroup)
 }
 
 #[derive(Debug)]
@@ -377,6 +441,9 @@ pub enum Leaf<'ast> {
     Field(&'ast Field),
     Const(&'ast dyn SomeConst<'ast>),
     Type(&'ast dyn SomeType<'ast>),
+    UseName(&'ast UseName, Vec<ResolutionIndex>),
+    UseRename(&'ast UseRename, Vec<ResolutionIndex>),
+    UseGlob(&'ast UseGlob, ResolutionIndex),
 }
 
 pub trait SomeItem<'ast> {

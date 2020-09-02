@@ -1,4 +1,4 @@
-use fnv::FnvHashMap as HashMap;
+use fxhash::FxHashMap as HashMap;
 use log::error;
 use syn::{
     spanned::Spanned, visit::Visit, Field, File, Ident, ImplItemConst, ImplItemMethod, ItemConst,

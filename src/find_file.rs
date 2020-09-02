@@ -4,7 +4,7 @@ use std::io::Read;
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use fnv::FnvHashMap as HashMap;
+use fxhash::FxHashMap as HashMap;
 use syn::{spanned::Spanned, Ident, Item, ItemMod};
 
 use crate::error::{
