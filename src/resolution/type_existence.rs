@@ -215,6 +215,10 @@ impl<'a, 'c, 'ast> Visit<'c> for TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
     }
 
     fn visit_type_path(&mut self, type_path: &'c TypePath) {
+        if let Some(qself) = &type_path.qself {
+            todo!("support self qualifiers");
+        }
+
         if let Some(ident) = type_path.path.get_ident() {
             if ident == "Self" {
                 if self.resolution_graph.inner[self.scope].is_trait_or_impl() {
