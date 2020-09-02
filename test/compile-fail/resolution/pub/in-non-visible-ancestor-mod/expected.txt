@@ -1,5 +1,5 @@
 error: this item is not visible in mod `a`
- --> top.rhdl:3:22
+ --> top.rhdl:4:26
   |
-3 |         pub(in crate::a) struct c {}
-  |                       ^ not visible in this scope
+4 |             pub(in crate::a) struct d {}
+  |                           ^ not visible in this scope

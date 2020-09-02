@@ -1,5 +1,5 @@
-error: unresolved item `crate`
+error: `crate` in paths can only be used in the start position
  --> top.rhdl:2:7
   |
 2 | use a::crate;
-  |        ^^^^^ no `crate` item in `a`
+  |        ^^^^^ `crate` in paths can only be used in the start position

@@ -1,5 +1,5 @@
-error: unresolved item `super`
+error: `super` in paths can only be used in the start position
  --> top.rhdl:2:7
   |
 2 | use a::super;
-  |        ^^^^^ no `super` item in `a`
+  |        ^^^^^ `super` in paths can only be used in the start position

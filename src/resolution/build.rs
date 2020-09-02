@@ -1,10 +1,10 @@
 use fxhash::FxHashMap as HashMap;
 use log::error;
 use syn::{
-    spanned::Spanned, visit::Visit, Field, File, Ident, ImplItemConst, ImplItemMethod, ItemConst,
-    ItemEnum, ItemExternCrate, ItemFn, ItemImpl, ItemMacro, ItemMacro2, ItemMod, ItemStatic,
-    ItemStruct, ItemTrait, ItemTraitAlias, ItemType, ItemUnion, ItemUse, TraitItemConst,
-    TraitItemMethod, Variant,
+    spanned::Spanned, visit::Visit, Field, File, Ident, ImplItemConst, ImplItemMethod,
+    ImplItemType, ItemConst, ItemEnum, ItemExternCrate, ItemFn, ItemImpl, ItemMacro, ItemMacro2,
+    ItemMod, ItemStatic, ItemStruct, ItemTrait, ItemTraitAlias, ItemType, ItemUnion, ItemUse,
+    TraitItemConst, TraitItemMethod, TraitItemType, Variant,
 };
 
 use super::{graph::*, FileGraph, FileGraphIndex};
@@ -204,6 +204,24 @@ impl<'a, 'ast> Visit<'ast> for ScopeBuilder<'a, 'ast> {
         self.resolution_graph.add_child(parent, item_idx);
     }
 
+    fn visit_impl_item_type(&mut self, impl_item_type: &'ast ImplItemType) {
+        let parent = *self.scope_ancestry.last().unwrap();
+        let item_idx = self.resolution_graph.add_node(ResolutionNode::Leaf {
+            leaf: Leaf::Type(impl_item_type),
+            parent,
+        });
+        self.resolution_graph.add_child(parent, item_idx);
+    }
+
+    fn visit_trait_item_type(&mut self, trait_item_type: &'ast TraitItemType) {
+        let parent = *self.scope_ancestry.last().unwrap();
+        let item_idx = self.resolution_graph.add_node(ResolutionNode::Leaf {
+            leaf: Leaf::Type(trait_item_type),
+            parent,
+        });
+        self.resolution_graph.add_child(parent, item_idx);
+    }
+
     fn visit_item_trait(&mut self, item_trait: &'ast ItemTrait) {
         let parent = *self.scope_ancestry.last().unwrap();
 
@@ -322,7 +340,7 @@ impl<'a, 'ast> Visit<'ast> for ScopeBuilder<'a, 'ast> {
                 file: self.file_graph.inner[*self.file_ancestry.last().unwrap()].clone(),
                 span: item_static.ident.span(),
                 reason:
-                    "RHDL does not support declarative macros, as they are not stabilized in Rust",
+                    "RHDL cannot support static variables and other unsafe code: safety is not yet formally defined",
             }
             .into(),
         );

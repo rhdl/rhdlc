@@ -1,5 +1,4 @@
 use fxhash::FxHashSet as HashSet;
-use log::error;
 use syn::{UseName, UseRename, UseTree};
 
 use super::{
@@ -7,9 +6,8 @@ use super::{
     Branch, Leaf, ResolutionError, ResolutionGraph, ResolutionIndex, ResolutionNode,
 };
 use crate::error::{
-    AmbiguitySource, DisambiguationError, GlobAtEntryError, GlobalPathCannotHaveSpecialIdentError,
-    ItemHint, SelfUsageError, SelfUsageErrorCause, SpecialIdentNotAtStartOfPathError,
-    TooManySupersError,
+    AmbiguitySource, DisambiguationError, GlobAtEntryError, ItemHint, SelfUsageError,
+    SelfUsageErrorCause,
 };
 
 pub struct UseResolver<'a, 'ast> {
@@ -72,112 +70,37 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
         let is_entry = ctx.previous_idents.is_empty();
         match tree {
             Path(path) => {
-                let new_scope = match path.ident == "self"
-                    || path.ident == "super"
-                    || path.ident == "crate"
+                let mut path_finder = PathFinder {
+                    resolution_graph: self.resolution_graph,
+                    errors: self.errors,
+                    resolved_uses: self.resolved_uses,
+                    visited_glob_scopes: Default::default(),
+                };
+                let found_children = match path_finder.find_children(ctx, scope, &path.ident, true)
                 {
-                    // Special keyword cases
-                    true => {
-                        let is_chained_supers = ctx
-                            .previous_idents
-                            .last()
-                            .map(|ident| *ident == "super")
-                            .unwrap_or(true)
-                            && path.ident == "super";
-                        if !is_entry && !is_chained_supers {
-                            self.errors.push(
-                                SpecialIdentNotAtStartOfPathError {
-                                    file: ctx.file.clone(),
-                                    path_ident: path.ident.clone(),
-                                }
-                                .into(),
-                            );
-                            return;
-                        }
-                        if ctx.has_leading_colon {
-                            self.errors.push(
-                                GlobalPathCannotHaveSpecialIdentError {
-                                    file: ctx.file.clone(),
-                                    path_ident: path.ident.clone(),
-                                }
-                                .into(),
-                            );
-                            return;
-                        }
-                        if path.ident == "self" {
-                            scope
-                        } else if path.ident == "super" {
-                            let mut use_grandparent = self.resolution_graph.inner[scope].parent();
-                            while use_grandparent
-                                .map(|i| {
-                                    !self.resolution_graph.inner[i].is_valid_use_path_segment()
-                                })
-                                .unwrap_or_default()
-                            {
-                                use_grandparent =
-                                    self.resolution_graph.inner[use_grandparent.unwrap()].parent();
-                            }
-                            if let Some(use_grandparent) = use_grandparent {
-                                use_grandparent
-                            } else {
-                                self.errors.push(
-                                    TooManySupersError {
-                                        file: ctx.file.clone(),
-                                        ident: path.ident.clone(),
-                                    }
-                                    .into(),
-                                );
-                                return;
-                            }
-                        } else if path.ident == "crate" {
-                            let mut root = scope;
-                            while let Some(next_parent) = self.resolution_graph.inner[root].parent()
-                            {
-                                root = next_parent;
-                            }
-                            root
-                        } else {
-                            error!("the match that led to this arm should prevent this from ever happening");
-                            scope
-                        }
-                    }
-                    // Default case: enter the matching child scope
-                    false => {
-                        let mut path_finder = PathFinder {
-                            resolution_graph: self.resolution_graph,
-                            errors: self.errors,
-                            resolved_uses: self.resolved_uses,
-                            visited_glob_scopes: Default::default(),
-                        };
-                        let found_children =
-                            match path_finder.find_children(ctx, scope, &path.ident, true) {
-                                Ok(v) => v,
-                                Err(err) => {
-                                    self.errors.push(err);
-                                    return;
-                                }
-                            };
-                        if found_children.len() > 1 {
-                            self.errors.push(
-                                DisambiguationError {
-                                    file: ctx.file.clone(),
-                                    ident: path.ident.clone(),
-                                    src: AmbiguitySource::Item(
-                                        if is_entry && ctx.has_leading_colon {
-                                            ItemHint::ExternalNamedScope
-                                        } else if is_entry {
-                                            ItemHint::InternalNamedChildOrExternalNamedScope
-                                        } else {
-                                            ItemHint::InternalNamedChildScope
-                                        },
-                                    ),
-                                }
-                                .into(),
-                            );
-                        }
-                        *found_children.first().unwrap()
+                    Ok(v) => v,
+                    Err(err) => {
+                        self.errors.push(err);
+                        return;
                     }
                 };
+                if found_children.len() > 1 {
+                    self.errors.push(
+                        DisambiguationError {
+                            file: ctx.file.clone(),
+                            ident: path.ident.clone(),
+                            src: AmbiguitySource::Item(if is_entry && ctx.has_leading_colon {
+                                ItemHint::ExternalNamedScope
+                            } else if is_entry {
+                                ItemHint::InternalNamedChildOrExternalNamedScope
+                            } else {
+                                ItemHint::InternalNamedChildScope
+                            }),
+                        }
+                        .into(),
+                    );
+                }
+                let new_scope = *found_children.first().unwrap();
                 ctx.previous_idents.push(&path.ident);
                 self.trace_use(ctx, new_scope, &path.tree, false);
                 ctx.previous_idents.pop();

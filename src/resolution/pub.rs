@@ -64,7 +64,7 @@ fn apply_visibility_in<'ast>(
         .first()
         .expect("error if no first segment, this should never happen");
     let mut export_dest = if first_segment.ident == "crate" {
-        *build_ancestry(resolution_graph, node).last().unwrap()
+        *ancestry.last().unwrap()
     } else if first_segment.ident == "super" {
         if let Some(grandparent) = resolution_graph.inner[node_parent].parent() {
             grandparent
@@ -225,8 +225,6 @@ fn apply_visibility_crate<'ast>(
     Ok(Some(root))
 }
 
-/// Target is always a child of scope
-/// Check if the target is visible in the context of the original use
 /// Possibilities:
 /// * dest_parent == target_parent (self, always visible)
 /// * target_parent == root && dest_root == root (crate, always visible)
@@ -244,16 +242,18 @@ pub fn is_target_visible<'ast>(
         // this is necessarily a root
         return true;
     };
-    // self
     if target_parent == target {
+        // self
         return true;
-    }
-    // super
-    if resolution_graph.inner[target_parent]
+    } else if resolution_graph.inner[target_parent]
         .parent()
         .map(|g| g == target)
         .unwrap_or_default()
     {
+        // super
+        return true;
+    } else if dest == target_parent {
+        // immediate child
         return true;
     }
     let dest_ancestry = build_ancestry(resolution_graph, dest);

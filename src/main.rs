@@ -110,6 +110,11 @@ mod test {
     }
 
     #[test]
+    fn compile_pass_resolution_type_existence() {
+        success_test_looper("./test/compile-pass/resolution/type-existence")
+    }
+
+    #[test]
     fn compile_pass_stdin() {
         let output = super::entry(crate::find_file::FileContentSource::Reader(
             "string".to_string(),

@@ -1,0 +1,62 @@
+use b::E as Eeeeee;
+use b::*;
+
+fn a() {}
+struct B<L: D, R, T: E> {
+    c: C<T>,
+    l: L,
+    r: R,
+}
+enum C<T: E> {
+    One(T),
+    Two { t: T },
+    Three,
+    Four(T, T),
+    Five(),
+    Six {},
+}
+trait D {}
+trait F: Eeeeee {}
+
+mod b {
+    pub trait E: super::D {}
+    fn a<T: E>(t: T) -> T {
+        t
+    }
+
+    trait G {
+        type X;
+        fn a(&self) {}
+        fn c(&self) -> Self::X;
+    }
+
+    struct H {}
+    impl H {
+        fn b() {}
+    }
+    impl G for H {
+        type X = Self;
+        fn a(&self) {
+            Self::b();
+        }
+        fn c(&self) -> Self::X {
+            *self
+        }
+    }
+
+    fn b() {
+        use crate::I;
+        let i: I = I {};
+    }
+
+    struct J<T> {
+        t: T,
+    }
+    impl<'a, T> J {
+        fn x(&'a self) -> &'a T {
+            self.t
+        }
+    }
+}
+
+struct I {}

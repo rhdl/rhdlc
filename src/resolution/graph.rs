@@ -318,6 +318,20 @@ impl<'ast> ResolutionNode<'ast> {
         }
     }
 
+    pub fn is_impl(&self) -> bool {
+        match self {
+            ResolutionNode::Branch {
+                branch: Branch::Impl(_),
+                ..
+            } => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_trait_or_impl(&self) -> bool {
+        self.is_trait() || self.is_impl()
+    }
+
     pub fn is_type(&self) -> bool {
         match self {
             ResolutionNode::Branch {
@@ -385,7 +399,7 @@ impl<'ast> ResolutionNode<'ast> {
                 Leaf::Type(t) => t.ident(),
                 Leaf::UseRename(r, _) => Some(&r.rename),
                 Leaf::UseName(n, _) => Some(&n.ident),
-                Leaf::UseGlob(g, _) => None,
+                Leaf::UseGlob(_, _) => None,
             },
         }
     }

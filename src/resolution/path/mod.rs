@@ -3,7 +3,7 @@ use std::rc::Rc;
 
 use syn::{Ident, Path};
 
-use super::{Leaf, ResolutionGraph, ResolutionIndex, ResolutionNode};
+use super::{Branch, Leaf, ResolutionGraph, ResolutionIndex, ResolutionNode};
 use crate::error::*;
 use crate::find_file::File;
 
@@ -51,13 +51,50 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
         self.visited_glob_scopes.clear();
         let mut ctx =
             TracingContext::new(self.resolution_graph, dest, path.leading_colon.is_some());
-        let mut dest_scope = dest;
-        while !self.resolution_graph.inner[dest_scope].is_valid_use_path_segment() {
-            dest_scope = self.resolution_graph.inner[dest_scope].parent().unwrap();
-        }
-        let mut scopes = vec![dest_scope];
+
+        let mut scopes = if path
+            .segments
+            .first()
+            .map(|seg| seg.ident == "Self")
+            .unwrap_or_default()
+        {
+            // Seed with applicable traits/impls
+            let mut dest_scope = dest;
+            if let Some((parent, true)) =
+                self.resolution_graph.inner[dest_scope]
+                    .parent()
+                    .map(|parent| {
+                        (
+                            parent,
+                            self.resolution_graph.inner[parent].is_trait_or_impl(),
+                        )
+                    })
+            {
+                dest_scope = parent;
+            }
+            vec![dest_scope]
+        } else {
+            let mut dest_scope = dest;
+            while !self.resolution_graph.inner[dest_scope].is_valid_use_path_segment() {
+                dest_scope = self.resolution_graph.inner[dest_scope].parent().unwrap();
+            }
+
+            // Also seed this scope
+            if let ResolutionNode::Branch {
+                branch: Branch::Fn(_),
+                ..
+            } = &self.resolution_graph.inner[ctx.dest]
+            {
+                vec![dest, dest_scope]
+            } else {
+                vec![dest_scope]
+            }
+        };
         for (i, segment) in path.segments.iter().enumerate() {
             let ident = &segment.ident;
+            if ident == "Self" {
+                continue;
+            }
             let mut results: Vec<Result<Vec<ResolutionIndex>, ResolutionError>> = scopes
                 .iter()
                 .map(|scope| self.find_children(&ctx, *scope, ident, i + 1 != path.segments.len()))
@@ -76,7 +113,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
     }
 
     /// Ok is guaranteed to have >= 1 node, else an unresolved error will be returned
-    fn find_children(
+    pub fn find_children(
         &mut self,
         ctx: &TracingContext,
         scope: ResolutionIndex,
@@ -91,84 +128,131 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
         } else {
             ItemHint::Item
         };
-        let mut local = if !is_entry || !ctx.has_leading_colon {
-            if let Some(children) = self.resolution_graph.inner[scope].children() {
-                let mut local = children
-                    .get(&Some(ident))
-                    .map(|children_with_name| {
-                        children_with_name
-                            .iter()
-                            .filter(|child| {
-                                !paths_only
-                                    || self.resolution_graph.inner[**child]
-                                        .is_valid_use_path_segment()
-                            })
-                            .cloned()
-                            .collect::<Vec<ResolutionIndex>>()
-                    })
-                    .unwrap_or_default();
-                children.get(&None).map(|children_unnamed| {
-                    children_unnamed.iter().for_each(|child| {
-                        if self.resolution_graph.inner[*child].is_use() {
-                            local.append(
-                                &mut self.matching_from_use(ctx, *child, ident, paths_only, false),
-                            );
-                        }
-                    })
-                });
-                local
+
+        let is_special_ident = ident == "super" || ident == "crate" || ident == "self";
+        let is_chained_supers = ctx
+            .previous_idents
+            .last()
+            .map(|ident| *ident == "super")
+            .unwrap_or(true)
+            && ident == "super";
+        if !is_entry && is_special_ident && !is_chained_supers {
+            Err(SpecialIdentNotAtStartOfPathError {
+                file: ctx.file.clone(),
+                path_ident: ident.clone(),
+            }
+            .into())
+        } else if ctx.has_leading_colon && is_special_ident {
+            Err(GlobalPathCannotHaveSpecialIdentError {
+                file: ctx.file.clone(),
+                path_ident: ident.clone(),
+            }
+            .into())
+        } else if ident == "self" {
+            Ok(vec![scope])
+        } else if ident == "super" {
+            let mut use_grandparent = self.resolution_graph.inner[scope].parent();
+            while use_grandparent
+                .map(|i| !self.resolution_graph.inner[i].is_valid_use_path_segment())
+                .unwrap_or_default()
+            {
+                use_grandparent = self.resolution_graph.inner[use_grandparent.unwrap()].parent();
+            }
+            if let Some(use_grandparent) = use_grandparent {
+                Ok(vec![use_grandparent])
+            } else {
+                Err(TooManySupersError {
+                    file: ctx.file.clone(),
+                    ident: ident.clone(),
+                }
+                .into())
+            }
+        } else if ident == "crate" {
+            let mut root = scope;
+            while let Some(next_parent) = self.resolution_graph.inner[root].parent() {
+                root = next_parent;
+            }
+            Ok(vec![root])
+        } else {
+            let mut local = if !is_entry || !ctx.has_leading_colon {
+                if let Some(children) = self.resolution_graph.inner[scope].children() {
+                    let mut local = children
+                        .get(&Some(ident))
+                        .map(|children_with_name| {
+                            children_with_name
+                                .iter()
+                                .filter(|child| {
+                                    !paths_only
+                                        || self.resolution_graph.inner[**child]
+                                            .is_valid_use_path_segment()
+                                })
+                                .cloned()
+                                .collect::<Vec<ResolutionIndex>>()
+                        })
+                        .unwrap_or_default();
+                    children.get(&None).map(|children_unnamed| {
+                        children_unnamed.iter().for_each(|child| {
+                            if self.resolution_graph.inner[*child].is_use() {
+                                local.append(
+                                    &mut self
+                                        .matching_from_use(ctx, *child, ident, paths_only, false),
+                                );
+                            }
+                        })
+                    });
+                    local
+                } else {
+                    vec![]
+                }
             } else {
                 vec![]
+            };
+            let mut global = if is_entry {
+                self.resolution_graph
+                    .roots
+                    .iter()
+                    .filter(|child| **child != ctx.root)
+                    .filter(|child| {
+                        !paths_only
+                            || self.resolution_graph.inner[**child].is_valid_use_path_segment()
+                    })
+                    .cloned()
+                    .collect()
+            } else {
+                vec![]
+            };
+            let local_is_empty = local.is_empty();
+            local.retain(|i| super::r#pub::is_target_visible(self.resolution_graph, ctx.dest, *i));
+            if global.is_empty() && !local_is_empty && local.is_empty() {
+                return Err(ItemVisibilityError {
+                    file: ctx.file.clone(),
+                    ident: ident.clone(),
+                    hint,
+                }
+                .into());
             }
-        } else {
-            vec![]
-        };
-        let mut global = if is_entry {
-            self.resolution_graph
-                .roots
-                .iter()
-                .filter(|child| **child != ctx.root)
-                .filter(|child| {
-                    !paths_only || self.resolution_graph.inner[**child].is_valid_use_path_segment()
-                })
-                .cloned()
-                .collect()
-        } else {
-            vec![]
-        };
-        let local_is_empty = local.is_empty();
-        local.retain(|i| super::r#pub::is_target_visible(self.resolution_graph, ctx.dest, *i));
-        if global.is_empty() && !local_is_empty && local.is_empty() {
-            return Err(ItemVisibilityError {
-                file: ctx.file.clone(),
-                ident: ident.clone(),
-                hint,
+            let global_is_empty = global.is_empty();
+            global.retain(|i| super::r#pub::is_target_visible(self.resolution_graph, ctx.dest, *i));
+            if local.is_empty() && !global_is_empty && global.is_empty() {
+                return Err(ItemVisibilityError {
+                    file: ctx.file.clone(),
+                    ident: ident.clone(),
+                    hint,
+                }
+                .into());
             }
-            .into());
-        }
-        let global_is_empty = global.is_empty();
-        global.retain(|i| super::r#pub::is_target_visible(self.resolution_graph, ctx.dest, *i));
-        if local.is_empty() && !global_is_empty && global.is_empty() {
-            return Err(ItemVisibilityError {
-                file: ctx.file.clone(),
-                ident: ident.clone(),
-                hint,
-            }
-            .into());
-        }
-        match (global.is_empty(), local.is_empty()) {
-            (false, false) => Err(DisambiguationError {
-                file: ctx.file.clone(),
-                ident: ident.clone(),
-                src: AmbiguitySource::Item(hint),
-            }
-            .into()),
-            (true, false) => Ok(local),
-            (false, true) => Ok(global),
-            (true, true) => {
-                if !(ctx.has_leading_colon && is_entry) {
-                    let mut local_from_globs =
-                        self.resolution_graph.inner[scope]
+            match (global.is_empty(), local.is_empty()) {
+                (false, false) => Err(DisambiguationError {
+                    file: ctx.file.clone(),
+                    ident: ident.clone(),
+                    src: AmbiguitySource::Item(hint),
+                }
+                .into()),
+                (true, false) => Ok(local),
+                (false, true) => Ok(global),
+                (true, true) => {
+                    if !(ctx.has_leading_colon && is_entry) {
+                        let mut local_from_globs = self.resolution_graph.inner[scope]
                             .children()
                             .and_then(|children| children.get(&None))
                             .map(|children_unnamed| {
@@ -183,36 +267,37 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                                 local_from_globs
                             })
                             .unwrap_or_default();
-                    let local_from_globs_is_empty = local_from_globs.is_empty();
-                    local_from_globs.retain(|i| {
-                        super::r#pub::is_target_visible(self.resolution_graph, ctx.dest, *i)
-                    });
-                    if !local_from_globs_is_empty && local_from_globs.is_empty() {
-                        Err(ItemVisibilityError {
-                            file: ctx.file.clone(),
-                            ident: ident.clone(),
-                            hint,
+                        let local_from_globs_is_empty = local_from_globs.is_empty();
+                        local_from_globs.retain(|i| {
+                            super::r#pub::is_target_visible(self.resolution_graph, ctx.dest, *i)
+                        });
+                        if !local_from_globs_is_empty && local_from_globs.is_empty() {
+                            Err(ItemVisibilityError {
+                                file: ctx.file.clone(),
+                                ident: ident.clone(),
+                                hint,
+                            }
+                            .into())
+                        } else if local_from_globs.is_empty() {
+                            Err(UnresolvedItemError {
+                                file: ctx.file.clone(),
+                                previous_ident: ctx.previous_idents.last().cloned().cloned(),
+                                unresolved_ident: ident.clone(),
+                                hint,
+                            }
+                            .into())
+                        } else {
+                            Ok(local_from_globs)
                         }
-                        .into())
-                    } else if local_from_globs.is_empty() {
+                    } else {
                         Err(UnresolvedItemError {
                             file: ctx.file.clone(),
                             previous_ident: ctx.previous_idents.last().cloned().cloned(),
                             unresolved_ident: ident.clone(),
-                            hint,
+                            hint: ItemHint::ExternalNamedScope,
                         }
                         .into())
-                    } else {
-                        Ok(local_from_globs)
                     }
-                } else {
-                    Err(UnresolvedItemError {
-                        file: ctx.file.clone(),
-                        previous_ident: ctx.previous_idents.last().cloned().cloned(),
-                        unresolved_ident: ident.clone(),
-                        hint: ItemHint::ExternalNamedScope,
-                    }
-                    .into())
                 }
             }
         }

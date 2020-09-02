@@ -1,15 +1,13 @@
 use syn::{
     visit::Visit, File, Generics, ImplItemMethod, ImplItemType, Item, ItemFn, ItemImpl, ItemMod,
-    Path, PathSegment, TraitBound, TraitItemMethod, TraitItemType, TypeParam, TypeParamBound,
-    TypePath,
+    ItemTrait, Path, PathSegment, TraitBound, TraitItemMethod, TraitItemType, TypeParam,
+    TypeParamBound, TypePath,
 };
 
 use crate::error::{
     AmbiguitySource, DisambiguationError, ItemHint, ResolutionError, UnresolvedItemError,
 };
-use crate::resolution::{
-    path::PathFinder, Branch, ResolutionGraph, ResolutionIndex, ResolutionNode,
-};
+use crate::resolution::{path::PathFinder, ResolutionGraph, ResolutionIndex};
 
 pub struct TypeExistenceChecker<'a, 'ast> {
     pub resolution_graph: &'a ResolutionGraph<'ast>,
@@ -27,6 +25,10 @@ impl<'a, 'ast> TypeExistenceChecker<'a, 'ast> {
     pub fn visit_all(&mut self) {
         for scope in self.resolution_graph.node_indices() {
             if self.resolution_graph.inner[scope].is_type_existence_checking_candidate() {
+                // Cannot directly visit methods, functions in traits because RHDL need to have the generics from the impl/trait on the generics stack
+                if self.resolution_graph.inner[scope].parent().map(|parent| self.resolution_graph.inner[parent].is_trait_or_impl()).unwrap_or_default() {
+                    continue;
+                }
                 let mut ctx_checker = TypeExistenceCheckerVisitor {
                     resolution_graph: self.resolution_graph,
                     errors: self.errors,
@@ -116,9 +118,24 @@ impl<'a, 'c, 'ast> Visit<'c> for TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
             }
         }
         self.visit_type(item_impl.self_ty.as_ref());
-        for item in item_impl.items.iter() {
-            self.visit_impl_item(item);
-        }
+        item_impl
+            .items
+            .iter()
+            .for_each(|item| self.visit_impl_item(item));
+        self.generics.pop();
+    }
+
+    fn visit_item_trait(&mut self, item_trait: &'c ItemTrait) {
+        self.visit_generics(&item_trait.generics);
+        item_trait
+            .supertraits
+            .iter()
+            .for_each(|supertrait| self.visit_type_param_bound(supertrait));
+        item_trait
+            .items
+            .iter()
+            .for_each(|item| self.visit_trait_item(item));
+        self.generics.pop();
     }
 
     fn visit_impl_item_type(&mut self, impl_item_type: &'c ImplItemType) {
@@ -196,18 +213,13 @@ impl<'a, 'c, 'ast> Visit<'c> for TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
     fn visit_type_path(&mut self, type_path: &'c TypePath) {
         if let Some(ident) = type_path.path.get_ident() {
             if ident == "Self" {
-                let is_impl_or_trait = match self.resolution_graph.inner[self.scope] {
-                    ResolutionNode::Branch {
-                        branch: Branch::Trait(_),
-                        ..
-                    }
-                    | ResolutionNode::Branch {
-                        branch: Branch::Use(_),
-                        ..
-                    } => true,
-                    _ => false,
-                };
-                if is_impl_or_trait {
+                let is_within_trait_or_impl = self.resolution_graph.inner[self.scope]
+                    .is_trait_or_impl()
+                    || self.resolution_graph.inner[self.scope]
+                        .parent()
+                        .map(|parent| self.resolution_graph.inner[parent].is_trait_or_impl())
+                        .unwrap_or_default();
+                if is_within_trait_or_impl {
                     return;
                 }
             }
@@ -255,7 +267,7 @@ impl<'a, 'c, 'ast> Visit<'c> for TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
                         file,
                         previous_ident,
                         unresolved_ident: ident,
-                        hint: ItemHint::Trait,
+                        hint: ItemHint::Item,
                     }
                     .into(),
                 );

@@ -1,0 +1,7 @@
+error: the variant `a` is defined multiple times
+ --> top.rhdl:1:12
+  |
+1 | enum a { a, a }
+  |          - previous definition of the variant `a` here
+1 | enum a { a, a }
+  |             ^ `a` redefined here
