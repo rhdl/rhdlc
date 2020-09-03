@@ -1,0 +1,5 @@
+mod X { }
+
+fn a(x: X) {
+    let y: Y = Y {};
+}

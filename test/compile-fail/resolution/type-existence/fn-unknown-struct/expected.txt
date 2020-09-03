@@ -1,0 +1,10 @@
+error: unresolved item `X`
+ --> top.rhdl:3:8
+  |
+3 | fn a(x: X) {
+  |         ^ no `X` item
+error: unresolved item `Y`
+ --> top.rhdl:4:11
+  |
+4 |     let y: Y = Y {};
+  |            ^ no `Y` item
