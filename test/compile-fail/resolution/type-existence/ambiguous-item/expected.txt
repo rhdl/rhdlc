@@ -5,12 +5,12 @@ error: the name `d` is defined multiple times
   |      - previous definition of the name `d` here
 6 | struct d {}
   |        ^ `d` redefined here
-error: `d` is ambiguous (item versus other items found during resolution)
+error: `d` is ambiguous (type versus other types found during resolution)
  --> top.rhdl:2:7
   |
 2 |     b: d,
   |        ^ ambiguous name
-error: `d` is ambiguous (item versus other items found during resolution)
+error: `d` is ambiguous (type versus other types found during resolution)
  --> top.rhdl:3:7
   |
 3 |     c: d,

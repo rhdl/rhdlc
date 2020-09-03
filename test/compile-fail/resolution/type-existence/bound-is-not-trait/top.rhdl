@@ -1,1 +1,2 @@
-fn a<T: T>() {}
+struct X {}
+fn a<T: X>() {}

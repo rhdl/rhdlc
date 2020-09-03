@@ -5,7 +5,8 @@ use syn::{
 };
 
 use crate::error::{
-    AmbiguitySource, DisambiguationError, ItemHint, ResolutionError, UnresolvedItemError,
+    AmbiguitySource, DisambiguationError, ItemHint, ResolutionError, UnexpectedItemError,
+    UnresolvedItemError,
 };
 use crate::resolution::{path::PathFinder, ResolutionGraph, ResolutionIndex};
 
@@ -63,20 +64,16 @@ impl<'a, 'c, 'ast> TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
                 .count();
             if num_matching != 1 {
                 let file = self.resolution_graph.file(self.scope);
-                let previous_ident = path
-                    .segments
-                    .iter()
-                    .rev()
-                    .skip(1)
-                    .next()
-                    .map(|seg| seg.ident.clone());
                 let ident = path.segments.iter().last().unwrap().ident.clone();
                 if num_matching == 0 {
-                    Err(UnresolvedItemError {
+                    Err(UnexpectedItemError {
                         file,
-                        previous_ident,
-                        unresolved_ident: ident,
-                        hint: ItemHint::Trait,
+                        ident,
+                        expected_hint: ItemHint::Trait,
+                        actual_hint: matching
+                            .first()
+                            .and_then(|x| self.resolution_graph.inner[*x].item_hint())
+                            .unwrap_or(ItemHint::Item),
                     }
                     .into())
                 } else {
@@ -254,22 +251,17 @@ impl<'a, 'c, 'ast> Visit<'c> for TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
             .count();
         if num_matching != 1 {
             let file = self.resolution_graph.file(self.scope);
-            let previous_ident = type_path
-                .path
-                .segments
-                .iter()
-                .rev()
-                .skip(1)
-                .next()
-                .map(|seg| seg.ident.clone());
             let ident = type_path.path.segments.iter().last().unwrap().ident.clone();
             if num_matching == 0 {
                 self.errors.push(
-                    UnresolvedItemError {
+                    UnexpectedItemError {
                         file,
-                        previous_ident,
-                        unresolved_ident: ident,
-                        hint: ItemHint::Item,
+                        ident,
+                        expected_hint: ItemHint::Type,
+                        actual_hint: matching
+                            .first()
+                            .and_then(|x| self.resolution_graph.inner[*x].item_hint())
+                            .unwrap_or(ItemHint::Item),
                     }
                     .into(),
                 );
@@ -278,7 +270,7 @@ impl<'a, 'c, 'ast> Visit<'c> for TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
                     DisambiguationError {
                         file,
                         ident,
-                        src: AmbiguitySource::Item(ItemHint::Item),
+                        src: AmbiguitySource::Item(ItemHint::Type),
                     }
                     .into(),
                 );

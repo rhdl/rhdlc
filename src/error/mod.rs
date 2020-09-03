@@ -355,6 +355,12 @@ pub enum ItemHint {
     Item,
     /// a trait in particular
     Trait,
+    /// any type (alias, struct, enum, or other)
+    Type,
+    /// any variable (const or static)
+    Var,
+    /// a method or function
+    Fn,
 }
 
 impl Display for ItemHint {
@@ -367,6 +373,9 @@ impl Display for ItemHint {
             InternalNamedChildOrExternalNamedScope => write!(f, "crate or mod"),
             Item => write!(f, "item"),
             Trait => write!(f, "trait"),
+            Type => write!(f, "type"),
+            Var => write!(f, "variable"),
+            Fn => write!(f, "function"),
         }
     }
 }
@@ -387,6 +396,34 @@ impl Display for UnresolvedItemError {
                 Reference::Error,
                 &reference_msg,
                 self.unresolved_ident.span(),
+            ),
+            vec![],
+            &self.file.src,
+            &self.file.content,
+        )
+    }
+}
+
+#[derive(Debug)]
+pub struct UnexpectedItemError {
+    pub file: Rc<File>,
+    pub ident: Ident,
+    pub actual_hint: ItemHint,
+    pub expected_hint: ItemHint,
+}
+
+impl Display for UnexpectedItemError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        render_location(
+            f,
+            format!(
+                "expected {}, found {} `{}`",
+                self.expected_hint, self.actual_hint, self.ident
+            ),
+            (
+                Reference::Error,
+                &format!("not a {}", self.expected_hint),
+                self.ident.span(),
             ),
             vec![],
             &self.file.src,
@@ -658,17 +695,22 @@ impl Display for NonAncestralError {
 error!(ResolutionError {
     MultipleDefinitionError => MultipleDefinitionError,
     DisambiguationError => DisambiguationError,
-    SpecialIdentNotAtStartOfPathError => SpecialIdentNotAtStartOfPathError,
-    SelfUsageError => SelfUsageError,
     UnresolvedItemError => UnresolvedItemError,
+    UnexpectedItemError => UnexpectedItemError,
+
+    InvalidRawIdentifierError => InvalidRawIdentifierError,
+    SpecialIdentNotAtStartOfPathError => SpecialIdentNotAtStartOfPathError,
+    GlobalPathCannotHaveSpecialIdentError => GlobalPathCannotHaveSpecialIdentError,
+
+    SelfUsageError => SelfUsageError,
     TooManySupersError => TooManySupersError,
     ItemVisibilityError => ItemVisibilityError,
-    InvalidRawIdentifierError => InvalidRawIdentifierError,
-    GlobalPathCannotHaveSpecialIdentError => GlobalPathCannotHaveSpecialIdentError,
-    GlobAtEntryError => GlobAtEntryError,
-    IncorrectVisibilityError => IncorrectVisibilityError,
-    UnsupportedError => UnsupportedError,
-    NonAncestralError => NonAncestralError,
     ScopeVisibilityError => ScopeVisibilityError,
+    IncorrectVisibilityError => IncorrectVisibilityError,
+    NonAncestralError => NonAncestralError,
+
+
+    GlobAtEntryError => GlobAtEntryError,
+    UnsupportedError => UnsupportedError,
 });
 error!(TypeError {});

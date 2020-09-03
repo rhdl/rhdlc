@@ -1,8 +1,8 @@
-error: unresolved item `X`
+error: expected type, found mod `X`
  --> top.rhdl:3:8
   |
 3 | fn a(x: X) {
-  |         ^ no `X` item
+  |         ^ not a type
 error: unresolved item `Y`
  --> top.rhdl:4:11
   |

@@ -1,5 +1,5 @@
-error: unresolved item `T`
- --> top.rhdl:1:8
+error: expected trait, found type `X`
+ --> top.rhdl:2:8
   |
-1 | fn a<T: T>() {}
-  |         ^ no `T` item
+2 | fn a<T: X>() {}
+  |         ^ not a trait

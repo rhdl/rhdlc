@@ -1,0 +1,5 @@
+error: expected trait, found type `b`
+ --> top.rhdl:1:12
+  |
+1 | struct a<T: b> {}
+  |             ^ not a trait

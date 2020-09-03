@@ -9,6 +9,7 @@ use syn::{
     TraitItemType, UseGlob, UseName, UseRename, Variant, Visibility,
 };
 
+use crate::error::ItemHint;
 use crate::find_file::File;
 
 #[derive(Default, Debug)]
@@ -427,6 +428,30 @@ impl<'ast> ResolutionNode<'ast> {
                 Leaf::UseName(n, _) => v.visit_use_name(n),
                 Leaf::UseRename(r, _) => v.visit_use_rename(r),
                 Leaf::UseGlob(g, _) => v.visit_use_glob(g),
+            },
+        }
+    }
+
+    pub fn item_hint(&self) -> Option<ItemHint> {
+        match self {
+            ResolutionNode::Root { .. } => Some(ItemHint::InternalNamedRootScope),
+            ResolutionNode::Branch { branch, .. } => match branch {
+                Branch::Mod(..) => Some(ItemHint::InternalNamedChildScope),
+                Branch::Impl(..) => Some(ItemHint::Item),
+                Branch::Trait(..) => Some(ItemHint::Trait),
+                Branch::Fn(..) => Some(ItemHint::Fn),
+                Branch::Struct(..) => Some(ItemHint::Type),
+                Branch::Enum(..) => Some(ItemHint::Type),
+                Branch::Variant(..) => None,
+                Branch::Use(..) => None,
+            },
+            ResolutionNode::Leaf { leaf, .. } => match leaf {
+                Leaf::Field(..) => None,
+                Leaf::Const(..) => Some(ItemHint::Var),
+                Leaf::Type(..) => Some(ItemHint::Type),
+                Leaf::UseName(..) => Some(ItemHint::Item),
+                Leaf::UseRename(..) => Some(ItemHint::Item),
+                Leaf::UseGlob(..) => None,
             },
         }
     }
