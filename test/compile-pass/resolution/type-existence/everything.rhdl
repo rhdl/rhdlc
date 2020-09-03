@@ -25,6 +25,7 @@ mod b {
     }
 
     trait G {
+        const Y: super::I = super::I{};
         type X;
         fn a(&self) {}
         fn c(&self) -> Self::X;
@@ -52,9 +53,9 @@ mod b {
     struct J<T> {
         t: T,
     }
-    impl<'a, T> J {
+    impl<'a, T> J<T> {
         fn x(&'a self) -> &'a T {
-            self.t
+            &self.t
         }
     }
 }
