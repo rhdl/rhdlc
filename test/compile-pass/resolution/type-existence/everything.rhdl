@@ -20,12 +20,15 @@ trait F: Eeeeee {}
 
 mod b {
     pub trait E: super::D {}
-    fn a<T: E>(t: T) -> T {
+    fn a<T>(t: T) -> T
+    where
+        T: E,
+    {
         t
     }
 
     trait G {
-        const Y: super::I = super::I{};
+        const Y: super::I = super::I {};
         type X;
         fn a(&self) {}
         fn c(&self) -> Self::X;
@@ -56,6 +59,17 @@ mod b {
     impl<'a, T> J<T> {
         fn x(&'a self) -> &'a T {
             &self.t
+        }
+    }
+    impl<'a, T: G<X = X>, X> G for J<T> {
+        type X = X;
+
+        fn a(&self) {
+            <T as G>::a(&self.t)
+        }
+
+        fn c(&self) -> Self::X {
+            <T as G>::c(&self.t)
         }
     }
 }

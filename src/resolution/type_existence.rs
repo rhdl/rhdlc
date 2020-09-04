@@ -213,8 +213,13 @@ impl<'a, 'c, 'ast> Visit<'c> for TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
 
     fn visit_type_path(&mut self, type_path: &'c TypePath) {
         if let Some(qself) = &type_path.qself {
-            todo!("support self qualifiers");
+            todo!("support self qualifiers: {:?}", qself);
         }
+        type_path
+            .path
+            .segments
+            .iter()
+            .for_each(|seg| self.visit_path_arguments(&seg.arguments));
 
         if let Some(ident) = type_path.path.get_ident() {
             if ident == "Self" {
