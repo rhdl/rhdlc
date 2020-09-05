@@ -1,0 +1,5 @@
+error: expected type, found trait `X`
+ --> top.rhdl:2:9
+  |
+2 | type a = X;
+  |          ^ not a type
