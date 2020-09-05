@@ -157,11 +157,7 @@ fn apply_visibility_in<'ast>(
             if export_dest_children.is_empty() {
                 return Err(UnresolvedItemError {
                     file,
-                    previous_ident: path
-                        .segments
-                        .iter()
-                        .nth(i)
-                        .map(|seg| seg.ident.clone()),
+                    previous_ident: path.segments.iter().nth(i).map(|seg| seg.ident.clone()),
                     unresolved_ident: segment.ident.clone(),
                     hint: ItemHint::InternalNamedChildScope,
                 }

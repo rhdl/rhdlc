@@ -12,6 +12,7 @@ mod type_checker;
 use find_file::{FileContentSource, FileFinder};
 use resolution::Resolver;
 
+#[cfg(not(feature = "fuzz"))]
 fn main() {
     if env::var("RUST_LOG").is_err() {
         env::set_var("RUST_LOG", "rhdlc=info")
@@ -31,21 +32,22 @@ fn main() {
         }
         Some(path) => FileContentSource::File(path.into()),
     };
-
-    let mut finder = FileFinder::default();
-    finder.find_tree(src);
-    finder.errors.iter().for_each(|err| eprintln!("{}", err));
-
-    let mut scope_builder = Resolver::from(&finder.file_graph);
-    scope_builder.build_graph();
-    scope_builder.check_graph();
-    scope_builder
-        .errors
-        .iter()
-        .for_each(|err| eprintln!("{}", err));
+    eprint!("{}", entry(src));
 }
 
-#[cfg(test)]
+#[cfg(feature = "fuzz")]
+#[macro_use]
+extern crate afl;
+
+#[cfg(feature = "fuzz")]
+fn main() {
+    fuzz! {
+        |data: &[u8] | {
+            eprint!("{}", entry(FileContentSource::Reader("fuzz".to_string(), Box::new(std::io::Cursor::new(Vec::from(data))))))
+        }
+    }
+}
+
 fn entry(src: FileContentSource) -> String {
     let mut acc = String::default();
 

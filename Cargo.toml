@@ -17,9 +17,11 @@ env_logger = "0"
 strsim = "0.10"
 clap = "2"
 fxhash = "0.2"
+afl = { version = "*", optional = true }
 
 [features]
 no-color = ["colored/no-color"]
+fuzz = ["afl"]
 
 [dev-dependencies]
 pretty_assertions = "0.6"
