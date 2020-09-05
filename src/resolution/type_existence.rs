@@ -1,7 +1,7 @@
 use syn::{
     visit::Visit, File, Generics, ImplItemMethod, ImplItemType, Item, ItemFn, ItemImpl, ItemMod,
-    ItemTrait, Path, PathSegment, TraitBound, TraitItemMethod, TraitItemType, TypeParam,
-    TypeParamBound, TypePath,
+    ItemTrait, Path, PathArguments, PathSegment, TraitBound, TraitItemMethod, TraitItemType,
+    TypeParam, TypeParamBound, TypePath,
 };
 
 use crate::error::{
@@ -217,7 +217,21 @@ impl<'a, 'c, 'ast> Visit<'c> for TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
             .path
             .segments
             .iter()
-            .for_each(|seg| self.visit_path_arguments(&seg.arguments));
+            .rev()
+            .enumerate()
+            .filter(|(_, seg)| {
+                if let PathArguments::None = &seg.arguments {
+                    false
+                } else {
+                    true
+                }
+            })
+            .for_each(|(i, seg)| {
+                if i != 0 {
+                    todo!("error for path arguments not at the end of a path");
+                }
+                self.visit_path_arguments(&seg.arguments);
+            });
 
         if let Some(ident) = type_path.path.get_ident() {
             if ident == "Self" && self.resolution_graph.inner[self.scope].is_trait_or_impl() {
