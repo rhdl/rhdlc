@@ -35,9 +35,9 @@ impl<'ast> ResolutionGraph<'ast> {
 
     pub fn add_child(&mut self, parent: ResolutionIndex, child: ResolutionIndex) {
         let name = self.inner[child].name();
-        self.inner[parent]
-            .children_mut()
-            .map(|hash_map| hash_map.entry(name).or_default().push(child));
+        if let Some(children) = self.inner[parent].children_mut() {
+            children.entry(name).or_default().push(child)
+        }
     }
 
     pub fn node_indices(&self) -> impl Iterator<Item = ResolutionIndex> {

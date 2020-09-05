@@ -160,8 +160,7 @@ fn apply_visibility_in<'ast>(
                     previous_ident: path
                         .segments
                         .iter()
-                        .skip(i)
-                        .next()
+                        .nth(i)
                         .map(|seg| seg.ident.clone()),
                     unresolved_ident: segment.ident.clone(),
                     hint: ItemHint::InternalNamedChildScope,
@@ -242,18 +241,14 @@ pub fn is_target_visible<'ast>(
         // this is necessarily a root
         return true;
     };
-    if target_parent == target {
-        // self
-        return true;
-    } else if resolution_graph.inner[target_parent]
-        .parent()
-        .map(|g| g == target)
-        .unwrap_or_default()
+    if target_parent == target
+        || resolution_graph.inner[target_parent]
+            .parent()
+            .map(|g| g == target)
+            .unwrap_or_default()
+        || dest == target_parent
     {
-        // super
-        return true;
-    } else if dest == target_parent {
-        // immediate child
+        // self
         return true;
     }
     let dest_ancestry = build_ancestry(resolution_graph, dest);

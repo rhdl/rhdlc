@@ -32,10 +32,20 @@ fn main() {
         Some(path) => FileContentSource::File(path.into()),
     };
 
-    let out = entry(src);
-    eprint!("{}", out);
+    let mut finder = FileFinder::default();
+    finder.find_tree(src);
+    finder.errors.iter().for_each(|err| eprintln!("{}", err));
+
+    let mut scope_builder = Resolver::from(&finder.file_graph);
+    scope_builder.build_graph();
+    scope_builder.check_graph();
+    scope_builder
+        .errors
+        .iter()
+        .for_each(|err| eprintln!("{}", err));
 }
 
+#[cfg(test)]
 fn entry(src: FileContentSource) -> String {
     let mut acc = String::default();
 

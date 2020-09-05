@@ -67,31 +67,29 @@ impl<'a, 'ast> ConflictChecker<'a, 'ast> {
                             .map(|name| (*i, name))
                     })
                     .collect();
-                self.resolution_graph.inner[node]
+                if let Some(unnamed_children) = self.resolution_graph.inner[node]
                     .children()
-                    .unwrap()
-                    .get(&None)
-                    .map(|children| {
-                        children
-                            .iter()
-                            .filter(|child| self.resolution_graph.inner[**child].is_use())
-                            .for_each(|child| {
-                                self.resolution_graph.inner[*child]
-                                    .children()
-                                    .unwrap()
-                                    .get(&Some(ident))
-                                    .map(|with_name| {
-                                        with_name
-                                            .iter()
-                                            .filter_map(|i| {
-                                                self.resolution_graph.inner[*i]
-                                                    .name()
-                                                    .map(|name| (*child, name))
-                                            })
-                                            .for_each(|x| names_and_indices.push(x))
-                                    });
-                            })
-                    });
+                    .and_then(|children| children.get(&None))
+                {
+                    unnamed_children
+                        .iter()
+                        .filter(|child| self.resolution_graph.inner[**child].is_use())
+                        .for_each(|child| {
+                            if let Some(with_name) = self.resolution_graph.inner[*child]
+                                .children()
+                                .and_then(|children| children.get(&Some(ident)))
+                            {
+                                with_name
+                                    .iter()
+                                    .filter_map(|i| {
+                                        self.resolution_graph.inner[*i]
+                                            .name()
+                                            .map(|name| (*child, name))
+                                    })
+                                    .for_each(|x| names_and_indices.push(x))
+                            }
+                        })
+                }
                 names_and_indices.sort_by_key(|x| x.0);
                 let mut claimed = vec![false; names_and_indices.len()];
                 // Unfortunately, need an O(n^2) check here on items with the same name

@@ -31,7 +31,7 @@ impl FileGraph {
     fn add_node(&mut self, file: Rc<File>, parent: Option<FileGraphIndex>) -> FileGraphIndex {
         let idx = self.inner.len();
         self.inner.push(file);
-        if let None = parent {
+        if parent.is_none() {
             self.roots.push(idx);
         }
         idx

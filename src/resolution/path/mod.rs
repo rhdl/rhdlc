@@ -190,7 +190,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                                 .collect::<Vec<ResolutionIndex>>()
                         })
                         .unwrap_or_default();
-                    children.get(&None).map(|children_unnamed| {
+                    if let Some(children_unnamed) = children.get(&None) {
                         children_unnamed.iter().for_each(|child| {
                             if self.resolution_graph.inner[*child].is_use() {
                                 local.append(
@@ -199,7 +199,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                                 );
                             }
                         })
-                    });
+                    }
                     local
                 } else {
                     vec![]
@@ -350,28 +350,26 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                                     })
                                     .unwrap_or_default(),
                             );
-                            glob_src_children
-                                .get(&None)
-                                .map(|glob_src_children_unnamed| {
-                                    glob_src_children_unnamed.iter().for_each(|child| {
-                                        if self.resolution_graph.inner[*child].is_use() {
-                                            matches.append(&mut self.matching_from_use(
-                                                ctx,
-                                                *child,
-                                                ident_to_look_for,
-                                                paths_only,
-                                                true,
-                                            ));
-                                            matches.append(&mut self.matching_from_use(
-                                                ctx,
-                                                *child,
-                                                ident_to_look_for,
-                                                paths_only,
-                                                false,
-                                            ));
-                                        }
-                                    });
+                            if let Some(glob_src_children_unnamed) = glob_src_children.get(&None) {
+                                glob_src_children_unnamed.iter().for_each(|child| {
+                                    if self.resolution_graph.inner[*child].is_use() {
+                                        matches.append(&mut self.matching_from_use(
+                                            ctx,
+                                            *child,
+                                            ident_to_look_for,
+                                            paths_only,
+                                            true,
+                                        ));
+                                        matches.append(&mut self.matching_from_use(
+                                            ctx,
+                                            *child,
+                                            ident_to_look_for,
+                                            paths_only,
+                                            false,
+                                        ));
+                                    }
                                 });
+                            }
                         });
                     })
                     .unwrap_or_default();

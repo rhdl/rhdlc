@@ -6,7 +6,6 @@ use syn::{
 
 use crate::error::{
     AmbiguitySource, DisambiguationError, ItemHint, ResolutionError, UnexpectedItemError,
-    UnresolvedItemError,
 };
 use crate::resolution::{path::PathFinder, ResolutionGraph, ResolutionIndex};
 
@@ -87,8 +86,7 @@ impl<'a, 'c, 'ast> TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
             } else {
                 Ok(*matching
                     .iter()
-                    .filter(|i| self.resolution_graph.inner[**i].is_trait())
-                    .next()
+                    .find(|i| self.resolution_graph.inner[**i].is_trait())
                     .unwrap())
             }
         })
@@ -222,10 +220,8 @@ impl<'a, 'c, 'ast> Visit<'c> for TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
             .for_each(|seg| self.visit_path_arguments(&seg.arguments));
 
         if let Some(ident) = type_path.path.get_ident() {
-            if ident == "Self" {
-                if self.resolution_graph.inner[self.scope].is_trait_or_impl() {
-                    return;
-                }
+            if ident == "Self" && self.resolution_graph.inner[self.scope].is_trait_or_impl() {
+                return;
             }
             // Check that there is a single type match
             // TODO: need *concrete* types + generics here.
