@@ -61,11 +61,12 @@ mod b {
             &self.t
         }
     }
-    impl<'a, T: G<X = X>, X> G for J<T> {
+    impl<'a, T: G<X = X> + E, X> G for J<T> {
         type X = X;
 
         fn a(&self) {
-            <T as G>::a(&self.t)
+            let t = a::<T>(self.t);
+            <T as G>::a(&t)
         }
 
         fn c(&self) -> Self::X {
