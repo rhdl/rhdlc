@@ -1,3 +1,7 @@
+//! TODO: error for items that could do visibilty hole punching:
+//! * function with params that are not as visible as the function
+//! * structs with members that are not as visible as their types (?)
+
 use syn::{
     visit::Visit, File, Generics, ImplItemMethod, ImplItemType, Item, ItemFn, ItemImpl, ItemMod,
     ItemTrait, Path, PathArguments, PathSegment, TraitBound, TraitItemMethod, TraitItemType,
