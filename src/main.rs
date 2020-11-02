@@ -1,10 +1,7 @@
 #![forbid(unsafe_code)]
 
 use clap::{clap_app, crate_authors, crate_description, crate_version};
-use codespan_reporting::term::{
-    emit,
-    termcolor::{ColorChoice, NoColor},
-};
+use codespan_reporting::term::{emit, termcolor::NoColor};
 
 use std::env;
 
@@ -13,7 +10,7 @@ mod find_file;
 // mod resolution;
 // mod type_checker;
 
-use find_file::{FileContentSource, FileFinder};
+use find_file::{FileContentProvider, FileFinder};
 // use resolution::Resolver;
 
 #[cfg(not(feature = "fuzz"))]
@@ -32,9 +29,9 @@ fn main() {
 
     let src = match matches.value_of("FILE") {
         Some("-") | None => {
-            FileContentSource::Reader("stdin".to_string(), Box::new(std::io::stdin()))
+            FileContentProvider::Reader("stdin".to_string(), Box::new(std::io::stdin()))
         }
-        Some(path) => FileContentSource::File(path.into()),
+        Some(path) => FileContentProvider::File(path.into()),
     };
     eprint!("{}", entry(src));
 }
@@ -47,12 +44,12 @@ extern crate afl;
 fn main() {
     fuzz! {
         |data: &[u8] | {
-            eprint!("{}", entry(FileContentSource::Reader("fuzz".to_string(), Box::new(std::io::Cursor::new(Vec::from(data))))))
+            eprint!("{}", entry(FileContentProvider::Reader("fuzz".to_string(), Box::new(std::io::Cursor::new(Vec::from(data))))))
         }
     }
 }
 
-fn entry(src: FileContentSource) -> String {
+fn entry(src: FileContentProvider) -> String {
     let mut acc = vec![];
     let mut finder = FileFinder::default();
     finder.find_tree(src);
@@ -131,7 +128,7 @@ mod test {
 
     #[test]
     fn compile_pass_stdin() {
-        let output = super::entry(crate::find_file::FileContentSource::Reader(
+        let output = super::entry(crate::find_file::FileContentProvider::Reader(
             "string".to_string(),
             Box::new("struct a {}".as_bytes()),
         ));
@@ -147,7 +144,7 @@ mod test {
             let input = test.path().join("top.rhdl");
             let expected = fs::read_to_string(test.path().join("expected.txt"))
                 .expect(&test.path().join("expected.txt").to_string_lossy());
-            let output = super::entry(crate::find_file::FileContentSource::File(input));
+            let output = super::entry(crate::find_file::FileContentProvider::File(input));
             eprintln!("{}", test.path().to_string_lossy());
             std::io::stderr()
                 .flush()
@@ -167,7 +164,7 @@ mod test {
         use std::io::Write;
         for test in fs::read_dir(dir).unwrap() {
             let test = test.unwrap();
-            let output = super::entry(crate::find_file::FileContentSource::File(test.path()));
+            let output = super::entry(crate::find_file::FileContentProvider::File(test.path()));
             eprintln!("{}", test.path().to_string_lossy());
             std::io::stderr()
                 .flush()

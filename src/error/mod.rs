@@ -1,84 +1,49 @@
 use std::ffi::OsString;
-use std::fmt::{Display};
 use std::path::PathBuf;
 
 use codespan::FileId;
 use codespan_reporting::diagnostic::{Diagnostic, Label};
+use lalrpop_util::{lexer::Token, ParseError};
 use rhdl::ast::{ItemMod, Spanned};
 
-// macro_rules! error {
-//     ($name: ident { $($err: ident => $path: ty,)* }) => {
-//         #[derive(Debug)]
-//         pub enum $name {
-//             $($err($path),)*
-//         }
+pub enum FileFindingError {
+    Parse(Diagnostic<FileId>),
+    Io(std::io::Error),
+}
 
-//         $(
-//             impl From<$path> for $name {
-//                 fn from(err: $path) -> Self {
-//                     Self::$err(err)
-//                 }
-//             }
-//         )*
+impl FileFindingError {
+    pub fn is_io_not_found(&self) -> bool {
+        match self {
+            Self::Io(err) => err.kind() == std::io::ErrorKind::NotFound,
+            Self::Parse(_) => false,
+        }
+    }
+    pub fn diagnostic(
+        self,
+        name: OsString,
+        parent: Option<(FileId, &ItemMod)>,
+    ) -> Diagnostic<FileId> {
+        match self {
+            Self::Parse(diag) => diag,
+            Self::Io(err) => Diagnostic::error()
+                .with_message(format!("couldn't read {}: {}", name.to_string_lossy(), err,))
+                .with_labels({
+                    let mut labels = vec![];
+                    if let Some((file_id, item_mod)) = parent {
+                        labels.push(
+                            Label::primary(file_id, item_mod.span()).with_message("declared here"),
+                        );
+                    }
+                    labels
+                }),
+        }
+    }
+}
 
-//         impl $name {
-//             pub fn name(&self) -> String {
-//                 match self {
-//                     $(
-//                         Self::$err(_) => stringify!($err).to_string(),
-//                     )*
-//                     _ => "N/A".to_string()
-//                 }
-//             }
-//         }
-
-//         impl Display for $name {
-//             fn fmt(&self, f: &mut Formatter) -> Result {
-//                 match self {
-//                     $(
-//                         Self::$err(err) => {
-//                             write!(f, "{}", err)
-//                         },
-//                     )*
-//                     _ => write!(f, "N/A")
-//                 }
-//             }
-//         }
-
-//         impl From<$name> for Vec<$name> {
-//             fn from(other: $name) -> Self{ vec![other] }
-//         }
-//     };
-// }
-
-// #[derive(Debug)]
-// pub struct PreciseSynParseError {
-//     pub cause: Error,
-//     pub src: FileContentSource,
-//     pub code: String,
-// }
-
-// impl Display for PreciseSynParseError {
-//     fn fmt(&self, f: &mut Formatter) -> Result {
-//         let msg = match &self.src {
-//             FileContentSource::File(_) => "could not parse file".to_string(),
-//             FileContentSource::Reader(name, _) => format!("could not parse {}", name),
-//         };
-//         render_location(
-//             f,
-//             &msg,
-//             (Reference::Error, &self.cause.to_string(), self.cause.span()),
-//             vec![],
-//             &self.src,
-//             &self.code,
-//         )
-//     }
-// }
-
-pub fn parse(
+pub fn parse<'input>(
     name: OsString,
     parent: Option<(FileId, &ItemMod)>,
-    err: impl Display,
+    err: ParseError<usize, Token<'input>, &'static str>,
 ) -> Diagnostic<FileId> {
     Diagnostic::error()
         .with_message(format!(
@@ -99,10 +64,10 @@ pub fn parse(
 }
 
 pub fn conflicting_mod_files(
-    parent_file_id: FileId,
+    parent_file_id: Option<FileId>,
     item_mod: &ItemMod,
-    file_path: PathBuf,
-    folder_path: PathBuf,
+    file_path: &PathBuf,
+    folder_path: &PathBuf,
 ) -> Diagnostic<FileId> {
     Diagnostic::error()
         .with_message(format!(
@@ -111,7 +76,15 @@ pub fn conflicting_mod_files(
             file_path.to_string_lossy(),
             folder_path.to_string_lossy()
         ))
-        .with_labels(vec![Label::primary(parent_file_id, item_mod.span())])
+        .with_labels({
+            let mut labels = vec![];
+            if let Some(parent_file_id) = parent_file_id {
+                labels.push(
+                    Label::primary(parent_file_id, item_mod.span()).with_message("declared here"),
+                );
+            }
+            labels
+        })
 }
 
 pub fn working_directory(cause: std::io::Error) -> Diagnostic<FileId> {
@@ -119,26 +92,6 @@ pub fn working_directory(cause: std::io::Error) -> Diagnostic<FileId> {
         "couldn't get the current working directory: {}",
         cause,
     ))
-}
-
-pub fn wrapped_io(
-    name: OsString,
-    parent: Option<(FileId, &ItemMod)>,
-    cause: std::io::Error,
-) -> Diagnostic<FileId> {
-    Diagnostic::error()
-        .with_message(format!(
-            "couldn't read {}: {}",
-            name.to_string_lossy(),
-            cause,
-        ))
-        .with_labels({
-            let mut labels = vec![];
-            if let Some((file_id, item_mod)) = parent {
-                labels.push(Label::primary(file_id, item_mod.span()));
-            }
-            labels
-        })
 }
 
 // #[derive(Debug)]
@@ -716,7 +669,6 @@ pub fn wrapped_io(
 //     ScopeVisibilityError => ScopeVisibilityError,
 //     IncorrectVisibilityError => IncorrectVisibilityError,
 //     NonAncestralError => NonAncestralError,
-
 
 //     GlobAtEntryError => GlobAtEntryError,
 //     UnsupportedError => UnsupportedError,
