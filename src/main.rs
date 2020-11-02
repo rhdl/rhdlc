@@ -1,16 +1,20 @@
 #![forbid(unsafe_code)]
 
 use clap::{clap_app, crate_authors, crate_description, crate_version};
+use codespan_reporting::term::{
+    emit,
+    termcolor::{ColorChoice, NoColor},
+};
 
 use std::env;
 
 mod error;
 mod find_file;
-mod resolution;
-mod type_checker;
+// mod resolution;
+// mod type_checker;
 
 use find_file::{FileContentSource, FileFinder};
-use resolution::Resolver;
+// use resolution::Resolver;
 
 #[cfg(not(feature = "fuzz"))]
 fn main() {
@@ -49,29 +53,28 @@ fn main() {
 }
 
 fn entry(src: FileContentSource) -> String {
-    let mut acc = String::default();
-
+    let mut acc = vec![];
     let mut finder = FileFinder::default();
     finder.find_tree(src);
-    finder
-        .errors
-        .iter()
-        .map(|err| format!("{}", err))
-        .for_each(|err| acc += &err);
 
-    let mut scope_builder = Resolver::from(&finder.file_graph);
-    scope_builder.build_graph();
-    scope_builder.check_graph();
-    scope_builder
-        .errors
-        .iter()
-        .map(|err| format!("{}", err))
-        .for_each(|err| acc += &err);
+    let mut writer = NoColor::new(&mut acc);
+    let config = codespan_reporting::term::Config::default();
+    finder.errors.iter().for_each(|diagnostic| {
+        emit(&mut writer, &config, &finder.file_graph.inner, &diagnostic).unwrap()
+    });
+
+    // let mut scope_builder = Resolver::from(&finder.file_graph);
+    // scope_builder.build_graph();
+    // scope_builder.check_graph();
+    // scope_builder
+    //     .errors
+    //     .iter()
+    //     .map(|err| format!("{}", err))
+    //     .for_each(|err| acc += &err);
 
     // #[cfg(not(test))]
     // println!("{}", Dot::new(&scope_builder.resolution_graph));
-
-    acc
+    String::from_utf8_lossy(&acc).to_string()
 }
 
 #[cfg(test)]

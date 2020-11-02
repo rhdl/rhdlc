@@ -8,19 +8,19 @@ homepage = "https://github.com/rhdl/rhdl"
 description = "Compiler for RHDL"
 
 [dependencies]
-syn = { version = "1", features = ["full", "visit", "extra-traits"] }
-colored = "2"
-paste = "0"
-proc-macro2 = { version = "1.0", features = ["span-locations"] }
+paste = "1"
 log = "0"
 env_logger = "0"
 strsim = "0.10"
 clap = "2"
 fxhash = "0.2"
 afl = { version = "*", optional = true }
+rhdl = { version = "*", git = "https://github.com/rhdl/rhdl.git", branch = "main" }
+codespan = "0.9"
+codespan-reporting = "0.9"
 
 [features]
-no-color = ["colored/no-color"]
+no-color = []
 fuzz = ["afl"]
 
 [dev-dependencies]

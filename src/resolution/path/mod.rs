@@ -1,7 +1,7 @@
 use fxhash::FxHashSet as HashSet;
 use std::rc::Rc;
 
-use syn::{Ident, Path};
+use rhdl::ast::{token::Ident, SimplePath as Path};
 
 use super::{Branch, Leaf, ResolutionGraph, ResolutionIndex, ResolutionNode};
 use crate::error::*;
