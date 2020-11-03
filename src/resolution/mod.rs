@@ -31,13 +31,11 @@
 ///             * use [strsim](https://docs.rs/strsim/0.10.0/strsim/) for Ident similarity
 ///             * heuristic guess by type (fn, struct, var, mod, etc.)
 ///         * fall back all the way to "not found" if nothing is similar
-use std::rc::Rc;
-
+use codespan_reporting::diagnostic::Diagnostic;
 use fxhash::{FxHashMap as HashMap, FxHashSet as HashSet};
-use syn::{visit::Visit, Ident};
+use rhdl::ast::Tok;
 
-use crate::error::{InvalidRawIdentifierError, ResolutionError};
-use crate::find_file::{File, FileGraph, FileGraphIndex};
+use crate::find_file::{File, FileGraph, FileId};
 
 mod r#use;
 
@@ -54,7 +52,7 @@ pub use graph::{Branch, Leaf, ResolutionGraph, ResolutionIndex, ResolutionNode};
 pub struct Resolver<'ast> {
     file_graph: &'ast FileGraph,
     pub resolution_graph: ResolutionGraph<'ast>,
-    pub errors: Vec<ResolutionError>,
+    pub errors: Vec<Diagnostic<FileId>>,
     resolved_uses: HashSet<ResolutionIndex>,
 }
 
@@ -74,7 +72,7 @@ impl<'ast> Resolver<'ast> {
     /// Externals are paths to standalone source code: a top + lib.rs of each crate
     pub fn build_graph(&mut self) {
         // Stage one: add nodes
-        let files: Vec<FileGraphIndex> = self.file_graph.roots.clone();
+        let files: Vec<FileId> = self.file_graph.roots.clone();
         for file_index in files {
             let file = self.file_graph.inner[file_index].clone();
             let resolution_index = self.resolution_graph.add_node(ResolutionNode::Root {
@@ -100,7 +98,7 @@ impl<'ast> Resolver<'ast> {
             .resolution_graph
             .node_indices()
             .filter_map(|i| r#pub::apply_visibility(&mut self.resolution_graph, i).err())
-            .collect::<Vec<ResolutionError>>();
+            .collect::<Vec<Diagnostic<FileId>>>();
         self.errors.append(&mut visibility_errors);
 
         // Stage three: trace use nodes
@@ -137,34 +135,23 @@ impl<'ast> Resolver<'ast> {
         }
     }
 
-    fn find_invalid_names(&self) -> Vec<ResolutionError> {
-        struct IdentVisitor<'ast>(Vec<ResolutionError>, &'ast Rc<File>);
-        impl<'ast> Visit<'ast> for IdentVisitor<'ast> {
-            fn visit_ident(&mut self, ident: &Ident) {
-                // https://github.com/rust-lang/rust/blob/5ef299eb9805b4c86b227b718b39084e8bf24454/src/librustc_span/symbol.rs#L1592
-                if ident == "r#_"
-                    || ident == "r#"
-                    || ident == "r#super"
-                    || ident == "r#self"
-                    || ident == "r#Self"
-                    || ident == "r#crate"
-                {
-                    self.0.push(
-                        InvalidRawIdentifierError {
-                            file: self.1.clone(),
-                            ident: ident.clone(),
-                        }
-                        .into(),
-                    );
+    fn find_invalid_names(&self) -> Vec<Diagnostic<FileId>> {
+        let mut errors = vec![];
+        for file_id in self.file_graph.iter() {
+            for token in self.file_graph.inner[file_id].to_tokens() {
+                if let Tok::Ident(ident) = token {
+                    // https://github.com/rust-lang/rust/blob/5ef299eb9805b4c86b227b718b39084e8bf24454/src/librustc_span/symbol.rs#L1592
+                    if ident == "r#_"
+                        || ident == "r#"
+                        || ident == "r#super"
+                        || ident == "r#self"
+                        || ident == "r#Self"
+                        || ident == "r#crate"
+                    {
+                        errors.push(crate::error::invalid_raw_identifier(file_id, &ident));
+                    }
                 }
             }
-        }
-        let mut errors = vec![];
-        for node in self.file_graph.node_indices() {
-            let file = &self.file_graph.inner[node];
-            let mut visitor = IdentVisitor(vec![], file);
-            visitor.visit_file(&file.syn);
-            errors.append(&mut visitor.0);
         }
         errors
     }

@@ -1,3 +1,4 @@
+use rhdl::ast::Ident;
 use std::ffi::OsString;
 use std::path::PathBuf;
 
@@ -530,6 +531,12 @@ pub fn working_directory(cause: std::io::Error) -> Diagnostic<FileId> {
 //         )
 //     }
 // }
+
+pub fn invalid_raw_identifier(file_id: FileId, ident: &Ident) -> Diagnostic<FileId> {
+    Diagnostic::error()
+        .with_message("`{}` cannot be a raw identifier")
+        .with_labels(Label::primary(file_id, ident.span()))
+}
 
 // #[derive(Debug)]
 // pub struct InvalidRawIdentifierError {

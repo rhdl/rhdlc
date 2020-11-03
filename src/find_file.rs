@@ -5,11 +5,13 @@ use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use codespan::{FileId, Files};
+use codespan::{Files};
 use codespan_reporting::diagnostic::Diagnostic;
 use fxhash::FxHashMap as HashMap;
 use rhdl::ast::{File as RhdlFile, Ident, Item, ItemMod, ModContent};
 use rhdl::parser::FileParser;
+
+pub use codespan::FileId;
 
 use crate::error;
 
