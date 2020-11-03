@@ -29,9 +29,10 @@ impl FileFindingError {
                 .with_message(format!("couldn't read {}: {}", name.to_string_lossy(), err,))
                 .with_labels({
                     let mut labels = vec![];
-                    if let Some((file_id, item_mod)) = parent {
+                    if let Some((parent_file_id, this_item_mod_decl)) = parent {
                         labels.push(
-                            Label::primary(file_id, item_mod.span()).with_message("declared here"),
+                            Label::primary(parent_file_id, this_item_mod_decl.span())
+                                .with_message("declared here"),
                         );
                     }
                     labels
@@ -42,21 +43,50 @@ impl FileFindingError {
 
 pub fn parse<'input>(
     name: OsString,
+    file_id: FileId,
     parent: Option<(FileId, &ItemMod)>,
     err: ParseError<usize, Token<'input>, &'static str>,
 ) -> Diagnostic<FileId> {
+    use ParseError::*;
+
     Diagnostic::error()
         .with_message(format!(
             "could not parse {}: {}",
             name.to_string_lossy(),
-            err
+            match &err {
+                UnrecognizedToken { .. } => "unexpected token",
+                UnrecognizedEOF { .. } => "unexpected EOF",
+                InvalidToken { .. } => "invalid token",
+                ExtraToken { .. } => "extra token",
+                User { error } => error,
+            }
         ))
         .with_labels({
             let mut labels = vec![];
-            if let Some((parent_file_id, parent_item_mod)) = parent {
+            match err {
+                UnrecognizedToken {
+                    token: (left, _token, right),
+                    expected,
+                } => labels.push(
+                    Label::primary(file_id, left..right)
+                        .with_message(format!("expected any of {:?}", expected)),
+                ),
+                UnrecognizedEOF { location, expected } => labels.push(
+                    Label::primary(file_id, location..location)
+                        .with_message(format!("expected any of {:?}", expected)),
+                ),
+                InvalidToken { location } => {
+                    labels.push(Label::primary(file_id, location..location))
+                }
+                ExtraToken {
+                    token: (left, _token, right),
+                } => labels.push(Label::primary(file_id, left..right)),
+                User { .. } => {}
+            }
+            if let Some((parent_file_id, this_item_mod_decl)) = parent {
                 labels.push(
-                    Label::primary(parent_file_id, parent_item_mod.span())
-                        .with_message("included from here"),
+                    Label::secondary(parent_file_id, this_item_mod_decl.span())
+                        .with_message("declared here"),
                 );
             }
             labels

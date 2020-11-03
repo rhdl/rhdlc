@@ -1,11 +1,28 @@
-error: could not parse file
- --> a.rhdl
-  | expected `!`
-error: could not parse file
- --> a/mod.rhdl
-  | expected `!`
-error: duplicates of module `a` were found at ./test/compile-fail/find-file/duplicate-module-files-parse-fail/a.rhdl and ./test/compile-fail/find-file/duplicate-module-files-parse-fail/a/mod.rhdl
- --> top.rhdl:1:0
-  |
-1 | mod a;
-  | ^^^^^^ 
+error: conflicting files for module `a` were found at ./test/compile-fail/find-file/duplicate-module-files-parse-fail/a.rhdl and ./test/compile-fail/find-file/duplicate-module-files-parse-fail/a/mod.rhdl
+  ┌─ ./test/compile-fail/find-file/duplicate-module-files-parse-fail/top.rhdl:1:1
+  │
+1 │ mod a;
+  │ ^^^^^^ declared here
+
+error: could not parse ./test/compile-fail/find-file/duplicate-module-files-parse-fail/a.rhdl: unexpected token
+  ┌─ ./test/compile-fail/find-file/duplicate-module-files-parse-fail/a.rhdl:1:1
+  │
+1 │ ksldjflk
+  │ ^^^^^^^^ expected any of ["TokArch", "TokConst", "TokEntity", "TokEnum", "TokFn", "TokImpl", "TokMod", "TokPub", "TokStruct", "TokTokenType", "TokUse"]
+  │
+  ┌─ ./test/compile-fail/find-file/duplicate-module-files-parse-fail/top.rhdl:1:1
+  │
+1 │ mod a;
+  │ ------ declared here
+
+error: could not parse ./test/compile-fail/find-file/duplicate-module-files-parse-fail/a/mod.rhdl: unexpected token
+  ┌─ ./test/compile-fail/find-file/duplicate-module-files-parse-fail/a/mod.rhdl:1:1
+  │
+1 │ a
+  │ ^ expected any of ["TokArch", "TokConst", "TokEntity", "TokEnum", "TokFn", "TokImpl", "TokMod", "TokPub", "TokStruct", "TokTokenType", "TokUse"]
+  │
+  ┌─ ./test/compile-fail/find-file/duplicate-module-files-parse-fail/top.rhdl:1:1
+  │
+1 │ mod a;
+  │ ------ declared here
+

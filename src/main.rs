@@ -81,50 +81,50 @@ mod test {
         fail_test_looper("./test/compile-fail/find-file")
     }
 
-    #[test]
-    fn compile_fail_resolution_use() {
-        fail_test_looper("./test/compile-fail/resolution/use")
-    }
+    // #[test]
+    // fn compile_fail_resolution_use() {
+    //     fail_test_looper("./test/compile-fail/resolution/use")
+    // }
 
-    #[test]
-    fn compile_fail_resolution_pub() {
-        fail_test_looper("./test/compile-fail/resolution/pub")
-    }
+    // #[test]
+    // fn compile_fail_resolution_pub() {
+    //     fail_test_looper("./test/compile-fail/resolution/pub")
+    // }
 
-    #[test]
-    fn compile_fail_resolution_conflicts() {
-        fail_test_looper("./test/compile-fail/resolution/conflicts")
-    }
+    // #[test]
+    // fn compile_fail_resolution_conflicts() {
+    //     fail_test_looper("./test/compile-fail/resolution/conflicts")
+    // }
 
-    #[test]
-    fn compile_fail_resolution_type_existence() {
-        fail_test_looper("./test/compile-fail/resolution/type-existence")
-    }
+    // #[test]
+    // fn compile_fail_resolution_type_existence() {
+    //     fail_test_looper("./test/compile-fail/resolution/type-existence")
+    // }
 
-    #[test]
-    fn compile_fail_identifier() {
-        fail_test_looper("./test/compile-fail/identifier")
-    }
+    // #[test]
+    // fn compile_fail_identifier() {
+    //     fail_test_looper("./test/compile-fail/identifier")
+    // }
 
-    #[test]
-    fn compile_fail_parse() {
-        fail_test_looper("./test/compile-fail/parse")
-    }
+    // #[test]
+    // fn compile_fail_parse() {
+    //     fail_test_looper("./test/compile-fail/parse")
+    // }
 
-    #[test]
-    fn compile_fail_unsupported() {
-        fail_test_looper("./test/compile-fail/unsupported")
-    }
+    // #[test]
+    // fn compile_fail_unsupported() {
+    //     fail_test_looper("./test/compile-fail/unsupported")
+    // }
 
-    #[test]
-    fn compile_pass_resolution_use() {
-        success_test_looper("./test/compile-pass/resolution/use")
-    }
+    // #[test]
+    // fn compile_pass_resolution_use() {
+    //     success_test_looper("./test/compile-pass/resolution/use")
+    // }
 
-    #[test]
-    fn compile_pass_resolution_type_existence() {
-        success_test_looper("./test/compile-pass/resolution/type-existence")
-    }
+    // #[test]
+    // fn compile_pass_resolution_type_existence() {
+    //     success_test_looper("./test/compile-pass/resolution/type-existence")
+    // }
 
     #[test]
     fn compile_pass_stdin() {

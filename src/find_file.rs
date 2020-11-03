@@ -17,7 +17,7 @@ use crate::error;
 pub struct File {
     provider: FileContentProvider,
     content: String,
-    parsed: RhdlFile,
+    parsed: Option<RhdlFile>,
     parent: Option<FileId>,
 }
 
@@ -43,9 +43,9 @@ impl std::ops::Index<FileId> for FileGraph {
 }
 
 impl FileGraph {
-    fn add_node(&mut self, name: OsString, file: File, parent: Option<FileId>) -> FileId {
-        let idx = self.inner.add(name, file);
-        if parent.is_none() {
+    fn add_node(&mut self, file: File) -> FileId {
+        let idx = self.inner.add(file.provider.name(), file);
+        if self.inner.source(idx).parent.is_none() {
             self.roots.push(idx);
         }
         self.indices.push(idx);
@@ -112,24 +112,28 @@ impl FileFinder {
             FileContentProvider::File(path) => Some(path.clone()),
             _ => None,
         };
-        let root_file = match Self::find(root_provider, None) {
-            Ok(root_file) => root_file,
+        let root_file_id = match self.find(root_provider, None) {
+            Ok(root_file_id) => root_file_id,
             Err(err) => {
                 self.errors.push(err.diagnostic(root_name, None));
                 return;
             }
         };
-        let root_file_id = self.file_graph.add_node(root_name, root_file.into(), None);
         let mods: Vec<ItemMod> = self.file_graph[root_file_id]
             .parsed
-            .items
-            .iter()
-            .filter_map(|item| match item {
-                Item::Mod(m) => Some(m),
-                _ => None,
+            .as_ref()
+            .map(|parsed| {
+                parsed
+                    .items
+                    .iter()
+                    .filter_map(|item| match item {
+                        Item::Mod(m) => Some(m),
+                        _ => None,
+                    })
+                    .cloned()
+                    .collect()
             })
-            .cloned()
-            .collect();
+            .unwrap_or_default();
 
         self.cwd = if let Some(cwd) = root_path
             .as_ref()
@@ -174,22 +178,36 @@ impl FileFinder {
             let ident = ident.to_string();
             mod_file_path.push(ident.strip_prefix("r#").unwrap_or(&ident));
         });
-        let mod_file_path = mod_file_path.with_extension(&self.extension);
         let mod_folder_file_path = mod_file_path.join("mod").with_extension(&self.extension);
+        let mod_file_path = mod_file_path.with_extension(&self.extension);
+        let parent = self.ancestry.last().cloned().map(|id| (id, item_mod));
 
-        let (found_file_path, found_file) = match (
-            Self::find(
-                FileContentProvider::File(mod_file_path.clone()),
-                self.ancestry.last().cloned().map(|id| (id, item_mod)),
-            ),
-            Self::find(
+        let found_file_id = match (
+            self.find(FileContentProvider::File(mod_file_path.clone()), parent),
+            self.find(
                 FileContentProvider::File(mod_folder_file_path.clone()),
-                self.ancestry.last().cloned().map(|id| (id, item_mod)),
+                parent,
             ),
         ) {
-            (Ok(found_file), Err(_)) => (mod_file_path, found_file),
-            (Err(_), Ok(found_file)) => (mod_folder_file_path, found_file),
-            (Ok(found_file), Ok(_found_mod_file)) => {
+            (Ok(found_file_id), Err(err)) => {
+                if !err.is_io_not_found() {
+                    self.errors.push(err.diagnostic(
+                        mod_folder_file_path.into_os_string(),
+                        self.ancestry.last().cloned().map(|id| (id, item_mod)),
+                    ));
+                }
+                found_file_id
+            }
+            (Err(err), Ok(found_file_id)) => {
+                if !err.is_io_not_found() {
+                    self.errors.push(err.diagnostic(
+                        mod_file_path.into_os_string(),
+                        self.ancestry.last().cloned().map(|id| (id, item_mod)),
+                    ));
+                }
+                found_file_id
+            }
+            (Ok(found_file_id), Ok(_found_mod_file_id)) => {
                 self.errors.push(error::conflicting_mod_files(
                     self.ancestry.last().cloned(),
                     &item_mod,
@@ -197,7 +215,7 @@ impl FileFinder {
                     &mod_folder_file_path,
                 ));
                 // Create an error, but assume name.rhdl is the correct one and keep going
-                (mod_file_path, found_file)
+                found_file_id
             }
             (Err(err1), Err(err2)) => {
                 if err1.is_io_not_found() && err2.is_io_not_found() {
@@ -234,27 +252,27 @@ impl FileFinder {
             }
         };
 
-        let mods: Vec<ItemMod> = found_file
+        let mods: Vec<ItemMod> = self.file_graph[found_file_id]
             .parsed
-            .items
-            .iter()
-            .filter_map(|item| match item {
-                Item::Mod(m) => Some(m),
-                _ => None,
+            .as_ref()
+            .map(|parsed| {
+                parsed
+                    .items
+                    .iter()
+                    .filter_map(|item| match item {
+                        Item::Mod(m) => Some(m),
+                        _ => None,
+                    })
+                    .cloned()
+                    .collect()
             })
-            .cloned()
-            .collect();
-        let idx = self.file_graph.add_node(
-            found_file_path.into_os_string(),
-            found_file.into(),
-            self.ancestry.last().cloned(),
-        );
+            .unwrap_or_default();
         if let Some(parent) = self.ancestry.last().cloned() {
             self.file_graph
-                .add_edge(parent, self.ident_path.clone(), idx);
+                .add_edge(parent, self.ident_path.clone(), found_file_id);
         }
 
-        self.ancestry.push(idx);
+        self.ancestry.push(found_file_id);
         for m in &mods {
             if m.content.is_file() {
                 self.find_mod(m);
@@ -284,9 +302,10 @@ impl FileFinder {
     }
 
     fn find(
+        &mut self,
         mut provider: FileContentProvider,
         parent: Option<(FileId, &ItemMod)>,
-    ) -> Result<File, FileFindingError> {
+    ) -> Result<FileId, FileFindingError> {
         let content = match &mut provider {
             FileContentProvider::File(path) => fs::File::open(&path).and_then(|mut f| {
                 let mut content = String::new();
@@ -299,19 +318,35 @@ impl FileFinder {
             }
         };
         match content {
-            Ok(content) => match FileParser::new().parse(&content) {
-                Err(err) => Err(FileFindingError::Parse(error::parse(
-                    provider.name(),
-                    parent,
-                    err,
-                ))),
-                Ok(parsed) => Ok(File {
+            Ok(content) => {
+                let res = FileParser::new().parse(&content);
+                // todo: see if this clone can be avoided, this could be a large file
+                let mut file = File {
                     provider,
-                    content,
-                    parsed,
+                    content: content.clone(),
+                    parsed: None,
                     parent: parent.map(|(id, _)| id),
-                }),
-            },
+                };
+                let err = match res {
+                    Ok(parsed) => {
+                        file.parsed = Some(parsed);
+                        None
+                    }
+                    Err(err) => Some(err),
+                };
+                let file_id = self.file_graph.add_node(file);
+                let file_ref = &self.file_graph[file_id];
+                if let Some(err) = err {
+                    Err(FileFindingError::Parse(error::parse(
+                        file_ref.provider.name(),
+                        file_id,
+                        parent,
+                        err,
+                    )))
+                } else {
+                    Ok(file_id)
+                }
+            }
             Err(err) => Err(FileFindingError::Io(err)),
         }
     }

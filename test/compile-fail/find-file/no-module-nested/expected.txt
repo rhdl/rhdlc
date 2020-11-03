@@ -1,5 +1,6 @@
-error: file not found for module `c`
- --> top.rhdl:3:8
-  |
-3 |         mod c;
-  |         ^^^^^^ ./test/compile-fail/find-file/no-module-nested/a/b/c.rhdl : No such file or directory (os error 2)
+error: couldn't read ./test/compile-fail/find-file/no-module-nested/a/b/c.rhdl: No such file or directory (os error 2)
+  ┌─ ./test/compile-fail/find-file/no-module-nested/top.rhdl:3:9
+  │
+3 │         mod c;
+  │         ^^^^^^ declared here
+

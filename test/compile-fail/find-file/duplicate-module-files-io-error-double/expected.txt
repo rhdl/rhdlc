@@ -1,10 +1,18 @@
-error: file not found for module `a`
- --> top.rhdl:1:0
-  |
-1 | mod a;
-  | ^^^^^^ ./test/compile-fail/find-file/duplicate-module-files-io-error-double/a.rhdl : Permission denied (os error 13)
-error: file not found for module `a`
- --> top.rhdl:1:0
-  |
-1 | mod a;
-  | ^^^^^^ ./test/compile-fail/find-file/duplicate-module-files-io-error-double/a/mod.rhdl : Permission denied (os error 13)
+error: conflicting files for module `a` were found at ./test/compile-fail/find-file/duplicate-module-files-io-error-double/a.rhdl and ./test/compile-fail/find-file/duplicate-module-files-io-error-double/a/mod.rhdl
+  ┌─ ./test/compile-fail/find-file/duplicate-module-files-io-error-double/top.rhdl:1:1
+  │
+1 │ mod a;
+  │ ^^^^^^ declared here
+
+error: couldn't read ./test/compile-fail/find-file/duplicate-module-files-io-error-double/a.rhdl: Permission denied (os error 13)
+  ┌─ ./test/compile-fail/find-file/duplicate-module-files-io-error-double/top.rhdl:1:1
+  │
+1 │ mod a;
+  │ ^^^^^^ declared here
+
+error: couldn't read ./test/compile-fail/find-file/duplicate-module-files-io-error-double/a/mod.rhdl: Permission denied (os error 13)
+  ┌─ ./test/compile-fail/find-file/duplicate-module-files-io-error-double/top.rhdl:1:1
+  │
+1 │ mod a;
+  │ ^^^^^^ declared here
+
