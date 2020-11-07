@@ -1,14 +1,18 @@
 use rhdl::ast::Ident;
+use rhdl::ast::Span;
 use std::ffi::OsString;
+use std::fmt::{self, Display, Formatter};
 use std::path::PathBuf;
 
 use codespan::FileId;
-use codespan_reporting::diagnostic::{Diagnostic, Label};
+use codespan_reporting::diagnostic::{Diagnostic as CodespanDiagnostic, Label};
 use lalrpop_util::{lexer::Token, ParseError};
 use rhdl::ast::{ItemMod, Spanned};
 
+pub type Diagnostic = CodespanDiagnostic<FileId>;
+
 pub enum FileFindingError {
-    Parse(Diagnostic<FileId>),
+    Parse(Diagnostic),
     Io(std::io::Error),
 }
 
@@ -19,11 +23,7 @@ impl FileFindingError {
             Self::Parse(_) => false,
         }
     }
-    pub fn diagnostic(
-        self,
-        name: OsString,
-        parent: Option<(FileId, &ItemMod)>,
-    ) -> Diagnostic<FileId> {
+    pub fn diagnostic(self, name: OsString, parent: Option<(FileId, &ItemMod)>) -> Diagnostic {
         match self {
             Self::Parse(diag) => diag,
             Self::Io(err) => Diagnostic::error()
@@ -47,7 +47,7 @@ pub fn parse<'input>(
     file_id: FileId,
     parent: Option<(FileId, &ItemMod)>,
     err: ParseError<usize, Token<'input>, &'static str>,
-) -> Diagnostic<FileId> {
+) -> Diagnostic {
     use ParseError::*;
 
     Diagnostic::error()
@@ -99,7 +99,7 @@ pub fn conflicting_mod_files(
     item_mod: &ItemMod,
     file_path: &PathBuf,
     folder_path: &PathBuf,
-) -> Diagnostic<FileId> {
+) -> Diagnostic {
     Diagnostic::error()
         .with_message(format!(
             "conflicting files for module `{}` were found at {} and {}",
@@ -118,64 +118,12 @@ pub fn conflicting_mod_files(
         })
 }
 
-pub fn working_directory(cause: std::io::Error) -> Diagnostic<FileId> {
+pub fn working_directory(cause: std::io::Error) -> Diagnostic {
     Diagnostic::error().with_message(format!(
         "couldn't get the current working directory: {}",
         cause,
     ))
 }
-
-// #[derive(Debug)]
-// pub struct WrappedIoError {
-//     pub cause: std::io::Error,
-//     pub src: FileContentSource,
-//     pub span: Option<SpanSource>,
-// }
-// impl Display for WrappedIoError {
-//     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-//         match &self.span {
-//             Some(span) => {
-//                 let ident = span.ident_path.last().unwrap();
-
-//                 let source = match &self.src {
-//                     FileContentSource::Reader(name, _) => format!("<{}>", name).into(),
-//                     FileContentSource::File(path) => path.to_string_lossy(),
-//                 };
-//                 render_location(
-//                     f,
-//                     format!("file not found for module `{}`", ident),
-//                     (
-//                         Reference::Error,
-//                         &format!("{} : {}", source, self.cause),
-//                         span.span,
-//                     ),
-//                     vec![],
-//                     &span.file.src,
-//                     &span.file.content,
-//                 )
-//             }
-//             None => {
-//                 let path = match &self.src {
-//                     FileContentSource::File(path) => path.to_string_lossy().into(),
-//                     FileContentSource::Reader(name, _) => format!("<{}>", name),
-//                 };
-//                 writeln!(
-//                     f,
-//                     "{error}{header}",
-//                     error = "error".red().bold(),
-//                     header = format!(": couldn't read {} : {}", path, self.cause).bold(),
-//                 )
-//             }
-//         }
-//     }
-// }
-
-// error!(FileFindingError {
-//     IoError => WrappedIoError,
-//     ParseError => PreciseSynParseError,
-//     WorkingDirectoryError => WorkingDirectoryError,
-//     DuplicateError => DuplicateError,
-// });
 
 // #[derive(Debug)]
 // pub struct MultipleDefinitionError {
@@ -186,29 +134,47 @@ pub fn working_directory(cause: std::io::Error) -> Diagnostic<FileId> {
 //     pub hint: DuplicateHint,
 // }
 
-// #[derive(Debug, PartialEq, Eq)]
-// pub enum DuplicateHint {
-//     Variant,
-//     Name,
-//     Lifetime,
-//     TypeParam,
-//     Field,
-//     NameBinding,
-// }
+pub fn multiple_definition(
+    file_id: FileId,
+    original: &Ident,
+    duplicate: &Ident,
+    hint: DuplicateHint,
+) -> Diagnostic {
+    Diagnostic::error().with_message(&format!(
+        "the {} `{}` is {} multiple times",
+        hint,
+        original.inner,
+        if hint == DuplicateHint::NameBinding {
+            "bound"
+        } else {
+            "defined"
+        }
+    ))
+}
 
-// impl Display for DuplicateHint {
-//     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-//         use DuplicateHint::*;
-//         match self {
-//             Variant => write!(f, "variant"),
-//             Name => write!(f, "name"),
-//             Lifetime => write!(f, "lifetime"),
-//             TypeParam => write!(f, "type parameter"),
-//             Field => write!(f, "field"),
-//             NameBinding => write!(f, "name"),
-//         }
-//     }
-// }
+#[derive(Debug, PartialEq, Eq)]
+pub enum DuplicateHint {
+    Variant,
+    Name,
+    Lifetime,
+    TypeParam,
+    Field,
+    NameBinding,
+}
+
+impl Display for DuplicateHint {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        use DuplicateHint::*;
+        match self {
+            Variant => write!(f, "variant"),
+            Name => write!(f, "name"),
+            Lifetime => write!(f, "lifetime"),
+            TypeParam => write!(f, "type parameter"),
+            Field => write!(f, "field"),
+            NameBinding => write!(f, "name"),
+        }
+    }
+}
 
 // impl Display for MultipleDefinitionError {
 //     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
@@ -333,44 +299,44 @@ pub fn working_directory(cause: std::io::Error) -> Diagnostic<FileId> {
 //     pub hint: ItemHint,
 // }
 
-// #[derive(Debug)]
-// pub enum ItemHint {
-//     /// mod
-//     InternalNamedChildScope,
-//     /// root
-//     InternalNamedRootScope,
-//     /// crate
-//     ExternalNamedScope,
-//     /// mod or crate
-//     InternalNamedChildOrExternalNamedScope,
-//     /// any item
-//     Item,
-//     /// a trait in particular
-//     Trait,
-//     /// any type (alias, struct, enum, or other)
-//     Type,
-//     /// any variable (const or static)
-//     Var,
-//     /// a method or function
-//     Fn,
-// }
+#[derive(Debug)]
+pub enum ItemHint {
+    /// mod
+    InternalNamedChildScope,
+    /// root
+    InternalNamedRootScope,
+    /// crate
+    ExternalNamedScope,
+    /// mod or crate
+    InternalNamedChildOrExternalNamedScope,
+    /// any item
+    Item,
+    /// a trait in particular
+    Trait,
+    /// any type (alias, struct, enum, or other)
+    Type,
+    /// any variable (const or static)
+    Var,
+    /// a method or function
+    Fn,
+}
 
-// impl Display for ItemHint {
-//     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-//         use ItemHint::*;
-//         match self {
-//             InternalNamedChildScope => write!(f, "mod"),
-//             InternalNamedRootScope => write!(f, "root"),
-//             ExternalNamedScope => write!(f, "crate"),
-//             InternalNamedChildOrExternalNamedScope => write!(f, "crate or mod"),
-//             Item => write!(f, "item"),
-//             Trait => write!(f, "trait"),
-//             Type => write!(f, "type"),
-//             Var => write!(f, "variable"),
-//             Fn => write!(f, "function"),
-//         }
-//     }
-// }
+impl Display for ItemHint {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        use ItemHint::*;
+        match self {
+            InternalNamedChildScope => write!(f, "mod"),
+            InternalNamedRootScope => write!(f, "root"),
+            ExternalNamedScope => write!(f, "crate"),
+            InternalNamedChildOrExternalNamedScope => write!(f, "crate or mod"),
+            Item => write!(f, "item"),
+            Trait => write!(f, "trait"),
+            Type => write!(f, "type"),
+            Var => write!(f, "variable"),
+            Fn => write!(f, "function"),
+        }
+    }
+}
 
 // impl Display for UnresolvedItemError {
 //     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
@@ -532,30 +498,11 @@ pub fn working_directory(cause: std::io::Error) -> Diagnostic<FileId> {
 //     }
 // }
 
-pub fn invalid_raw_identifier(file_id: FileId, ident: &Ident) -> Diagnostic<FileId> {
+pub fn invalid_raw_identifier(file_id: FileId, ident: &Ident) -> Diagnostic {
     Diagnostic::error()
         .with_message("`{}` cannot be a raw identifier")
-        .with_labels(Label::primary(file_id, ident.span()))
+        .with_labels(vec![Label::primary(file_id, ident.span())])
 }
-
-// #[derive(Debug)]
-// pub struct InvalidRawIdentifierError {
-//     pub file: Rc<File>,
-//     pub ident: Ident,
-// }
-
-// impl Display for InvalidRawIdentifierError {
-//     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-//         render_location(
-//             f,
-//             format!("`{}` cannot be a raw identifier", self.ident),
-//             (Reference::Error, "", self.ident.span()),
-//             vec![],
-//             &self.file.src,
-//             &self.file.content,
-//         )
-//     }
-// }
 
 // #[derive(Debug)]
 // pub struct GlobalPathCannotHaveSpecialIdentError {
@@ -646,18 +593,16 @@ pub fn invalid_raw_identifier(file_id: FileId, ident: &Ident) -> Diagnostic<File
 //     pub reason: &'static str,
 // }
 
-// impl Display for UnsupportedError {
-//     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-//         render_location(
-//             f,
-//             "unsupported feature",
-//             (Reference::Error, self.reason, self.span),
-//             vec![],
-//             &self.file.src,
-//             &self.file.content,
-//         )
-//     }
-// }
+pub fn module_with_external_file_in_fn(file_id: FileId, item_mod: &ItemMod) -> Diagnostic {
+    Diagnostic::error()
+        .with_message("a module in a function cannot be loaded from an external file")
+        .with_labels(vec![
+            Label::primary(file_id, item_mod.span()).with_message("give the module a body")
+        ])
+        .with_notes(vec![
+            "the file path of such a module would be ambiguous".to_string()
+        ])
+}
 
 // #[derive(Debug)]
 // pub struct NonAncestralError {

@@ -5,7 +5,7 @@ use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use codespan::{Files};
+use codespan::Files;
 use codespan_reporting::diagnostic::Diagnostic;
 use fxhash::FxHashMap as HashMap;
 use rhdl::ast::{File as RhdlFile, Ident, Item, ItemMod, ModContent};
@@ -17,10 +17,10 @@ use crate::error;
 
 #[derive(Debug)]
 pub struct File {
-    provider: FileContentProvider,
+    pub provider: FileContentProvider,
     content: String,
-    parsed: Option<RhdlFile>,
-    parent: Option<FileId>,
+    pub parsed: Option<RhdlFile>,
+    pub parent: Option<FileId>,
 }
 
 impl AsRef<str> for File {

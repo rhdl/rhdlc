@@ -1,31 +1,29 @@
+use codespan_reporting::diagnostic::Diagnostic;
 use fxhash::FxHashMap as HashMap;
 use log::error;
-use syn::{
-    spanned::Spanned, visit::Visit, Field, File, Ident, ImplItemConst, ImplItemMethod,
-    ImplItemType, ItemConst, ItemEnum, ItemExternCrate, ItemFn, ItemImpl, ItemMacro, ItemMacro2,
-    ItemMod, ItemStatic, ItemStruct, ItemTrait, ItemTraitAlias, ItemType, ItemUnion, ItemUse,
-    TraitItemConst, TraitItemMethod, TraitItemType, Variant,
+
+use rhdl::{
+    ast::{
+        Ident, ItemArch, ItemConst, ItemEntity, ItemEnum, ItemFn, ItemImpl, ItemMod, ItemStruct,
+        ItemType, ItemUse, ModContent, NamedField, UnnamedField, Variant,
+    },
+    visit::Visit,
 };
 
-use super::{graph::*, FileGraph, FileGraphIndex};
-use crate::error::{ResolutionError, UnsupportedError};
+use super::{graph::*, FileGraph, FileId};
 
 pub struct ScopeBuilder<'a, 'ast> {
     pub file_graph: &'ast FileGraph,
     pub resolution_graph: &'a mut ResolutionGraph<'ast>,
-    pub errors: &'a mut Vec<ResolutionError>,
-    pub file_ancestry: Vec<FileGraphIndex>,
+    pub errors: &'a mut Vec<Diagnostic<FileId>>,
+    pub file_ancestry: Vec<FileId>,
     pub scope_ancestry: Vec<ResolutionIndex>,
 }
 
 impl<'a, 'ast> Visit<'ast> for ScopeBuilder<'a, 'ast> {
-    fn visit_file(&mut self, file: &'ast File) {
-        file.items.iter().for_each(|item| self.visit_item(item));
-    }
-
     fn visit_item_mod(&mut self, item_mod: &'ast ItemMod) {
         let parent = *self.scope_ancestry.last().unwrap();
-        if let Some((_, items)) = &item_mod.content {
+        if let ModContent::Here(here) = &item_mod.content {
             let mod_idx = self.resolution_graph.add_node(ResolutionNode::Branch {
                 branch: Branch::Mod(item_mod),
                 parent,
@@ -33,7 +31,7 @@ impl<'a, 'ast> Visit<'ast> for ScopeBuilder<'a, 'ast> {
             });
             self.resolution_graph.add_child(parent, mod_idx);
             self.scope_ancestry.push(mod_idx);
-            items.iter().for_each(|i| self.visit_item(i));
+            here.items.iter().for_each(|i| self.visit_item(i));
             self.scope_ancestry.pop();
         } else {
             let is_fn = self.scope_ancestry.iter().any(|ancestor| {
@@ -48,14 +46,11 @@ impl<'a, 'ast> Visit<'ast> for ScopeBuilder<'a, 'ast> {
                 }
             });
             if is_fn {
-                self.errors.push(
-                    UnsupportedError {
-                        file: self.file_graph.inner[*self.file_ancestry.last().unwrap()].clone(),
-                        span: item_mod.ident.span(),
-                        reason: "RHDL does not support modules without content inside functions",
-                    }
-                    .into(),
-                );
+                self.errors
+                    .push(crate::error::module_with_external_file_in_fn(
+                        *self.file_ancestry.last().unwrap(),
+                        &item_mod,
+                    ));
             }
             let mut full_ident_path: Vec<Ident> = self
                 .scope_ancestry
@@ -91,7 +86,6 @@ impl<'a, 'ast> Visit<'ast> for ScopeBuilder<'a, 'ast> {
                 .flatten();
 
             if let Some(file_index) = file_index {
-                let content_file = self.file_graph.inner[file_index].clone();
                 let mod_idx = self.resolution_graph.add_node(ResolutionNode::Branch {
                     branch: Branch::Mod(item_mod),
                     parent,
@@ -99,13 +93,15 @@ impl<'a, 'ast> Visit<'ast> for ScopeBuilder<'a, 'ast> {
                 });
                 self.resolution_graph
                     .content_files
-                    .insert(mod_idx, content_file);
+                    .insert(mod_idx, file_index);
                 self.resolution_graph.add_child(parent, mod_idx);
-                self.scope_ancestry.push(mod_idx);
-                self.file_ancestry.push(file_index);
-                self.visit_file(&self.file_graph.inner[file_index].syn);
-                self.file_ancestry.pop();
-                self.scope_ancestry.pop();
+                if let Some(parsed) = &self.file_graph[file_index].parsed {
+                    self.scope_ancestry.push(mod_idx);
+                    self.file_ancestry.push(file_index);
+                    self.visit_file(parsed);
+                    self.file_ancestry.pop();
+                    self.scope_ancestry.pop();
+                }
             } else {
                 let mod_idx = self.resolution_graph.add_node(ResolutionNode::Branch {
                     branch: Branch::Mod(item_mod),
@@ -127,47 +123,6 @@ impl<'a, 'ast> Visit<'ast> for ScopeBuilder<'a, 'ast> {
         self.resolution_graph.add_child(parent, item_idx);
     }
 
-    fn visit_item_fn(&mut self, item_fn: &'ast ItemFn) {
-        let parent = *self.scope_ancestry.last().unwrap();
-        let item_idx = self.resolution_graph.add_node(ResolutionNode::Branch {
-            branch: Branch::Fn(item_fn),
-            parent,
-            children: HashMap::default(),
-        });
-        self.resolution_graph.add_child(parent, item_idx);
-        self.scope_ancestry.push(item_idx);
-        self.visit_block(item_fn.block.as_ref());
-        self.scope_ancestry.pop();
-    }
-
-    fn visit_impl_item_method(&mut self, impl_item_method: &'ast ImplItemMethod) {
-        let parent = *self.scope_ancestry.last().unwrap();
-        let item_idx = self.resolution_graph.add_node(ResolutionNode::Branch {
-            branch: Branch::Fn(impl_item_method),
-            parent,
-            children: HashMap::default(),
-        });
-        self.resolution_graph.add_child(parent, item_idx);
-        self.scope_ancestry.push(item_idx);
-        self.visit_block(&impl_item_method.block);
-        self.scope_ancestry.pop();
-    }
-
-    fn visit_trait_item_method(&mut self, trait_item_method: &'ast TraitItemMethod) {
-        let parent = *self.scope_ancestry.last().unwrap();
-        let item_idx = self.resolution_graph.add_node(ResolutionNode::Branch {
-            branch: Branch::Fn(trait_item_method),
-            parent,
-            children: HashMap::default(),
-        });
-        self.resolution_graph.add_child(parent, item_idx);
-        self.scope_ancestry.push(item_idx);
-        if let Some(block) = trait_item_method.default.as_ref() {
-            self.visit_block(block);
-        }
-        self.scope_ancestry.pop();
-    }
-
     fn visit_item_const(&mut self, item_const: &'ast ItemConst) {
         let parent = *self.scope_ancestry.last().unwrap();
         let item_idx = self.resolution_graph.add_node(ResolutionNode::Leaf {
@@ -177,22 +132,17 @@ impl<'a, 'ast> Visit<'ast> for ScopeBuilder<'a, 'ast> {
         self.resolution_graph.add_child(parent, item_idx);
     }
 
-    fn visit_impl_item_const(&mut self, impl_item_const: &'ast ImplItemConst) {
+    fn visit_item_fn(&mut self, item_fn: &'ast ItemFn) {
         let parent = *self.scope_ancestry.last().unwrap();
-        let item_idx = self.resolution_graph.add_node(ResolutionNode::Leaf {
-            leaf: Leaf::Const(impl_item_const),
+        let item_idx = self.resolution_graph.add_node(ResolutionNode::Branch {
+            branch: Branch::Fn(item_fn),
             parent,
+            children: HashMap::default(),
         });
         self.resolution_graph.add_child(parent, item_idx);
-    }
-
-    fn visit_trait_item_const(&mut self, trait_item_const: &'ast TraitItemConst) {
-        let parent = *self.scope_ancestry.last().unwrap();
-        let item_idx = self.resolution_graph.add_node(ResolutionNode::Leaf {
-            leaf: Leaf::Const(trait_item_const),
-            parent,
-        });
-        self.resolution_graph.add_child(parent, item_idx);
+        self.scope_ancestry.push(item_idx);
+        self.visit_block(&item_fn.block);
+        self.scope_ancestry.pop();
     }
 
     fn visit_item_type(&mut self, item_type: &'ast ItemType) {
@@ -204,40 +154,22 @@ impl<'a, 'ast> Visit<'ast> for ScopeBuilder<'a, 'ast> {
         self.resolution_graph.add_child(parent, item_idx);
     }
 
-    fn visit_impl_item_type(&mut self, impl_item_type: &'ast ImplItemType) {
-        let parent = *self.scope_ancestry.last().unwrap();
-        let item_idx = self.resolution_graph.add_node(ResolutionNode::Leaf {
-            leaf: Leaf::Type(impl_item_type),
-            parent,
-        });
-        self.resolution_graph.add_child(parent, item_idx);
-    }
+    // fn visit_item_trait(&mut self, item_trait: &'ast ItemTrait) {
+    //     let parent = *self.scope_ancestry.last().unwrap();
 
-    fn visit_trait_item_type(&mut self, trait_item_type: &'ast TraitItemType) {
-        let parent = *self.scope_ancestry.last().unwrap();
-        let item_idx = self.resolution_graph.add_node(ResolutionNode::Leaf {
-            leaf: Leaf::Type(trait_item_type),
-            parent,
-        });
-        self.resolution_graph.add_child(parent, item_idx);
-    }
-
-    fn visit_item_trait(&mut self, item_trait: &'ast ItemTrait) {
-        let parent = *self.scope_ancestry.last().unwrap();
-
-        let item_idx = self.resolution_graph.add_node(ResolutionNode::Branch {
-            branch: Branch::Trait(item_trait),
-            parent,
-            children: HashMap::default(),
-        });
-        self.resolution_graph.add_child(parent, item_idx);
-        self.scope_ancestry.push(item_idx);
-        item_trait
-            .items
-            .iter()
-            .for_each(|trait_item| self.visit_trait_item(trait_item));
-        self.scope_ancestry.pop();
-    }
+    //     let item_idx = self.resolution_graph.add_node(ResolutionNode::Branch {
+    //         branch: Branch::Trait(item_trait),
+    //         parent,
+    //         children: HashMap::default(),
+    //     });
+    //     self.resolution_graph.add_child(parent, item_idx);
+    //     self.scope_ancestry.push(item_idx);
+    //     item_trait
+    //         .items
+    //         .iter()
+    //         .for_each(|trait_item| self.visit_trait_item(trait_item));
+    //     self.scope_ancestry.pop();
+    // }
 
     fn visit_item_struct(&mut self, item_struct: &'ast ItemStruct) {
         let parent = *self.scope_ancestry.last().unwrap();
@@ -249,11 +181,28 @@ impl<'a, 'ast> Visit<'ast> for ScopeBuilder<'a, 'ast> {
         });
         self.resolution_graph.add_child(parent, item_idx);
         self.scope_ancestry.push(item_idx);
-        item_struct
-            .fields
-            .iter()
-            .for_each(|field| self.visit_field(field));
+        self.visit_fields(&item_struct.fields);
         self.scope_ancestry.pop();
+    }
+
+    fn visit_named_field(&mut self, field: &'ast NamedField) {
+        let parent = *self.scope_ancestry.last().unwrap();
+
+        let item_idx = self.resolution_graph.add_node(ResolutionNode::Leaf {
+            leaf: Leaf::NamedField(field),
+            parent,
+        });
+        self.resolution_graph.add_child(parent, item_idx);
+    }
+
+    fn visit_unnamed_field(&mut self, field: &'ast UnnamedField) {
+        let parent = *self.scope_ancestry.last().unwrap();
+
+        let item_idx = self.resolution_graph.add_node(ResolutionNode::Leaf {
+            leaf: Leaf::UnnamedField(field),
+            parent,
+        });
+        self.resolution_graph.add_child(parent, item_idx);
     }
 
     fn visit_item_enum(&mut self, item_enum: &'ast ItemEnum) {
@@ -273,6 +222,17 @@ impl<'a, 'ast> Visit<'ast> for ScopeBuilder<'a, 'ast> {
         self.scope_ancestry.pop();
     }
 
+    fn visit_variant(&mut self, variant: &'ast Variant) {
+        let parent = *self.scope_ancestry.last().unwrap();
+
+        let item_idx = self.resolution_graph.add_node(ResolutionNode::Branch {
+            branch: Branch::Variant(variant),
+            parent,
+            children: HashMap::default(),
+        });
+        self.resolution_graph.add_child(parent, item_idx);
+    }
+
     fn visit_item_impl(&mut self, item_impl: &'ast ItemImpl) {
         let parent = *self.scope_ancestry.last().unwrap();
 
@@ -290,90 +250,30 @@ impl<'a, 'ast> Visit<'ast> for ScopeBuilder<'a, 'ast> {
         self.scope_ancestry.pop();
     }
 
-    fn visit_variant(&mut self, variant: &'ast Variant) {
+    fn visit_item_entity(&mut self, item_entity: &'ast ItemEntity) {
+        let parent = *self.scope_ancestry.last().unwrap();
+
+        let item_idx = self.resolution_graph.add_node(ResolutionNode::Leaf {
+            leaf: Leaf::Entity(item_entity),
+            parent,
+        });
+        self.resolution_graph.add_child(parent, item_idx);
+    }
+
+    fn visit_item_arch(&mut self, item_arch: &'ast ItemArch) {
         let parent = *self.scope_ancestry.last().unwrap();
 
         let item_idx = self.resolution_graph.add_node(ResolutionNode::Branch {
-            branch: Branch::Variant(variant),
+            branch: Branch::Arch(item_arch),
             parent,
             children: HashMap::default(),
         });
         self.resolution_graph.add_child(parent, item_idx);
-    }
-
-    fn visit_field(&mut self, field: &'ast Field) {
-        let parent = *self.scope_ancestry.last().unwrap();
-
-        let item_idx = self.resolution_graph.add_node(ResolutionNode::Leaf {
-            leaf: Leaf::Field(field),
-            parent,
-        });
-        self.resolution_graph.add_child(parent, item_idx);
-    }
-
-    fn visit_item_macro(&mut self, item_macro: &'ast ItemMacro) {
-        self.errors.push(
-            UnsupportedError {
-                file: self.file_graph.inner[*self.file_ancestry.last().unwrap()].clone(),
-                span: item_macro.ident.span(),
-                reason: "RHDL does not support macros (yet)",
-            }
-            .into(),
-        );
-    }
-
-    fn visit_item_macro2(&mut self, item_macro2: &'ast ItemMacro2) {
-        self.errors.push(
-            UnsupportedError {
-                file: self.file_graph.inner[*self.file_ancestry.last().unwrap()].clone(),
-                span: item_macro2.ident.span(),
-                reason:
-                    "RHDL does not support declarative macros, as they are not stabilized in Rust",
-            }
-            .into(),
-        );
-    }
-
-    fn visit_item_static(&mut self, item_static: &'ast ItemStatic) {
-        self.errors.push(
-            UnsupportedError {
-                file: self.file_graph.inner[*self.file_ancestry.last().unwrap()].clone(),
-                span: item_static.ident.span(),
-                reason:
-                    "RHDL cannot support static variables and other unsafe code: safety is not yet formally defined",
-            }
-            .into(),
-        );
-    }
-
-    fn visit_item_union(&mut self, item_union: &'ast ItemUnion) {
-        self.errors.push(UnsupportedError {
-            file: self.file_graph.inner[*self.file_ancestry.last().unwrap()].clone(),
-            span: item_union.ident.span(),
-            reason: "RHDL cannot support unions and other unsafe code: safety is not yet formally defined"
-        }.into());
-    }
-
-    fn visit_item_trait_alias(&mut self, item_trait_alias: &'ast ItemTraitAlias) {
-        self.errors.push(
-            UnsupportedError {
-                file: self.file_graph.inner[*self.file_ancestry.last().unwrap()].clone(),
-                span: item_trait_alias.ident.span(),
-                reason:
-                    "RHDL does not support trait aliases as they are still experimental in Rust",
-            }
-            .into(),
-        );
-    }
-
-    fn visit_item_extern_crate(&mut self, item_extern_crate: &'ast ItemExternCrate) {
-        self.errors.push(
-            UnsupportedError {
-                file: self.file_graph.inner[*self.file_ancestry.last().unwrap()].clone(),
-                span: item_extern_crate.ident.span(),
-                reason: "RHDL does not support Rust 2015 syntax, you can safely remove this. :)",
-            }
-            .into(),
-        );
+        self.scope_ancestry.push(item_idx);
+        item_arch
+            .items
+            .iter()
+            .for_each(|arch_item| self.visit_arch_item(arch_item));
+        self.scope_ancestry.pop();
     }
 }

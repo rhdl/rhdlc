@@ -33,18 +33,21 @@
 ///         * fall back all the way to "not found" if nothing is similar
 use codespan_reporting::diagnostic::Diagnostic;
 use fxhash::{FxHashMap as HashMap, FxHashSet as HashSet};
-use rhdl::ast::Tok;
+use rhdl::{
+    ast::{ToTokens, Tok},
+    visit::Visit,
+};
 
-use crate::find_file::{File, FileGraph, FileId};
+use crate::find_file::{FileGraph, FileId};
 
-mod r#use;
+// mod r#use;
 
 mod build;
 mod conflicts;
 mod graph;
-mod path;
-mod r#pub;
-mod type_existence;
+// mod path;
+// mod r#pub;
+// mod type_existence;
 
 pub use graph::{Branch, Leaf, ResolutionGraph, ResolutionIndex, ResolutionNode};
 
@@ -74,7 +77,6 @@ impl<'ast> Resolver<'ast> {
         // Stage one: add nodes
         let files: Vec<FileId> = self.file_graph.roots.clone();
         for file_index in files {
-            let file = self.file_graph.inner[file_index].clone();
             let resolution_index = self.resolution_graph.add_node(ResolutionNode::Root {
                 // TODO: attach a real name
                 name: String::default(),
@@ -82,7 +84,7 @@ impl<'ast> Resolver<'ast> {
             });
             self.resolution_graph
                 .content_files
-                .insert(resolution_index, file);
+                .insert(resolution_index, file_index);
             let mut builder = build::ScopeBuilder {
                 errors: &mut self.errors,
                 file_graph: &mut self.file_graph,
@@ -90,31 +92,33 @@ impl<'ast> Resolver<'ast> {
                 file_ancestry: vec![file_index],
                 scope_ancestry: vec![resolution_index],
             };
-            builder.visit_file(&self.file_graph.inner[file_index].syn);
+            if let Some(parsed) = &self.file_graph[file_index].parsed {
+                builder.visit_file(parsed);
+            }
         }
 
         // Stage two: apply visibility
-        let mut visibility_errors = self
-            .resolution_graph
-            .node_indices()
-            .filter_map(|i| r#pub::apply_visibility(&mut self.resolution_graph, i).err())
-            .collect::<Vec<Diagnostic<FileId>>>();
-        self.errors.append(&mut visibility_errors);
+        // let mut visibility_errors = self
+        //     .resolution_graph
+        //     .node_indices()
+        //     .filter_map(|i| r#pub::apply_visibility(&mut self.resolution_graph, i).err())
+        //     .collect::<Vec<Diagnostic<FileId>>>();
+        // self.errors.append(&mut visibility_errors);
 
-        // Stage three: trace use nodes
-        let use_indices: Vec<ResolutionIndex> = self
-            .resolution_graph
-            .node_indices()
-            .filter(|i| self.resolution_graph.inner[*i].is_use())
-            .collect();
-        for use_index in use_indices {
-            let mut use_resolver = r#use::UseResolver {
-                resolved_uses: &mut self.resolved_uses,
-                resolution_graph: &mut self.resolution_graph,
-                errors: &mut self.errors,
-            };
-            use_resolver.resolve_use(use_index);
-        }
+        // // Stage three: trace use nodes
+        // let use_indices: Vec<ResolutionIndex> = self
+        //     .resolution_graph
+        //     .node_indices()
+        //     .filter(|i| self.resolution_graph.inner[*i].is_use())
+        //     .collect();
+        // for use_index in use_indices {
+        //     let mut use_resolver = r#use::UseResolver {
+        //         resolved_uses: &mut self.resolved_uses,
+        //         resolution_graph: &mut self.resolution_graph,
+        //         errors: &mut self.errors,
+        //     };
+        //     use_resolver.resolve_use(use_index);
+        // }
     }
 
     pub fn check_graph(&mut self) {
@@ -126,29 +130,32 @@ impl<'ast> Resolver<'ast> {
             };
             conflict_checker.visit_all();
         }
-        {
-            let mut type_existence_checker = type_existence::TypeExistenceChecker {
-                resolution_graph: &self.resolution_graph,
-                errors: &mut self.errors,
-            };
-            type_existence_checker.visit_all();
-        }
+        // {
+        //     let mut type_existence_checker = type_existence::TypeExistenceChecker {
+        //         resolution_graph: &self.resolution_graph,
+        //         errors: &mut self.errors,
+        //     };
+        //     type_existence_checker.visit_all();
+        // }
     }
 
     fn find_invalid_names(&self) -> Vec<Diagnostic<FileId>> {
         let mut errors = vec![];
-        for file_id in self.file_graph.iter() {
-            for token in self.file_graph.inner[file_id].to_tokens() {
-                if let Tok::Ident(ident) = token {
-                    // https://github.com/rust-lang/rust/blob/5ef299eb9805b4c86b227b718b39084e8bf24454/src/librustc_span/symbol.rs#L1592
-                    if ident == "r#_"
-                        || ident == "r#"
-                        || ident == "r#super"
-                        || ident == "r#self"
-                        || ident == "r#Self"
-                        || ident == "r#crate"
-                    {
-                        errors.push(crate::error::invalid_raw_identifier(file_id, &ident));
+        for file_id in self.file_graph.iter().cloned() {
+            if let Some(parsed) = &self.file_graph[file_id].parsed {
+                for token in parsed.to_tokens() {
+                    if let Tok::Ident(ident) = token {
+                        let inner = &ident.inner;
+                        // https://github.com/rust-lang/rust/blob/5ef299eb9805b4c86b227b718b39084e8bf24454/src/librustc_span/symbol.rs#L1592
+                        if inner == "r#_"
+                            || inner == "r#"
+                            || inner == "r#super"
+                            || inner == "r#self"
+                            || inner == "r#Self"
+                            || inner == "r#crate"
+                        {
+                            errors.push(crate::error::invalid_raw_identifier(file_id, &ident));
+                        }
                     }
                 }
             }

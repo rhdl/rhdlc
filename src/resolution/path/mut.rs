@@ -2,7 +2,7 @@
 
 use fxhash::FxHashSet as HashSet;
 
-use syn::{visit::Visit, Ident, UseGlob, UseName, UsePath, UseRename, UseTree};
+use rhd;::ast::{visit::Visit, Ident, UseGlob, UseName, UsePath, UseRename, UseTree};
 
 use super::super::{
     r#use::UseResolver, Branch, Leaf, ResolutionGraph, ResolutionIndex, ResolutionNode,

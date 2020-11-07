@@ -1,16 +1,18 @@
 use fxhash::FxHashMap as HashMap;
-use std::fmt::Debug;
-use std::rc::Rc;
-
-use syn::{
-    visit::Visit, Field, Ident, ImplItem, ImplItemConst, ImplItemMethod, ImplItemType, Item,
-    ItemConst, ItemEnum, ItemFn, ItemImpl, ItemMacro2, ItemMod, ItemStatic, ItemStruct, ItemTrait,
-    ItemTraitAlias, ItemType, ItemUnion, ItemUse, Stmt, TraitItem, TraitItemConst, TraitItemMethod,
-    TraitItemType, UseGlob, UseName, UseRename, Variant, Visibility,
+use rhdl::{
+    ast::{
+        Ident, ItemArch, ItemConst, ItemEntity, ItemEnum, ItemFn, ItemImpl, ItemMod, ItemStruct,
+        ItemType, ItemUse, NamedField, UnnamedField, UseTreeGlob, UseTreeName, UseTreeRename,
+        Variant, Vis,
+    },
+    visit::Visit,
 };
 
+use std::fmt::Debug;
+
 use crate::error::ItemHint;
-use crate::find_file::File;
+use crate::find_file::FileId;
+// use crate::error::ItemHint;
 
 #[derive(Default, Debug)]
 pub struct ResolutionGraph<'ast> {
@@ -19,7 +21,7 @@ pub struct ResolutionGraph<'ast> {
     /// key is exported to value
     /// if value is None, it is visible from anywhere
     pub exports: HashMap<ResolutionIndex, Option<ResolutionIndex>>,
-    pub content_files: HashMap<ResolutionIndex, Rc<File>>,
+    pub content_files: HashMap<ResolutionIndex, FileId>,
 }
 
 impl<'ast> ResolutionGraph<'ast> {
@@ -44,7 +46,7 @@ impl<'ast> ResolutionGraph<'ast> {
         0..self.inner.len()
     }
 
-    pub fn file(&self, node: ResolutionIndex) -> Rc<File> {
+    pub fn file(&self, node: ResolutionIndex) -> FileId {
         let mut next_parent = match &self.inner[node] {
             ResolutionNode::Root { .. } => node,
             ResolutionNode::Leaf { parent, .. } | ResolutionNode::Branch { parent, .. } => *parent,
@@ -76,9 +78,6 @@ pub type ResolutionIndex = usize;
 pub enum ResolutionNode<'ast> {
     Root {
         /// This information comes from an external source
-        /// Only the top level entity is allowed to have no name
-        /// TODO: figure out how to reconcile library-building behavior of rustc
-        /// with the fact that there are no binaries for RHDL...
         name: String,
         children: HashMap<Option<&'ast Ident>, Vec<ResolutionIndex>>,
     },
@@ -95,33 +94,36 @@ pub enum ResolutionNode<'ast> {
 }
 
 impl<'ast> ResolutionNode<'ast> {
-    pub fn visibility(&self) -> Option<&Visibility> {
+    pub fn visibility(&self) -> Option<&Vis> {
         match self {
             ResolutionNode::Leaf {
-                leaf: Leaf::Const(some_item_const),
+                leaf: Leaf::Const(ItemConst {vis,..}),
                 ..
-            } => some_item_const.visibility(),
+            }|
             ResolutionNode::Leaf {
-                leaf: Leaf::Type(some_item_type),
+                leaf: Leaf::Type(ItemType {vis,..}),
                 ..
-            } => some_item_type.visibility(),
+            } |
 
             ResolutionNode::Branch {
-                branch: Branch::Fn(some_item_fn, ..),
+                branch: Branch::Fn(ItemFn { vis,.. }, ..),
                 ..
-            } => some_item_fn.visibility(),
+            } |
             ResolutionNode::Leaf {
-                leaf: Leaf::Field(Field { vis, .. }),
+                leaf: Leaf::NamedField(NamedField { vis, .. }),
                 ..
-            }
-            | ResolutionNode::Branch {
+            }  |
+            ResolutionNode::Leaf {
+                leaf: Leaf::UnnamedField(UnnamedField { vis, .. }),
+                ..
+            } | ResolutionNode::Branch {
                 branch: Branch::Struct(ItemStruct { vis, .. }, ..),
                 ..
             }
-            | ResolutionNode::Branch {
-                branch: Branch::Trait(ItemTrait { vis, .. }, ..),
-                ..
-            }
+            // | ResolutionNode::Branch {
+            //     branch: Branch::Trait(ItemTrait { vis, .. }, ..),
+            //     ..
+            // }
             | ResolutionNode::Branch {
                 branch: Branch::Enum(ItemEnum { vis, .. }, ..),
                 ..
@@ -133,11 +135,12 @@ impl<'ast> ResolutionNode<'ast> {
             | ResolutionNode::Branch {
                 branch: Branch::Mod(ItemMod { vis, .. }, ..),
                 ..
-            } => Some(vis),
+            } => vis.as_ref(),
             ResolutionNode::Branch {
                 branch: Branch::Variant(_),
                 ..
             }
+            | ResolutionNode::Branch {branch: Branch::Arch(..), ..}
             | ResolutionNode::Root { .. }
             | ResolutionNode::Branch {
                 branch: Branch::Impl(_),
@@ -154,6 +157,8 @@ impl<'ast> ResolutionNode<'ast> {
             | ResolutionNode::Leaf {
                 leaf: Leaf::UseGlob(..),
                 ..
+            } | ResolutionNode::Leaf {
+                leaf: Leaf::Entity(..), ..
             } => None,
         }
     }
@@ -175,10 +180,10 @@ impl<'ast> ResolutionNode<'ast> {
                 branch: Branch::Impl { .. },
                 ..
             }
-            | ResolutionNode::Branch {
-                branch: Branch::Trait { .. },
-                ..
-            }
+            // | ResolutionNode::Branch {
+            //     branch: Branch::Trait { .. },
+            //     ..
+            // }
             | ResolutionNode::Branch {
                 branch: Branch::Fn { .. },
                 ..
@@ -218,11 +223,12 @@ impl<'ast> ResolutionNode<'ast> {
             },
             ResolutionNode::Branch {
                 branch: Impl(_), ..
-            } => false,
-            ResolutionNode::Leaf { leaf: Field(_), .. } => match other {
-                ResolutionNode::Leaf { leaf: Field(_), .. } => true,
+            } | ResolutionNode::Branch { branch: Arch(_), ..} => false,
+            ResolutionNode::Leaf { leaf: NamedField(_), .. } => match other {
+                ResolutionNode::Leaf { leaf: NamedField(_), .. } => true,
                 _ => false,
             },
+            ResolutionNode::Leaf { leaf: UnnamedField(_), .. } => false,
             ResolutionNode::Branch {
                 branch: Variant(_), ..
             } => match other {
@@ -239,9 +245,9 @@ impl<'ast> ResolutionNode<'ast> {
                 | ResolutionNode::Branch {
                     branch: Enum(_), ..
                 }
-                | ResolutionNode::Branch {
-                    branch: Trait(_), ..
-                }
+                // | ResolutionNode::Branch {
+                //     branch: Trait(_), ..
+                // }
                 | ResolutionNode::Leaf { leaf: Type(_), .. }
                 | ResolutionNode::Leaf {
                     leaf: UseName(..), ..
@@ -262,9 +268,9 @@ impl<'ast> ResolutionNode<'ast> {
                 | ResolutionNode::Branch {
                     branch: Enum(_), ..
                 }
-                | ResolutionNode::Branch {
-                    branch: Trait(_), ..
-                }
+                // | ResolutionNode::Branch {
+                //     branch: Trait(_), ..
+                // }
                 | ResolutionNode::Leaf { leaf: Type(_), .. }
                 | ResolutionNode::Leaf {
                     leaf: UseName(..), ..
@@ -280,10 +286,12 @@ impl<'ast> ResolutionNode<'ast> {
             }
             | ResolutionNode::Branch {
                 branch: Enum(_), ..
+            } | ResolutionNode::Leaf {
+                leaf: Entity(_),..
             }
-            | ResolutionNode::Branch {
-                branch: Trait(_), ..
-            }
+            // | ResolutionNode::Branch {
+            //     branch: Trait(_), ..
+            // }
             | ResolutionNode::Leaf { leaf: Type(_), .. }
             | ResolutionNode::Leaf {
                 leaf: UseName(..), ..
@@ -311,10 +319,10 @@ impl<'ast> ResolutionNode<'ast> {
 
     pub fn is_trait(&self) -> bool {
         match self {
-            ResolutionNode::Branch {
-                branch: Branch::Trait(_),
-                ..
-            } => true,
+            // ResolutionNode::Branch {
+            //     branch: Branch::Trait(_),
+            //     ..
+            // } => true,
             _ => false,
         }
     }
@@ -387,20 +395,22 @@ impl<'ast> ResolutionNode<'ast> {
             ResolutionNode::Branch { branch, .. } => match branch {
                 Branch::Mod(m) => Some(&m.ident),
                 Branch::Impl(_) => None,
-                Branch::Trait(t) => Some(&t.ident),
-                Branch::Fn(f) => f.ident(),
+                // Branch::Trait(t) => Some(&t.ident),
+                Branch::Fn(f) => Some(&f.sig.ident),
                 Branch::Struct(s) => Some(&s.ident),
                 Branch::Enum(e) => Some(&e.ident),
                 Branch::Variant(v) => Some(&v.ident),
                 Branch::Use(_) => None,
+                Branch::Arch(_) => None,
             },
             ResolutionNode::Leaf { leaf, .. } => match leaf {
-                Leaf::Field(f) => f.ident.as_ref(),
-                Leaf::Const(c) => c.ident(),
-                Leaf::Type(t) => t.ident(),
+                Leaf::NamedField(f) => Some(&f.ident),
+                Leaf::Const(c) => Some(&c.ident),
+                Leaf::Type(t) => Some(&t.ident),
                 Leaf::UseRename(r, _) => Some(&r.rename),
-                Leaf::UseName(n, _) => Some(&n.ident),
-                Leaf::UseGlob(_, _) => None,
+                Leaf::UseName(n, _) => Some(*n),
+                Leaf::UseGlob(_, _) | Leaf::UnnamedField(_) => None,
+                Leaf::Entity(e) => Some(&e.ident),
             },
         }
     }
@@ -414,20 +424,23 @@ impl<'ast> ResolutionNode<'ast> {
             ResolutionNode::Branch { branch, .. } => match branch {
                 Branch::Mod(m) => v.visit_item_mod(m),
                 Branch::Impl(i) => v.visit_item_impl(i),
-                Branch::Trait(t) => v.visit_item_trait(t),
-                Branch::Fn(f) => f.visit(v),
+                // Branch::Trait(t) => v.visit_item_trait(t),
+                Branch::Fn(f) => v.visit_item_fn(f),
                 Branch::Struct(s) => v.visit_item_struct(s),
                 Branch::Enum(e) => v.visit_item_enum(e),
                 Branch::Variant(var) => v.visit_variant(var),
                 Branch::Use(u) => v.visit_item_use(u),
+                Branch::Arch(a) => v.visit_item_arch(a),
             },
             ResolutionNode::Leaf { leaf, .. } => match leaf {
-                Leaf::Field(f) => v.visit_field(f),
-                Leaf::Const(c) => c.visit(v),
-                Leaf::Type(t) => t.visit(v),
-                Leaf::UseName(n, _) => v.visit_use_name(n),
-                Leaf::UseRename(r, _) => v.visit_use_rename(r),
-                Leaf::UseGlob(g, _) => v.visit_use_glob(g),
+                Leaf::NamedField(f) => v.visit_named_field(f),
+                Leaf::UnnamedField(f) => v.visit_unnamed_field(f),
+                Leaf::Const(c) => v.visit_item_const(c),
+                Leaf::Type(t) => v.visit_item_type(t),
+                Leaf::UseName(n, _) => v.visit_use_tree_name(n),
+                Leaf::UseRename(r, _) => v.visit_use_tree_rename(r),
+                Leaf::UseGlob(g, _) => v.visit_use_tree_glob(g),
+                Leaf::Entity(e) => v.visit_item_entity(e),
             },
         }
     }
@@ -438,20 +451,23 @@ impl<'ast> ResolutionNode<'ast> {
             ResolutionNode::Branch { branch, .. } => match branch {
                 Branch::Mod(..) => Some(ItemHint::InternalNamedChildScope),
                 Branch::Impl(..) => Some(ItemHint::Item),
-                Branch::Trait(..) => Some(ItemHint::Trait),
+                // Branch::Trait(..) => Some(ItemHint::Trait),
                 Branch::Fn(..) => Some(ItemHint::Fn),
                 Branch::Struct(..) => Some(ItemHint::Type),
                 Branch::Enum(..) => Some(ItemHint::Type),
                 Branch::Variant(..) => None,
                 Branch::Use(..) => None,
+                Branch::Arch(..) => Some(ItemHint::Item),
             },
             ResolutionNode::Leaf { leaf, .. } => match leaf {
-                Leaf::Field(..) => None,
+                Leaf::NamedField(..) => None,
+                Leaf::UnnamedField(..) => None,
                 Leaf::Const(..) => Some(ItemHint::Var),
                 Leaf::Type(..) => Some(ItemHint::Type),
                 Leaf::UseName(..) => Some(ItemHint::Item),
                 Leaf::UseRename(..) => Some(ItemHint::Item),
                 Leaf::UseGlob(..) => None,
+                Leaf::Entity(..) => Some(ItemHint::Type),
             },
         }
     }
@@ -460,144 +476,31 @@ impl<'ast> ResolutionNode<'ast> {
 #[derive(Debug)]
 pub enum Branch<'ast> {
     Mod(&'ast ItemMod),
-    Impl(&'ast ItemImpl),
-    Trait(&'ast ItemTrait),
-    Fn(&'ast dyn SomeFn<'ast>),
-    Struct(&'ast ItemStruct),
-    Enum(&'ast ItemEnum),
-    Variant(&'ast Variant),
     /// Imports are treated as a special "children" case
     /// globs have no "ident"
     /// renames use the renamed ident
     /// names use the original ident
     Use(&'ast ItemUse),
     // UsePath(&'ast UsePath),
-    // UseGroup(&'ast UseGroup)
+    // UseGroup(&'ast UseGroup),
+    Fn(&'ast ItemFn),
+    Struct(&'ast ItemStruct),
+    Enum(&'ast ItemEnum),
+    Variant(&'ast Variant),
+    Impl(&'ast ItemImpl),
+    /// Arch will be tied as a nameless entity child
+    Arch(&'ast ItemArch),
+    // Trait(&'ast ItemTrait),
 }
 
 #[derive(Debug)]
 pub enum Leaf<'ast> {
-    Field(&'ast Field),
-    Const(&'ast dyn SomeConst<'ast>),
-    Type(&'ast dyn SomeType<'ast>),
-    UseName(&'ast UseName, Vec<ResolutionIndex>),
-    UseRename(&'ast UseRename, Vec<ResolutionIndex>),
-    UseGlob(&'ast UseGlob, ResolutionIndex),
-}
-
-pub trait SomeItem<'ast> {
-    fn ident(&'ast self) -> Option<&'ast Ident>;
-}
-
-macro_rules! some_item_fn {
-    ($ident: ident) => {
-        impl<'ast> SomeItem<'ast> for $ident {
-            fn ident(&'ast self) -> Option<&'ast Ident> {
-                Some(&self.sig.ident)
-            }
-        }
-    };
-}
-some_item_fn!(ItemFn);
-some_item_fn!(ImplItemMethod);
-some_item_fn!(TraitItemMethod);
-
-macro_rules! some_item_type_or_const {
-    ($ident: ident) => {
-        impl<'ast> SomeItem<'ast> for $ident {
-            fn ident(&'ast self) -> Option<&'ast Ident> {
-                Some(&self.ident)
-            }
-        }
-    };
-}
-some_item_type_or_const!(ItemConst);
-some_item_type_or_const!(ImplItemConst);
-some_item_type_or_const!(TraitItemConst);
-some_item_type_or_const!(ItemType);
-some_item_type_or_const!(ImplItemType);
-some_item_type_or_const!(TraitItemType);
-
-pub trait SomeFn<'ast>: Debug + SomeItem<'ast> {
-    fn visibility(&'ast self) -> Option<&'ast Visibility> {
-        None
-    }
-    fn visit(&'ast self, v: &mut dyn Visit<'ast>);
-}
-impl<'ast> SomeFn<'ast> for ItemFn {
-    fn visibility(&'ast self) -> Option<&'ast Visibility> {
-        Some(&self.vis)
-    }
-    fn visit(&'ast self, v: &mut dyn Visit<'ast>) {
-        v.visit_item_fn(self)
-    }
-}
-impl<'ast> SomeFn<'ast> for ImplItemMethod {
-    fn visibility(&'ast self) -> Option<&'ast Visibility> {
-        Some(&self.vis)
-    }
-    fn visit(&'ast self, v: &mut dyn Visit<'ast>) {
-        v.visit_impl_item_method(self)
-    }
-}
-impl<'ast> SomeFn<'ast> for TraitItemMethod {
-    fn visit(&'ast self, v: &mut dyn Visit<'ast>) {
-        v.visit_trait_item_method(self)
-    }
-}
-
-pub trait SomeConst<'ast>: Debug + SomeItem<'ast> {
-    fn visibility(&'ast self) -> Option<&'ast Visibility> {
-        None
-    }
-    fn visit(&'ast self, v: &mut dyn Visit<'ast>);
-}
-impl<'ast> SomeConst<'ast> for ItemConst {
-    fn visibility(&'ast self) -> Option<&'ast Visibility> {
-        Some(&self.vis)
-    }
-    fn visit(&'ast self, v: &mut dyn Visit<'ast>) {
-        v.visit_item_const(self)
-    }
-}
-impl<'ast> SomeConst<'ast> for ImplItemConst {
-    fn visibility(&'ast self) -> Option<&'ast Visibility> {
-        Some(&self.vis)
-    }
-    fn visit(&'ast self, v: &mut dyn Visit<'ast>) {
-        v.visit_impl_item_const(self)
-    }
-}
-impl<'ast> SomeConst<'ast> for TraitItemConst {
-    fn visit(&'ast self, v: &mut dyn Visit<'ast>) {
-        v.visit_trait_item_const(self)
-    }
-}
-
-pub trait SomeType<'ast>: Debug + SomeItem<'ast> {
-    fn visibility(&'ast self) -> Option<&'ast Visibility> {
-        None
-    }
-    fn visit(&'ast self, v: &mut dyn Visit<'ast>);
-}
-impl<'ast> SomeType<'ast> for ItemType {
-    fn visibility(&'ast self) -> Option<&'ast Visibility> {
-        Some(&self.vis)
-    }
-    fn visit(&'ast self, v: &mut dyn Visit<'ast>) {
-        v.visit_item_type(self)
-    }
-}
-impl<'ast> SomeType<'ast> for ImplItemType {
-    fn visibility(&'ast self) -> Option<&'ast Visibility> {
-        Some(&self.vis)
-    }
-    fn visit(&'ast self, v: &mut dyn Visit<'ast>) {
-        v.visit_impl_item_type(self)
-    }
-}
-impl<'ast> SomeType<'ast> for TraitItemType {
-    fn visit(&'ast self, v: &mut dyn Visit<'ast>) {
-        v.visit_trait_item_type(self)
-    }
+    UseName(&'ast UseTreeName, Vec<ResolutionIndex>),
+    UseRename(&'ast UseTreeRename, Vec<ResolutionIndex>),
+    UseGlob(&'ast UseTreeGlob, ResolutionIndex),
+    Const(&'ast ItemConst),
+    Type(&'ast ItemType),
+    NamedField(&'ast NamedField),
+    UnnamedField(&'ast UnnamedField),
+    Entity(&'ast ItemEntity),
 }

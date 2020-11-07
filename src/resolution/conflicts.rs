@@ -1,23 +1,26 @@
-use fxhash::FxHashSet as HashSet;
-use syn::{
-    visit::Visit, Fields, File as SynFile, Generics, Ident, Item, ItemEnum, ItemMod, PatIdent,
-    Signature,
+use fxhash::FxHashMap as HashMap;
+
+use rhdl::{
+    ast::{
+        Fields, File as RhdlFile, GenericParam, Generics, Ident, Item, ItemEnum, ItemMod, PatIdent,
+        Sig,
+    },
+    visit::Visit,
 };
 
-use std::rc::Rc;
-
-use super::{Branch, File, ResolutionError, ResolutionGraph, ResolutionIndex, ResolutionNode};
-use crate::error::{DuplicateHint, MultipleDefinitionError};
+use super::{Branch, ResolutionGraph, ResolutionIndex, ResolutionNode};
+use crate::error::{Diagnostic, DuplicateHint};
+use crate::find_file::FileId;
 
 pub struct ConflictChecker<'a, 'ast> {
     pub resolution_graph: &'a ResolutionGraph<'ast>,
-    pub errors: &'a mut Vec<ResolutionError>,
+    pub errors: &'a mut Vec<Diagnostic>,
 }
 
 struct ConflictCheckerVisitor<'a, 'ast> {
     resolution_graph: &'a ResolutionGraph<'ast>,
-    errors: &'a mut Vec<ResolutionError>,
-    file: Rc<File>,
+    errors: &'a mut Vec<Diagnostic>,
+    file: FileId,
 }
 
 impl<'a, 'ast> ConflictChecker<'a, 'ast> {
@@ -35,10 +38,11 @@ impl<'a, 'ast> ConflictChecker<'a, 'ast> {
                     branch: Branch::Impl(_),
                     ..
                 }
-                | ResolutionNode::Branch {
-                    branch: Branch::Trait(_),
-                    ..
-                } => self.resolution_graph.file(node),
+                // | ResolutionNode::Branch {
+                //     branch: Branch::Trait(_),
+                //     ..
+                // }
+                 => self.resolution_graph.file(node),
                 ResolutionNode::Branch {
                     branch: Branch::Mod(_),
                     ..
@@ -55,7 +59,7 @@ impl<'a, 'ast> ConflictChecker<'a, 'ast> {
         }
     }
 
-    fn find_name_conflicts_in(&mut self, node: ResolutionIndex, file: Rc<File>) {
+    fn find_name_conflicts_in(&mut self, node: ResolutionIndex, file_id: FileId) {
         // Check the scope for conflicts
         for (ident, indices) in self.resolution_graph.inner[node].children().unwrap().iter() {
             if let Some(ident) = ident {
@@ -107,16 +111,12 @@ impl<'a, 'ast> ConflictChecker<'a, 'ast> {
                             continue;
                         }
                         if i_name == j_name {
-                            self.errors.push(
-                                MultipleDefinitionError {
-                                    file: file.clone(),
-                                    name: ident.to_string(),
-                                    original: i_name.span(),
-                                    duplicate: j_name.span(),
-                                    hint: DuplicateHint::Name,
-                                }
-                                .into(),
-                            );
+                            self.errors.push(crate::error::multiple_definition(
+                                file_id,
+                                i_name,
+                                j_name,
+                                DuplicateHint::Name,
+                            ));
                             // Optimization: don't need to claim items that won't be seen again
                             // claimed[i] = true;
                             claimed[j_pos] = true;
@@ -168,7 +168,7 @@ impl<'a, 'ast> ConflictChecker<'a, 'ast> {
 }
 
 impl<'a, 'ast> Visit<'ast> for ConflictCheckerVisitor<'a, 'ast> {
-    fn visit_file(&mut self, _file: &'ast SynFile) {
+    fn visit_file(&mut self, _file: &'ast RhdlFile) {
         // purposefully do nothing so we don't recurse out of this scope
     }
 
@@ -181,114 +181,107 @@ impl<'a, 'ast> Visit<'ast> for ConflictCheckerVisitor<'a, 'ast> {
     }
 
     fn visit_fields(&mut self, fields: &'ast Fields) {
-        let mut seen_idents: HashSet<&Ident> = HashSet::default();
-        for field in fields.iter() {
-            if let Some(ident) = field.ident.as_ref() {
-                if let Some(previous_ident) = seen_idents.get(ident) {
-                    self.errors.push(
-                        MultipleDefinitionError {
-                            file: self.file.clone(),
-                            name: ident.to_string(),
-                            original: previous_ident.span(),
-                            duplicate: ident.span(),
-                            hint: DuplicateHint::Field,
-                        }
-                        .into(),
-                    );
+        let mut seen_idents: HashMap<&str, &Ident> = HashMap::default();
+        match fields {
+            Fields::Named(named) => {
+                for named_field in named.inner.iter() {
+                    if let Some(previous_ident) = seen_idents.get(named_field.ident.inner.as_str())
+                    {
+                        self.errors.push(crate::error::multiple_definition(
+                            self.file,
+                            previous_ident,
+                            &named_field.ident,
+                            DuplicateHint::Field,
+                        ));
+                    }
+                    seen_idents.insert(&named_field.ident.inner, &named_field.ident);
                 }
-                seen_idents.insert(ident);
             }
+            Fields::Unnamed(_) => {}
         }
     }
 
     fn visit_item_enum(&mut self, item_enum: &'ast ItemEnum) {
-        let mut seen_idents: HashSet<&Ident> = HashSet::default();
+        let mut seen_idents: HashMap<&str, &Ident> = HashMap::default();
         for variant in item_enum.variants.iter() {
-            self.visit_fields(&variant.fields);
-            if let Some(previous_ident) = seen_idents.get(&variant.ident) {
-                self.errors.push(
-                    MultipleDefinitionError {
-                        file: self.file.clone(),
-                        name: variant.ident.to_string(),
-                        original: previous_ident.span(),
-                        duplicate: variant.ident.span(),
-                        hint: DuplicateHint::Variant,
-                    }
-                    .into(),
-                );
+            self.visit_variant(&variant);
+            if let Some(previous_ident) = seen_idents.get(variant.ident.inner.as_str()) {
+                self.errors.push(crate::error::multiple_definition(
+                    self.file,
+                    previous_ident,
+                    &variant.ident,
+                    DuplicateHint::Variant,
+                ));
             }
-            seen_idents.insert(&variant.ident);
+            seen_idents.insert(&variant.ident.inner, &variant.ident);
         }
     }
 
     /// Rebound more than once error
-    fn visit_signature(&mut self, sig: &'ast Signature) {
+    fn visit_sig(&mut self, sig: &'ast Sig) {
         struct SignatureVisitor<'a, 'ast> {
-            file: Rc<File>,
-            errors: &'a mut Vec<ResolutionError>,
-            seen_idents: HashSet<&'ast Ident>,
+            file_id: FileId,
+            errors: &'a mut Vec<Diagnostic>,
+            seen_idents: HashMap<&'ast str, &'ast Ident>,
         }
         impl<'a, 'ast> Visit<'ast> for SignatureVisitor<'a, 'ast> {
             fn visit_pat_ident(&mut self, pat_ident: &'ast PatIdent) {
-                if let Some(previous_ident) = self.seen_idents.get(&pat_ident.ident) {
-                    // error
-                    self.errors.push(
-                        MultipleDefinitionError {
-                            file: self.file.clone(),
-                            name: pat_ident.ident.to_string(),
-                            original: previous_ident.span(),
-                            duplicate: pat_ident.ident.span(),
-                            hint: DuplicateHint::NameBinding,
-                        }
-                        .into(),
-                    );
+                if let Some(previous_ident) = self.seen_idents.get(pat_ident.inner.as_str()) {
+                    self.errors.push(crate::error::multiple_definition(
+                        self.file_id,
+                        previous_ident,
+                        &pat_ident,
+                        DuplicateHint::NameBinding,
+                    ));
                 }
-                self.seen_idents.insert(&pat_ident.ident);
+                self.seen_idents.insert(&pat_ident.inner, &pat_ident);
             }
         }
         let mut signature_visitor = SignatureVisitor {
-            file: self.file.clone(),
+            file_id: self.file,
             errors: self.errors,
             seen_idents: Default::default(),
         };
-        signature_visitor.visit_signature(sig);
-        self.visit_generics(&sig.generics);
+        signature_visitor.visit_sig(sig);
+        if let Some(generics) = &sig.generics {
+            self.visit_generics(generics);
+        }
     }
 
     /// Conflicting generics/lifetimes
     fn visit_generics(&mut self, generics: &'ast Generics) {
-        let mut seen_idents: HashSet<&Ident> = HashSet::default();
-        for type_param in generics.type_params() {
-            if let Some(previous_ident) = seen_idents.get(&type_param.ident) {
-                self.errors.push(
-                    MultipleDefinitionError {
-                        file: self.file.clone(),
-                        name: type_param.ident.to_string(),
-                        original: previous_ident.span(),
-                        duplicate: type_param.ident.span(),
-                        hint: DuplicateHint::TypeParam,
-                    }
-                    .into(),
-                );
+        let mut seen_idents: HashMap<&str, &Ident> = HashMap::default();
+        for generic_param in generics.params.iter() {
+            let ident = match generic_param {
+                GenericParam::Type(ty) => &ty.ident,
+                GenericParam::Const(cons) => &cons.ident,
+            };
+            if let Some(previous_ident) = seen_idents.get(ident.inner.as_str()) {
+                self.errors.push(crate::error::multiple_definition(
+                    self.file,
+                    previous_ident,
+                    &ident,
+                    DuplicateHint::TypeParam,
+                ));
             }
-            seen_idents.insert(&type_param.ident);
+            seen_idents.insert(&ident.inner, &ident);
         }
 
-        seen_idents.clear();
-        for lifetime in generics.lifetimes() {
-            if let Some(previous_ident) = seen_idents.get(&lifetime.lifetime.ident) {
-                self.errors.push(
-                    MultipleDefinitionError {
-                        file: self.file.clone(),
-                        name: lifetime.lifetime.ident.to_string(),
-                        original: previous_ident.span(),
-                        duplicate: lifetime.lifetime.ident.span(),
-                        hint: DuplicateHint::Lifetime,
-                    }
-                    .into(),
-                );
-            }
-            seen_idents.insert(&lifetime.lifetime.ident);
-        }
+        // seen_idents.clear();
+        // for lifetime in generics.lifetimes() {
+        //     if let Some(previous_ident) = seen_idents.get(&lifetime.lifetime.ident) {
+        //         self.errors.push(
+        //             MultipleDefinitionError {
+        //                 file: self.file.clone(),
+        //                 name: lifetime.lifetime.ident.to_string(),
+        //                 original: previous_ident.span(),
+        //                 duplicate: lifetime.lifetime.ident.span(),
+        //                 hint: DuplicateHint::Lifetime,
+        //             }
+        //             .into(),
+        //         );
+        //     }
+        //     seen_idents.insert(&lifetime.lifetime.ident);
+        // }
     }
 }

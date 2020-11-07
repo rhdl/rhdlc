@@ -11,7 +11,7 @@ mod resolution;
 // mod type_checker;
 
 use find_file::{FileContentProvider, FileFinder};
-// use resolution::Resolver;
+use resolution::Resolver;
 
 #[cfg(not(feature = "fuzz"))]
 fn main() {
@@ -60,14 +60,12 @@ fn entry(src: FileContentProvider) -> String {
         emit(&mut writer, &config, &finder.file_graph.inner, &diagnostic).unwrap()
     });
 
-    // let mut scope_builder = Resolver::from(&finder.file_graph);
-    // scope_builder.build_graph();
-    // scope_builder.check_graph();
-    // scope_builder
-    //     .errors
-    //     .iter()
-    //     .map(|err| format!("{}", err))
-    //     .for_each(|err| acc += &err);
+    let mut scope_builder = Resolver::from(&finder.file_graph);
+    scope_builder.build_graph();
+    scope_builder.check_graph();
+    scope_builder.errors.iter().for_each(|diagnostic| {
+        emit(&mut writer, &config, &finder.file_graph.inner, &diagnostic).unwrap()
+    });
 
     // #[cfg(not(test))]
     // println!("{}", Dot::new(&scope_builder.resolution_graph));
