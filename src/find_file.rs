@@ -175,13 +175,13 @@ impl FileFinder {
     /// If the code is in a mod file, there could be more modules that need to be recursively found.
     fn find_mod(&mut self, item_mod: &ItemMod) {
         self.ident_path.push(item_mod.ident.clone());
-        let mut mod_file_path = self.cwd.clone();
+        let mut mod_base_path = self.cwd.clone();
         self.ident_path.iter().for_each(|ident| {
             let ident = ident.to_string();
-            mod_file_path.push(ident.strip_prefix("r#").unwrap_or(&ident));
+            mod_base_path.push(ident.strip_prefix("r#").unwrap_or(&ident));
         });
-        let mod_folder_file_path = mod_file_path.join("mod").with_extension(&self.extension);
-        let mod_file_path = mod_file_path.with_extension(&self.extension);
+        let mod_folder_file_path = mod_base_path.join("mod").with_extension(&self.extension);
+        let mod_file_path = mod_base_path.with_extension(&self.extension);
         let parent = self.ancestry.last().cloned().map(|id| (id, item_mod));
 
         let found_file_id = match (
