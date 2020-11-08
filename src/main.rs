@@ -104,10 +104,10 @@ mod test {
     //     fail_test_looper("./test/compile-fail/identifier")
     // }
 
-    // #[test]
-    // fn compile_fail_parse() {
-    //     fail_test_looper("./test/compile-fail/parse")
-    // }
+    #[test]
+    fn compile_fail_parse() {
+        fail_test_looper("./test/compile-fail/parse")
+    }
 
     // #[test]
     // fn compile_fail_unsupported() {

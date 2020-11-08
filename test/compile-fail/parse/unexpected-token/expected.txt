@@ -1,3 +1,6 @@
-error: could not parse file
- --> top.rhdl
-  | expected `!`
+error: could not parse ./test/compile-fail/parse/unexpected-token/top.rhdl: unexpected token
+  ┌─ ./test/compile-fail/parse/unexpected-token/top.rhdl:3:1
+  │
+3 │ f
+  │ ^ expected any of ["TokArch", "TokBraceClose", "TokConst", "TokEntity", "TokEnum", "TokFn", "TokImpl", "TokMod", "TokPub", "TokStruct", "TokTokenType", "TokUse"]
+
