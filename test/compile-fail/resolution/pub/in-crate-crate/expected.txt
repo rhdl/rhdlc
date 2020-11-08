@@ -1,5 +1,6 @@
-error: `crate` in paths can only be used in the start position
- --> top.rhdl:1:14
-  |
-1 | pub(in crate::crate) struct a {}
-  |               ^^^^^ `crate` in paths can only be used in the start position
+error: special identifier `crate` can only be in the start position of a path
+  ┌─ ./test/compile-fail/resolution/pub/in-crate-crate/top.rhdl:1:15
+  │
+1 │ pub(in crate::crate) struct a {}
+  │               ^^^^^
+

@@ -84,10 +84,10 @@ mod test {
         fail_test_looper("./test/compile-fail/resolution/use")
     }
 
-    // #[test]
-    // fn compile_fail_resolution_pub() {
-    //     fail_test_looper("./test/compile-fail/resolution/pub")
-    // }
+    #[test]
+    fn compile_fail_resolution_pub() {
+        fail_test_looper("./test/compile-fail/resolution/pub")
+    }
 
     // #[test]
     // fn compile_fail_resolution_conflicts() {

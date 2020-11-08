@@ -1,5 +1,8 @@
-error: this item is not visible in mod `a`
- --> top.rhdl:4:26
-  |
-4 |             pub(in crate::a) struct d {}
-  |                           ^ not visible in this scope
+error: item is not visible in mod `a`
+  ┌─ ./test/compile-fail/resolution/pub/in-non-visible-ancestor-mod/top.rhdl:4:27
+  │
+4 │             pub(in crate::a) struct d {}
+  │                           ^
+  │
+  = modify the visibility of the immediate child module of `a` that is an ancestor of this item
+

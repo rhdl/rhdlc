@@ -1,5 +1,8 @@
 error: `c` is not an ancestor of `crate`
- --> top.rhdl:2:18
-  |
-2 |     pub(in crate::c) struct b {}
-  |                   ^ not an ancestor
+  ┌─ ./test/compile-fail/resolution/pub/in-non-ancestral-crate/top.rhdl:2:19
+  │
+2 │     pub(in crate::c) struct b {}
+  │                   ^
+  │
+  = visibility can only be restricted to an ancestral path
+

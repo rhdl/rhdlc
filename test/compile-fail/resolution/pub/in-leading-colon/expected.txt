@@ -1,5 +1,8 @@
-error: unsupported feature
- --> top.rhdl:1:7
-  |
-1 | pub(in ::b) struct a {}
-  |        ^^ Beginning with the 2018 edition of Rust, paths for pub(in path) must start with crate, self, or super.
+error: incorrect visibility restriction
+  ┌─ ./test/compile-fail/resolution/pub/in-leading-colon/top.rhdl:1:8
+  │
+1 │ pub(in ::b) struct a {}
+  │        ^^
+  │
+  = visibility can only be restricted to a local ancestral scope: crate, super, or a path beginning with the former two
+

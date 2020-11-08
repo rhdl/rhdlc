@@ -1,5 +1,8 @@
 error: `self` is not an ancestor of this scope
- --> top.rhdl:1:7
-  |
-1 | pub(in self::b) struct a {}
-  |        ^^^^ not an ancestor
+  ┌─ ./test/compile-fail/resolution/pub/in-self/top.rhdl:1:8
+  │
+1 │ pub(in self::b) struct a {}
+  │        ^^^^
+  │
+  = visibility can only be restricted to an ancestral path
+

@@ -1,5 +1,8 @@
 error: there are too many leading `super` keywords
- --> top.rhdl:2:18
-  |
-2 |     pub(in super::super) struct b {}
-  |                   ^^^^^ goes beyond the crate root
+  ┌─ ./test/compile-fail/resolution/pub/in-too-many-supers/top.rhdl:2:19
+  │
+2 │     pub(in super::super) struct b {}
+  │                   ^^^^^ goes beyond the crate root
+  │
+  = try removing that `super` from the path
+

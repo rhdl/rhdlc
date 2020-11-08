@@ -1,5 +1,6 @@
 error: unresolved mod `b`
- --> top.rhdl:1:14
-  |
-1 | pub(in crate::b) struct a {}
-  |               ^ no `b` mod in `crate`
+  ┌─ ./test/compile-fail/resolution/pub/in-unresolved/top.rhdl:1:15
+  │
+1 │ pub(in crate::b) struct a {}
+  │               ^ no `b` mod in `crate`
+
