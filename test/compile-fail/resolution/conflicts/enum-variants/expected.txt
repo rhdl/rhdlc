@@ -1,7 +1,8 @@
 error: the variant `b` is defined multiple times
- --> top.rhdl:1:12
-  |
-1 | enum a { b, b }
-  |          - previous definition of the variant `b` here
-1 | enum a { b, b }
-  |             ^ `b` redefined here
+  ┌─ ./test/compile-fail/resolution/conflicts/enum-variants/top.rhdl:1:10
+  │
+1 │ enum a { b, b }
+  │          -  ^ `b` redefined here
+  │          │   
+  │          previous definition of the variant `b` here
+

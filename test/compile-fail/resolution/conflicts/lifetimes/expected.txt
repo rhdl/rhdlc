@@ -1,7 +1,0 @@
-error: the lifetime `a` is defined multiple times
- --> top.rhdl:1:10
-  |
-1 | fn a<'a, 'a>() {}
-  |       - previous definition of the lifetime `a` here
-1 | fn a<'a, 'a>() {}
-  |           ^ `a` redefined here

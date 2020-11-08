@@ -1,7 +1,9 @@
 error: the name `b` is defined multiple times
- --> top.rhdl:7:3
-  |
-3 | struct b {}
-  |        - previous definition of the name `b` here
-7 | fn b() {}
-  |    ^ `b` redefined here
+  ┌─ ./test/compile-fail/resolution/conflicts/struct-fn/top.rhdl:3:8
+  │
+3 │ struct b {}
+  │        - previous definition of the name `b` here
+  ·
+7 │ fn b() {}
+  │    ^ `b` redefined here
+

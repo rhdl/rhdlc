@@ -1,7 +1,9 @@
 error: the name `a` is defined multiple times
- --> top.rhdl:5:12
-  |
-1 | struct a {}
-  |        - previous definition of the name `a` here
-5 | use b::c as a;
-  |             ^ `a` redefined here
+  ┌─ ./test/compile-fail/resolution/conflicts/struct-use-rename/top.rhdl:1:8
+  │
+1 │ struct a {}
+  │        - previous definition of the name `a` here
+  ·
+5 │ use b::c as a;
+  │             ^ `a` redefined here
+

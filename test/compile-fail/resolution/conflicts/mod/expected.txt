@@ -1,7 +1,8 @@
 error: the name `a` is defined multiple times
- --> top.rhdl:2:4
-  |
-1 | mod a {}
-  |     - previous definition of the name `a` here
-2 | mod a {}
-  |     ^ `a` redefined here
+  ┌─ ./test/compile-fail/resolution/conflicts/mod/top.rhdl:1:5
+  │
+1 │ mod a {}
+  │     - previous definition of the name `a` here
+2 │ mod a {}
+  │     ^ `a` redefined here
+

@@ -1,6 +1,6 @@
 struct a {}
 enum a {}
-trait a {}
+entity a {}
 const a: b = false;
 type a = b;
 struct b {}

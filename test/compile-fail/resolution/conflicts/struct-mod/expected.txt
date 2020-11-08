@@ -1,7 +1,8 @@
 error: the name `b` is defined multiple times
- --> top.rhdl:2:4
-  |
-1 | struct b {}
-  |        - previous definition of the name `b` here
-2 | mod b {}
-  |     ^ `b` redefined here
+  ┌─ ./test/compile-fail/resolution/conflicts/struct-mod/top.rhdl:1:8
+  │
+1 │ struct b {}
+  │        - previous definition of the name `b` here
+2 │ mod b {}
+  │     ^ `b` redefined here
+

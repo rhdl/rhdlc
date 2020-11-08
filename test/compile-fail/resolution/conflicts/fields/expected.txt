@@ -1,7 +1,8 @@
 error: the field `a` is defined multiple times
- --> top.rhdl:2:17
-  |
-2 | struct b { a: a, a: a }
-  |            - previous definition of the field `a` here
-2 | struct b { a: a, a: a }
-  |                  ^ `a` redefined here
+  ┌─ ./test/compile-fail/resolution/conflicts/fields/top.rhdl:2:12
+  │
+2 │ struct b { a: a, a: a }
+  │            -     ^ `a` redefined here
+  │            │      
+  │            previous definition of the field `a` here
+

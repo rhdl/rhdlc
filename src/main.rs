@@ -89,10 +89,10 @@ mod test {
         fail_test_looper("./test/compile-fail/resolution/pub")
     }
 
-    // #[test]
-    // fn compile_fail_resolution_conflicts() {
-    //     fail_test_looper("./test/compile-fail/resolution/conflicts")
-    // }
+    #[test]
+    fn compile_fail_resolution_conflicts() {
+        fail_test_looper("./test/compile-fail/resolution/conflicts")
+    }
 
     // #[test]
     // fn compile_fail_resolution_type_existence() {
