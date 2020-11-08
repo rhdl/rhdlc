@@ -1,5 +1,6 @@
-error: `r#super` cannot be a raw identifier
- --> top.rhdl:3:7
-  |
-3 |     fn r#super() {}
-  |        ^^^^^^^ 
+error: could not parse ./test/compile-fail/identifier/impl-path-segment-keyword/top.rhdl: unexpected token
+  ┌─ ./test/compile-fail/identifier/impl-path-segment-keyword/top.rhdl:3:8
+  │
+3 │     fn r#super() {}
+  │        ^^^^^^^ expected any of ["NonKeywordIdentifier", "RawIdentifier"]
+

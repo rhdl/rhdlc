@@ -1,15 +1,6 @@
-error: `r#self` cannot be a raw identifier
- --> top.rhdl:2:15
-  |
-2 |     pub struct r#self {}
-  |                ^^^^^^ 
-error: `r#self` cannot be a raw identifier
- --> top.rhdl:5:7
-  |
-5 | use a::r#self;
-  |        ^^^^^^ 
-error: `r#self` cannot be a raw identifier
- --> top.rhdl:6:7
-  |
-6 | use a::r#self as selfie;
-  |        ^^^^^^ 
+error: could not parse ./test/compile-fail/identifier/use-path-segment-keyword/top.rhdl: unexpected token
+  ┌─ ./test/compile-fail/identifier/use-path-segment-keyword/top.rhdl:2:16
+  │
+2 │     pub struct r#self {}
+  │                ^^^^^^ expected any of ["NonKeywordIdentifier", "RawIdentifier"]
+

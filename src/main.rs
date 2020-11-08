@@ -99,10 +99,11 @@ mod test {
     //     fail_test_looper("./test/compile-fail/resolution/type-existence")
     // }
 
-    // #[test]
-    // fn compile_fail_identifier() {
-    //     fail_test_looper("./test/compile-fail/identifier")
-    // }
+    /// TODO: consider allowing these identifiers at the parser level and blocking them during resolution
+    #[test]
+    fn compile_fail_identifier() {
+        fail_test_looper("./test/compile-fail/identifier")
+    }
 
     #[test]
     fn compile_fail_parse() {
