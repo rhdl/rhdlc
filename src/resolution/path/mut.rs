@@ -336,11 +336,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
             } {
                 return vec![];
             } else if !self.resolved_uses.contains(&use_index) {
-                let mut rebuilt_ctx = TracingContext::new(
-                    self.resolution_graph,
-                    use_index,
-                    None,
-                );
+                let mut rebuilt_ctx = TracingContext::new(self.resolution_graph, use_index, None);
                 let mut use_resolver = UseResolver {
                     resolution_graph: self.resolution_graph,
                     errors: self.errors,
@@ -452,6 +448,7 @@ struct UseMightMatchChecker<'a> {
 impl<'a, 'ast> Visit<'ast> for UseMightMatchChecker<'a> {
     fn visit_use_tree_path(&mut self, tree_path: &'ast UseTreePath) {
         self.visit_use_tree(tree_path.tree.as_ref());
+        // Does the end of this path match and is there a self after it?
         self.might_match |= tree_path
             .path
             .segments
@@ -464,6 +461,8 @@ impl<'a, 'ast> Visit<'ast> for UseMightMatchChecker<'a> {
                     UseTree::Name(name) => name == "self",
                     _ => false,
                 }),
+                UseTree::Rename(rename) => rename.name == "self",
+                UseTree::Name(name) => name == "self",
                 _ => false,
             }
     }
@@ -473,10 +472,10 @@ impl<'a, 'ast> Visit<'ast> for UseMightMatchChecker<'a> {
     }
 
     fn visit_use_tree_rename(&mut self, rename: &'ast UseTreeRename) {
-        self.might_match |= rename.name == *self.ident_to_look_for
+        self.might_match |= rename.rename == *self.ident_to_look_for
     }
 
     fn visit_use_tree_glob(&mut self, _: &'ast UseTreeGlob) {
-        self.might_match |= true;
+        self.might_match |= true
     }
 }

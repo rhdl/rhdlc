@@ -115,10 +115,10 @@ mod test {
     //     fail_test_looper("./test/compile-fail/unsupported")
     // }
 
-    // #[test]
-    // fn compile_pass_resolution_use() {
-    //     success_test_looper("./test/compile-pass/resolution/use")
-    // }
+    #[test]
+    fn compile_pass_resolution_use() {
+        success_test_looper("./test/compile-pass/resolution/use")
+    }
 
     // #[test]
     // fn compile_pass_resolution_type_existence() {
