@@ -1,5 +1,8 @@
 error: there are too many leading `super` keywords
- --> top.rhdl:2:15
-  |
-2 |     use super::super::*;
-  |                ^^^^^ goes beyond the crate root
+  ┌─ ./test/compile-fail/resolution/use/super-super/top.rhdl:2:16
+  │
+2 │     use super::super::*;
+  │                ^^^^^ goes beyond the crate root
+  │
+  = try removing that `super` from the path
+

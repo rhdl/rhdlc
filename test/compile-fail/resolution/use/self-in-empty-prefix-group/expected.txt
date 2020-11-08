@@ -1,5 +1,6 @@
-error: `self` imports are only allowed in a { } list with a non-empty prefix
- --> top.rhdl:1:5
-  |
-1 | use {self};
-  |      ^^^^ 
+error: `self` imports are only allowed in a braced list with a non-empty prefix
+  ┌─ ./test/compile-fail/resolution/use/self-in-empty-prefix-group/top.rhdl:1:6
+  │
+1 │ use {self};
+  │      ^^^^ this makes no sense
+

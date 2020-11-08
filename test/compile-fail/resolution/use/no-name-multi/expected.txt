@@ -1,5 +1,6 @@
 error: unresolved item `c`
- --> top.rhdl:7:7
-  |
-7 | use a::c;
-  |        ^ no `c` item in `a`
+  ┌─ ./test/compile-fail/resolution/use/no-name-multi/top.rhdl:7:8
+  │
+7 │ use a::c;
+  │        ^ no `c` item in `a`
+

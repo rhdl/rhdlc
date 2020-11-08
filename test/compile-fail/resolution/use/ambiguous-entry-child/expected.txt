@@ -1,12 +1,17 @@
 error: `a` is ambiguous (crate or mod versus other crate or mods found during resolution)
- --> top.rhdl:8:4
-  |
-8 | use a::b;
-  |     ^ ambiguous name
+  ┌─ ./test/compile-fail/resolution/use/ambiguous-entry-child/top.rhdl:8:5
+  │
+8 │ use a::b;
+  │     ^ ambiguous name
+  │
+  = rename other crate or mods with the same name
+
 error: the name `a` is defined multiple times
- --> top.rhdl:4:4
-  |
-1 | mod a {
-  |     - previous definition of the name `a` here
-4 | mod a {
-  |     ^ `a` redefined here
+  ┌─ ./test/compile-fail/resolution/use/ambiguous-entry-child/top.rhdl:1:5
+  │
+1 │ mod a {
+  │     - previous definition of the name `a` here
+  ·
+4 │ mod a {
+  │     ^ `a` redefined here
+

@@ -98,27 +98,27 @@ impl<'ast> Resolver<'ast> {
         }
 
         // Stage two: apply visibility
-        // let mut visibility_errors = self
-        //     .resolution_graph
-        //     .node_indices()
-        //     .filter_map(|i| r#pub::apply_visibility(&mut self.resolution_graph, i).err())
-        //     .collect::<Vec<Diagnostic<FileId>>>();
-        // self.errors.append(&mut visibility_errors);
+        let mut visibility_errors = self
+            .resolution_graph
+            .node_indices()
+            .filter_map(|i| r#pub::apply_visibility(&mut self.resolution_graph, i).err())
+            .collect::<Vec<Diagnostic<FileId>>>();
+        self.errors.append(&mut visibility_errors);
 
         // // Stage three: trace use nodes
-        // let use_indices: Vec<ResolutionIndex> = self
-        //     .resolution_graph
-        //     .node_indices()
-        //     .filter(|i| self.resolution_graph.inner[*i].is_use())
-        //     .collect();
-        // for use_index in use_indices {
-        //     let mut use_resolver = r#use::UseResolver {
-        //         resolved_uses: &mut self.resolved_uses,
-        //         resolution_graph: &mut self.resolution_graph,
-        //         errors: &mut self.errors,
-        //     };
-        //     use_resolver.resolve_use(use_index);
-        // }
+        let use_indices: Vec<ResolutionIndex> = self
+            .resolution_graph
+            .node_indices()
+            .filter(|i| self.resolution_graph.inner[*i].is_use())
+            .collect();
+        for use_index in use_indices {
+            let mut use_resolver = r#use::UseResolver {
+                resolved_uses: &mut self.resolved_uses,
+                resolution_graph: &mut self.resolution_graph,
+                errors: &mut self.errors,
+            };
+            use_resolver.resolve_use(use_index);
+        }
     }
 
     pub fn check_graph(&mut self) {

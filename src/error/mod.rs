@@ -1,3 +1,4 @@
+use rhdl::ast::SimplePath;
 use std::ffi::OsString;
 use std::fmt::{self, Display, Formatter};
 use std::path::PathBuf;
@@ -205,11 +206,7 @@ pub fn disambiguation_needed(file_id: FileId, ident: &Ident, src: AmbiguitySourc
         .with_labels(vec![
             Label::primary(file_id, ident.span()).with_message("ambiguous name")
         ])
-        .with_notes(vec![
-            format!("rename other {}s with the same name", src),
-            "if there's an import, you can rename it like use std::path::Path as StdPath;"
-                .to_string(),
-        ])
+        .with_notes(vec![format!("rename other {}s with the same name", src)])
 }
 
 #[derive(Debug)]
@@ -401,10 +398,14 @@ pub fn global_path_cannot_have_special_ident(
         ])
         .with_notes(vec![
             "remove the leading path separator to make this path local".to_string(),
-            "if this is meant to be global, add the crate name after the leading separator"
-                .to_string(),
-            format!("`{}` is not a valid crate name", path_ident),
+            format!("`{}` would not be a valid crate name", path_ident),
         ])
+}
+
+pub fn global_path_in_use_group(file_id: FileId, path: &SimplePath) -> Diagnostic {
+    Diagnostic::error()
+        .with_message("use groups cannot contain global paths")
+        .with_labels(vec![Label::primary(file_id, path.span())])
 }
 
 pub fn glob_at_entry(

@@ -1,5 +1,11 @@
-error: mod `b` is private
- --> top.rhdl:7:7
-  |
-7 | use a::b::c;
-  |        ^ private mod
+error: item `b` is private
+  ┌─ ./test/compile-fail/resolution/use/nested-private-public-struct/top.rhdl:2:9
+  │
+2 │     mod b {
+  │         - declared here
+  ·
+7 │ use a::b::c;
+  │        ^ item is private
+  │
+  = modify the visibility of `b` if you want to use it
+

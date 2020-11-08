@@ -25,7 +25,7 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
         self.trace_use_entry_reenterable(&mut TracingContext::new(
             self.resolution_graph,
             dest,
-            item_use.leading_sep.as_ref(),
+            None,
         ));
     }
 
@@ -66,6 +66,13 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
         let is_entry = ctx.previous_idents.is_empty();
         match tree {
             Path(path_tree) => {
+                if ctx.previous_idents.is_empty() {
+                    ctx.leading_sep = path_tree.path.leading_sep.as_ref();
+                } else if !ctx.previous_idents.is_empty() && path_tree.path.leading_sep.is_some() {
+                    self.errors
+                        .push(global_path_in_use_group(ctx.file, &path_tree.path));
+                    return;
+                }
                 let mut path_finder = PathFinder {
                     resolution_graph: self.resolution_graph,
                     errors: self.errors,
@@ -83,13 +90,18 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                     self.errors.push(disambiguation_needed(
                         ctx.file,
                         path_tree.path.segments.last().unwrap(),
-                        AmbiguitySource::Item(if is_entry && ctx.leading_sep.is_some() {
-                            ItemHint::ExternalNamedScope
-                        } else if is_entry {
-                            ItemHint::InternalNamedChildOrExternalNamedScope
-                        } else {
-                            ItemHint::InternalNamedChildScope
-                        }),
+                        AmbiguitySource::Item(
+                            if is_entry
+                                && ctx.leading_sep.is_some()
+                                && path_tree.path.segments.len() == 1
+                            {
+                                ItemHint::ExternalNamedScope
+                            } else if is_entry && path_tree.path.segments.len() == 1 {
+                                ItemHint::InternalNamedChildOrExternalNamedScope
+                            } else {
+                                ItemHint::InternalNamedChildScope
+                            },
+                        ),
                     ));
                 }
                 let new_scope = *found_children.first().unwrap();
@@ -98,7 +110,7 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                 ctx.previous_idents
                     .truncate(ctx.previous_idents.len() - path_tree.path.segments.len());
             }
-            Name(ident) | Rename(UseTreeRename { rename: ident, .. }) => {
+            Name(ident) | Rename(UseTreeRename { name: ident, .. }) => {
                 let found_children: Vec<ResolutionIndex> = if ident == "self" {
                     let cause = if !in_group {
                         Some(SelfUsageErrorCause::NotInGroup)

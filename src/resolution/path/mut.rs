@@ -73,6 +73,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
             if segment == "Self" {
                 continue;
             }
+            // TODO: resolve hint precision regression in test/compile-fail/resolution/use/no-path
             let mut results: Vec<Result<Vec<ResolutionIndex>, Diagnostic>> = scopes
                 .iter()
                 .map(|scope| {
@@ -338,13 +339,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                 let mut rebuilt_ctx = TracingContext::new(
                     self.resolution_graph,
                     use_index,
-                    match self.resolution_graph.inner[use_index] {
-                        ResolutionNode::Branch {
-                            branch: Branch::Use(u),
-                            ..
-                        } => u.leading_sep.as_ref(),
-                        _ => None,
-                    },
+                    None,
                 );
                 let mut use_resolver = UseResolver {
                     resolution_graph: self.resolution_graph,

@@ -1,6 +1,6 @@
 mod a {
     pub struct b {}
-    pub trait d {}
+    pub enum d {}
 }
 
 use a::b;

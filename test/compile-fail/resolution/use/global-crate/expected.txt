@@ -1,5 +1,11 @@
 error: global paths cannot start with `crate`
- --> top.rhdl:2:10
-  |
-2 |     use ::crate::a;
-  |           ^^^^^ global paths cannot start with `crate`
+  ┌─ ./test/compile-fail/resolution/use/global-crate/top.rhdl:2:9
+  │
+2 │     use ::crate::a;
+  │         --^^^^^
+  │         │  
+  │         makes this path global
+  │
+  = remove the leading path separator to make this path local
+  = `crate` would not be a valid crate name
+

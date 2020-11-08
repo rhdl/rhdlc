@@ -1,5 +1,11 @@
 error: item `c` is private
- --> top.rhdl:7:10
-  |
-7 | use a::b::c;
-  |           ^ private item
+  ┌─ ./test/compile-fail/resolution/use/nested-private-mod/top.rhdl:3:13
+  │
+3 │         mod c {}
+  │             - declared here
+  ·
+7 │ use a::b::c;
+  │           ^ item is private
+  │
+  = modify the visibility of `c` if you want to use it
+

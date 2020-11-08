@@ -1,5 +1,11 @@
 error: item `b` is private
- --> top.rhdl:5:7
-  |
-5 | use a::b;
-  |        ^ private item
+  ┌─ ./test/compile-fail/resolution/use/private-struct/top.rhdl:2:12
+  │
+2 │     struct b {}
+  │            - declared here
+  ·
+5 │ use a::b;
+  │        ^ item is private
+  │
+  = modify the visibility of `b` if you want to use it
+

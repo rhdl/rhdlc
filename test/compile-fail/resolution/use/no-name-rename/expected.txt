@@ -1,5 +1,6 @@
 error: unresolved item `b`
- --> top.rhdl:3:7
-  |
-3 | use a::b as c;
-  |        ^ no `b` item in `a`
+  ┌─ ./test/compile-fail/resolution/use/no-name-rename/top.rhdl:3:8
+  │
+3 │ use a::b as c;
+  │        ^ no `b` item in `a`
+

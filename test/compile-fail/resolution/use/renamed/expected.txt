@@ -1,5 +1,6 @@
 error: unresolved item `d`
-  --> top.rhdl:10:10
-   |
-10 | use a::b::d;
-   |           ^ no `d` item in `b`
+   ┌─ ./test/compile-fail/resolution/use/renamed/top.rhdl:10:11
+   │
+10 │ use a::b::d;
+   │           ^ no `d` item in `b`
+

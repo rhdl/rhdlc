@@ -1,5 +1,6 @@
 error: unresolved item `a`
- --> top.rhdl:1:11
-  |
-1 | use crate::a;
-  |            ^ no `a` item in `crate`
+  ┌─ ./test/compile-fail/resolution/use/crate-name/top.rhdl:1:12
+  │
+1 │ use crate::a;
+  │            ^ no `a` item in `crate`
+

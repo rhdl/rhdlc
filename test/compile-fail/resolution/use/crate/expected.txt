@@ -1,5 +1,6 @@
-error: `crate` in paths can only be used in the start position
- --> top.rhdl:2:7
-  |
-2 | use a::crate;
-  |        ^^^^^ `crate` in paths can only be used in the start position
+error: special identifier `crate` can only be in the start position of a path
+  ┌─ ./test/compile-fail/resolution/use/crate/top.rhdl:2:8
+  │
+2 │ use a::crate;
+  │        ^^^^^
+

@@ -1,5 +1,6 @@
 error: unresolved item `b`
- --> top.rhdl:3:13
-  |
-3 | use self::a::b;
-  |              ^ no `b` item in `a`
+  ┌─ ./test/compile-fail/resolution/use/self-no-name/top.rhdl:3:14
+  │
+3 │ use self::a::b;
+  │              ^ no `b` item in `a`
+

@@ -1,5 +1,6 @@
-error: unresolved crate or mod `a`
- --> top.rhdl:1:4
-  |
-1 | use a::b;
-  |     ^ no `a` crate or mod
+error: unresolved item `a`
+  ┌─ ./test/compile-fail/resolution/use/no-path/top.rhdl:1:5
+  │
+1 │ use a::b;
+  │     ^ no `a` item
+

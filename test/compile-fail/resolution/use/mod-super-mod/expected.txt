@@ -1,5 +1,6 @@
-error: `super` in paths can only be used in the start position
- --> top.rhdl:3:7
-  |
-3 | use a::super::a;
-  |        ^^^^^ `super` in paths can only be used in the start position
+error: special identifier `super` can only be in the start position of a path
+  ┌─ ./test/compile-fail/resolution/use/mod-super-mod/top.rhdl:3:8
+  │
+3 │ use a::super::a;
+  │        ^^^^^
+

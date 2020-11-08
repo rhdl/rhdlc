@@ -71,3 +71,13 @@ Use VHDL as an intermediate representation, since it is strongly typed and thus 
 ## rhdl "standard library"
 
 WIP
+
+## Development
+
+### Examining and overwriting test regressions
+
+Make sure you've already built with `cargo build`. To look at changes for compile fail use resolution tests:
+
+```bash
+for i in test/compile-fail/resolution/use/*; clear; do ./target/debug/rhdlc ./$i/top.rhdl 2>&1 | diff -wrt --color=auto $i/expected.txt -; echo $i; read proceed; [ $proceed == "y" ] && ./target/debug/rhdlc ./$i/top.rhdl 2>$i/expected.txt; done
+```

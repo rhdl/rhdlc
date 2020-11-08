@@ -1,5 +1,6 @@
 error: unresolved item `a`
- --> top.rhdl:1:4
-  |
-1 | use a;
-  |     ^ no `a` item
+  ┌─ ./test/compile-fail/resolution/use/no-root/top.rhdl:1:5
+  │
+1 │ use a;
+  │     ^ no `a` item
+

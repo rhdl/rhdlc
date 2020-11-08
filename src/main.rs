@@ -79,10 +79,10 @@ mod test {
         fail_test_looper("./test/compile-fail/find-file")
     }
 
-    // #[test]
-    // fn compile_fail_resolution_use() {
-    //     fail_test_looper("./test/compile-fail/resolution/use")
-    // }
+    #[test]
+    fn compile_fail_resolution_use() {
+        fail_test_looper("./test/compile-fail/resolution/use")
+    }
 
     // #[test]
     // fn compile_fail_resolution_pub() {

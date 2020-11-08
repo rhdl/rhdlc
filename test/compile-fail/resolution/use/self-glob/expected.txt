@@ -1,5 +1,6 @@
 error: cannot glob-import without a scope
- --> top.rhdl:1:10
-  |
-1 | use self::*;
-  |           ^ this would re-import all crates and local items
+  ┌─ ./test/compile-fail/resolution/use/self-glob/top.rhdl:1:11
+  │
+1 │ use self::*;
+  │           ^ this would re-import all crates and local items
+

@@ -1,5 +1,6 @@
-error: `self` imports are only allowed within a { } list
- --> top.rhdl:3:7
-  |
-3 | use a::self;
-  |        ^^^^ 
+error: `self` imports are only allowed within a braced list
+  ┌─ ./test/compile-fail/resolution/use/mod-self/top.rhdl:3:8
+  │
+3 │ use a::self;
+  │        ^^^^ surround this with curly braces
+

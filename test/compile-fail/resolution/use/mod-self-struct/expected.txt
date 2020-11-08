@@ -1,5 +1,6 @@
-error: `self` in paths can only be used in the start position
- --> top.rhdl:5:7
-  |
-5 | use a::self::b;
-  |        ^^^^ `self` in paths can only be used in the start position
+error: special identifier `self` can only be in the start position of a path
+  ┌─ ./test/compile-fail/resolution/use/mod-self-struct/top.rhdl:5:8
+  │
+5 │ use a::self::b;
+  │        ^^^^
+
