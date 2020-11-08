@@ -9,18 +9,18 @@ use syn::{
 };
 
 use crate::error::{
-    AmbiguitySource, DisambiguationError, ItemHint, ResolutionError, UnexpectedItemError,
+    AmbiguitySource, DisambiguationError, ItemHint, Diagnostic, UnexpectedItemError,
 };
 use crate::resolution::{path::PathFinder, ResolutionGraph, ResolutionIndex};
 
 pub struct TypeExistenceChecker<'a, 'ast> {
     pub resolution_graph: &'a ResolutionGraph<'ast>,
-    pub errors: &'a mut Vec<ResolutionError>,
+    pub errors: &'a mut Vec<Diagnostic>,
 }
 
 struct TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
     resolution_graph: &'a ResolutionGraph<'ast>,
-    errors: &'a mut Vec<ResolutionError>,
+    errors: &'a mut Vec<Diagnostic>,
     scope: ResolutionIndex,
     generics: Vec<&'c Generics>,
 }
@@ -50,7 +50,7 @@ impl<'a, 'ast> TypeExistenceChecker<'a, 'ast> {
 }
 
 impl<'a, 'c, 'ast> TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
-    fn find_trait(&mut self, path: &Path) -> Result<ResolutionIndex, ResolutionError> {
+    fn find_trait(&mut self, path: &Path) -> Result<ResolutionIndex, Diagnostic> {
         // TODO: private trait in public trait declaration
         let res = {
             let mut path_finder = PathFinder {

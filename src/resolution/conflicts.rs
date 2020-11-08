@@ -48,7 +48,7 @@ impl<'a, 'ast> ConflictChecker<'a, 'ast> {
                     ..
                 } => {
                     if let Some(content_file) = self.resolution_graph.content_files.get(&node) {
-                        content_file.clone()
+                        *content_file
                     } else {
                         self.resolution_graph.file(node)
                     }
@@ -131,7 +131,7 @@ impl<'a, 'ast> ConflictChecker<'a, 'ast> {
 
     // TODO: didn't finish this because reimports are more of a warning than an error
     // when there's a name conflict, you could specify that it's *because* of a reimport though
-    // fn find_reimports_in(&self, node: ResolutionIndex, file: &Rc<File>) -> Vec<ResolutionError> {
+    // fn find_reimports_in(&self, node: ResolutionIndex, file: &FileId) -> Vec<Diagnostic> {
     //     let mut errors = vec![];
     //     let mut imported: HashMap<ResolutionIndex, &'ast Ident> = HashMap::default();
     //     for child in self.resolution_graph.neighbors(node) {

@@ -1,13 +1,8 @@
-use std::rc::Rc;
-
-use syn::{spanned::Spanned, Visibility};
+use rhdl::ast::{Spanned, Vis, VisRestricted};
 
 use super::{ResolutionGraph, ResolutionIndex};
-use crate::error::{
-    IncorrectVisibilityError, ItemHint, NonAncestralError, ResolutionError, ScopeVisibilityError,
-    SpecialIdentNotAtStartOfPathError, TooManySupersError, UnresolvedItemError, UnsupportedError,
-};
-use crate::find_file::File;
+use crate::error::*;
+use crate::find_file::FileId;
 
 /// If a node overrides its own visibility, make a note of it in the parent node(s) as an "export".
 /// TODO: pub in enum: "not allowed because it is implied"
@@ -15,17 +10,16 @@ use crate::find_file::File;
 pub fn apply_visibility<'ast>(
     resolution_graph: &mut ResolutionGraph<'ast>,
     node: ResolutionIndex,
-) -> Result<(), ResolutionError> {
+) -> Result<(), Diagnostic> {
     let export_dest = if let Some(vis) = resolution_graph.inner[node].visibility() {
-        use Visibility::*;
+        use Vis::*;
         let file = resolution_graph.file(node);
         match vis {
-            Public(_) => apply_visibility_pub(resolution_graph, node),
+            Pub(_) => apply_visibility_pub(resolution_graph, node),
             Crate(_) => apply_visibility_crate(resolution_graph, node),
-            Restricted(r) => {
-                apply_visibility_in(resolution_graph, node, file, r.in_token.is_some(), &r.path)
-            }
-            Inherited => Ok(Some(resolution_graph.inner[node].parent().unwrap())),
+            Super(_) => apply_visibility_pub(resolution_graph, node),
+            Restricted(r) => apply_visibility_in(resolution_graph, node, file, r),
+            ExplicitInherited(_) => Ok(Some(resolution_graph.inner[node].parent().unwrap())),
         }?
     } else {
         return Ok(());
@@ -37,93 +31,64 @@ pub fn apply_visibility<'ast>(
 fn apply_visibility_in<'ast>(
     resolution_graph: &ResolutionGraph<'ast>,
     node: ResolutionIndex,
-    file: Rc<File>,
-    has_in_token: bool,
-    path: &syn::Path,
-) -> Result<Option<ResolutionIndex>, ResolutionError> {
-    if !has_in_token && path.segments.len() > 1 {
-        return Err(UnsupportedError {
-            file,
-            span: path.span(),
-            reason: "RHDL does not recognize this path, it should be pub(in path)",
-        }
-        .into());
-    }
-    if path.leading_colon.is_some() {
-        return Err(UnsupportedError {
-            file,
-            span: path.leading_colon.span(),
-            reason: "Beginning with the 2018 edition of Rust, paths for pub(in path) must start with crate, self, or super."
-        }.into());
+    file: FileId,
+    r: &'ast VisRestricted,
+) -> Result<Option<ResolutionIndex>, Diagnostic> {
+    if let Some(leading_sep) = &r.path.leading_sep {
+        return Err(incorrect_visibility_restriction(file, leading_sep.span()));
     }
     let node_parent = resolution_graph.inner[node].parent().unwrap();
     let ancestry = build_ancestry(resolution_graph, node);
 
-    let first_segment = path
+    let first_segment = r
+        .path
         .segments
         .first()
         .expect("error if no first segment, this should never happen");
-    let mut export_dest = if first_segment.ident == "crate" {
+    let mut export_dest = if first_segment == "crate" {
         *ancestry.last().unwrap()
-    } else if first_segment.ident == "super" {
+    } else if first_segment == "super" {
         if let Some(grandparent) = resolution_graph.inner[node_parent].parent() {
             grandparent
         } else {
-            return Err(TooManySupersError {
-                file,
-                ident: first_segment.ident.clone(),
-            }
-            .into());
+            return Err(too_many_supers(file, first_segment));
         }
-    } else if first_segment.ident == "self" {
-        if path.segments.len() > 1 {
-            return Err(NonAncestralError {
-                file,
-                segment_ident: first_segment.ident.clone(),
-                prev_segment_ident: None,
-            }
-            .into());
+    } else if first_segment == "self" {
+        if r.path.segments.len() > 1 {
+            return Err(non_ancestral_visibility(file, &first_segment, None));
         }
         return Ok(Some(node_parent));
     } else {
-        return Err(IncorrectVisibilityError {
-            file,
-            vis_span: first_segment.ident.span(),
-        }
-        .into());
+        return Err(incorrect_visibility_restriction(file, first_segment.span()));
     };
 
-    for (i, (prev_segment, segment)) in path
+    for (i, (prev_segment, segment)) in r
+        .path
         .segments
         .iter()
-        .zip(path.segments.iter().skip(1))
+        .zip(r.path.segments.iter().skip(1))
         .enumerate()
     {
-        if segment.ident == "crate"
-            || segment.ident == "self"
-            || (prev_segment.ident != "super" && segment.ident == "super")
+        if segment == "crate"
+            || segment == "self"
+            || (prev_segment != "super" && segment == "super")
         {
-            return Err(SpecialIdentNotAtStartOfPathError {
+            return Err(special_ident_not_at_start_of_path(file, &segment));
+        } else if prev_segment == "super" && segment != "super" {
+            return Err(non_ancestral_visibility(
                 file,
-                path_ident: segment.ident.clone(),
-            }
-            .into());
-        } else if prev_segment.ident == "super" && segment.ident != "super" {
-            return Err(NonAncestralError {
-                file,
-                segment_ident: segment.ident.clone(),
-                prev_segment_ident: Some(prev_segment.ident.clone()),
-            }
-            .into());
+                &segment,
+                Some(&prev_segment),
+            ));
         }
 
-        export_dest = if segment.ident == "super" {
+        export_dest = if segment == "super" {
             if let Some(export_dest_parent) = resolution_graph.inner[export_dest].parent() {
                 if !is_target_visible(resolution_graph, export_dest_parent, node_parent) {
-                    return Err(ScopeVisibilityError {
+                    return Err(scope_visibility(
                         file,
-                        ident: segment.ident.clone(),
-                        hint: if resolution_graph.inner[export_dest_parent]
+                        &segment,
+                        if resolution_graph.inner[export_dest_parent]
                             .parent()
                             .is_none()
                         {
@@ -131,21 +96,16 @@ fn apply_visibility_in<'ast>(
                         } else {
                             ItemHint::InternalNamedChildScope
                         },
-                    }
-                    .into());
+                    ));
                 }
                 export_dest_parent
             } else {
-                return Err(TooManySupersError {
-                    file,
-                    ident: segment.ident.clone(),
-                }
-                .into());
+                return Err(too_many_supers(file, &segment));
             }
         } else {
             let export_dest_children: Vec<ResolutionIndex> = resolution_graph.inner[export_dest]
                 .children()
-                .and_then(|children| children.get(&Some(&segment.ident)))
+                .and_then(|children| children.get(&Some(&segment)))
                 .map(|named_children| {
                     named_children
                         .iter()
@@ -155,33 +115,31 @@ fn apply_visibility_in<'ast>(
                 })
                 .unwrap_or_default();
             if export_dest_children.is_empty() {
-                return Err(UnresolvedItemError {
+                return Err(unresolved_item(
                     file,
-                    previous_ident: path.segments.iter().nth(i).map(|seg| seg.ident.clone()),
-                    unresolved_ident: segment.ident.clone(),
-                    hint: ItemHint::InternalNamedChildScope,
-                }
-                .into());
+                    r.path.segments.iter().nth(i),
+                    &segment,
+                    ItemHint::InternalNamedChildScope,
+                    vec![],
+                ));
             } else if let Some(export_dest_child) = export_dest_children
                 .iter()
                 .find(|child| ancestry.contains(child))
             {
                 if !is_target_visible(resolution_graph, *export_dest_child, node_parent) {
-                    return Err(ScopeVisibilityError {
+                    return Err(scope_visibility(
                         file,
-                        ident: segment.ident.clone(),
-                        hint: ItemHint::InternalNamedChildScope,
-                    }
-                    .into());
+                        &segment,
+                        ItemHint::InternalNamedChildScope,
+                    ));
                 }
                 *export_dest_child
             } else {
-                return Err(NonAncestralError {
+                return Err(non_ancestral_visibility(
                     file,
-                    segment_ident: segment.ident.clone(),
-                    prev_segment_ident: Some(prev_segment.ident.clone()),
-                }
-                .into());
+                    &segment,
+                    Some(&prev_segment),
+                ));
             }
         };
     }
@@ -192,7 +150,7 @@ fn apply_visibility_in<'ast>(
 fn apply_visibility_pub<'ast>(
     resolution_graph: &ResolutionGraph<'ast>,
     node: ResolutionIndex,
-) -> Result<Option<ResolutionIndex>, ResolutionError> {
+) -> Result<Option<ResolutionIndex>, Diagnostic> {
     let parent = resolution_graph.inner[node].parent().unwrap();
     let grandparent = resolution_graph.inner[parent].parent();
     Ok(grandparent)
@@ -215,7 +173,7 @@ fn build_ancestry<'ast>(
 fn apply_visibility_crate<'ast>(
     resolution_graph: &ResolutionGraph<'ast>,
     node: ResolutionIndex,
-) -> Result<Option<ResolutionIndex>, ResolutionError> {
+) -> Result<Option<ResolutionIndex>, Diagnostic> {
     let root = *build_ancestry(resolution_graph, node).last().unwrap();
     Ok(Some(root))
 }

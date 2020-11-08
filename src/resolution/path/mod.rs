@@ -1,27 +1,26 @@
 use fxhash::FxHashSet as HashSet;
-use std::rc::Rc;
 
-use rhdl::ast::{Ident, SimplePath as Path};
+use rhdl::ast::{Ident, PathSep, SimplePath as Path};
 
 use super::{Branch, Leaf, ResolutionGraph, ResolutionIndex, ResolutionNode};
 use crate::error::*;
-use crate::find_file::File;
+use crate::find_file::FileId;
 
 pub mod r#mut;
 
 pub struct TracingContext<'ast> {
-    pub file: Rc<File>,
+    pub file: FileId,
     pub root: ResolutionIndex,
     pub dest: ResolutionIndex,
     pub previous_idents: Vec<&'ast Ident>,
-    pub has_leading_colon: bool,
+    pub leading_sep: Option<&'ast PathSep>,
 }
 
 impl<'ast> TracingContext<'ast> {
     pub fn new(
         resolution_graph: &ResolutionGraph,
         dest: ResolutionIndex,
-        has_leading_colon: bool,
+        leading_sep: Option<&'ast PathSep>,
     ) -> Self {
         let mut root = dest;
         while let Some(parent) = resolution_graph.inner[root].parent() {
@@ -32,7 +31,7 @@ impl<'ast> TracingContext<'ast> {
             dest,
             root,
             previous_idents: vec![],
-            has_leading_colon,
+            leading_sep,
         }
     }
 }
@@ -47,15 +46,14 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
         &mut self,
         dest: ResolutionIndex,
         path: &'a Path,
-    ) -> Result<Vec<ResolutionIndex>, ResolutionError> {
+    ) -> Result<Vec<ResolutionIndex>, Diagnostic> {
         self.visited_glob_scopes.clear();
-        let mut ctx =
-            TracingContext::new(self.resolution_graph, dest, path.leading_colon.is_some());
+        let mut ctx = TracingContext::new(self.resolution_graph, dest, path.leading_sep.as_ref());
 
         let mut scopes = if path
             .segments
             .first()
-            .map(|seg| seg.ident == "Self")
+            .map(|seg| seg == "Self")
             .unwrap_or_default()
         {
             // Seed with applicable traits/impls
@@ -91,13 +89,14 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
             }
         };
         for (i, segment) in path.segments.iter().enumerate() {
-            let ident = &segment.ident;
-            if ident == "Self" {
+            if segment == "Self" {
                 continue;
             }
-            let mut results: Vec<Result<Vec<ResolutionIndex>, ResolutionError>> = scopes
+            let mut results: Vec<Result<Vec<ResolutionIndex>, Diagnostic>> = scopes
                 .iter()
-                .map(|scope| self.find_children(&ctx, *scope, ident, i + 1 != path.segments.len()))
+                .map(|scope| {
+                    self.find_children(&ctx, *scope, segment, i + 1 != path.segments.len())
+                })
                 .collect();
             if results.iter().all(|res| res.is_err()) {
                 return results.drain(..).next().unwrap();
@@ -107,7 +106,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                 .filter_map(|res| res.ok())
                 .flatten()
                 .collect();
-            ctx.previous_idents.push(&segment.ident);
+            ctx.previous_idents.push(&segment);
         }
         Ok(scopes)
     }
@@ -119,7 +118,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
         scope: ResolutionIndex,
         ident: &Ident,
         paths_only: bool,
-    ) -> Result<Vec<ResolutionIndex>, ResolutionError> {
+    ) -> Result<Vec<ResolutionIndex>, Diagnostic> {
         let is_entry = ctx.previous_idents.is_empty();
         let hint = if paths_only && is_entry {
             ItemHint::InternalNamedChildOrExternalNamedScope
@@ -129,7 +128,8 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
             ItemHint::Item
         };
 
-        let is_special_ident = ident == "super" || ident == "crate" || ident == "self";
+        let is_special_ident =
+            ident == "super" || ident == "crate" || ident == "self" || ident == "Self";
         let is_chained_supers = ctx
             .previous_idents
             .last()
@@ -137,17 +137,13 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
             .unwrap_or(true)
             && ident == "super";
         if !is_entry && is_special_ident && !is_chained_supers {
-            Err(SpecialIdentNotAtStartOfPathError {
-                file: ctx.file.clone(),
-                path_ident: ident.clone(),
-            }
-            .into())
-        } else if ctx.has_leading_colon && is_special_ident {
-            Err(GlobalPathCannotHaveSpecialIdentError {
-                file: ctx.file.clone(),
-                path_ident: ident.clone(),
-            }
-            .into())
+            Err(special_ident_not_at_start_of_path(ctx.file, &ident))
+        } else if ctx.leading_sep.is_some() && is_special_ident {
+            Err(global_path_cannot_have_special_ident(
+                ctx.file,
+                &ident,
+                ctx.leading_sep.unwrap(),
+            ))
         } else if ident == "self" {
             Ok(vec![scope])
         } else if ident == "super" {
@@ -161,11 +157,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
             if let Some(use_grandparent) = use_grandparent {
                 Ok(vec![use_grandparent])
             } else {
-                Err(TooManySupersError {
-                    file: ctx.file.clone(),
-                    ident: ident.clone(),
-                }
-                .into())
+                Err(too_many_supers(ctx.file, &ident))
             }
         } else if ident == "crate" {
             let mut root = scope;
@@ -174,7 +166,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
             }
             Ok(vec![root])
         } else {
-            let mut local = if !is_entry || !ctx.has_leading_colon {
+            let mut local = if !is_entry || ctx.leading_sep.is_none() {
                 if let Some(children) = self.resolution_graph.inner[scope].children() {
                     let mut local = children
                         .get(&Some(ident))
@@ -221,37 +213,50 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
             } else {
                 vec![]
             };
-            let local_is_empty = local.is_empty();
+            // TODO: once drain_filter is stabilized, dedupe this call
+            // https://github.com/rust-lang/rust/issues/43244
+            let local_not_visible = local
+                .iter()
+                .copied()
+                .filter(|i| !super::r#pub::is_target_visible(self.resolution_graph, ctx.dest, *i))
+                .collect::<Vec<ResolutionIndex>>();
             local.retain(|i| super::r#pub::is_target_visible(self.resolution_graph, ctx.dest, *i));
-            if global.is_empty() && !local_is_empty && local.is_empty() {
-                return Err(ItemVisibilityError {
-                    file: ctx.file.clone(),
-                    ident: ident.clone(),
+            if global.is_empty() && !local_not_visible.is_empty() && local.is_empty() {
+                let declaration_idx = *local_not_visible.first().unwrap();
+                return Err(item_visibility(
+                    ctx.file,
+                    &ident,
+                    self.resolution_graph.file(declaration_idx),
+                    self.resolution_graph.inner[declaration_idx].name().unwrap(),
                     hint,
-                }
-                .into());
+                ));
             }
-            let global_is_empty = global.is_empty();
+            let global_not_visible = global
+                .iter()
+                .copied()
+                .filter(|i| !super::r#pub::is_target_visible(self.resolution_graph, ctx.dest, *i))
+                .collect::<Vec<ResolutionIndex>>();
             global.retain(|i| super::r#pub::is_target_visible(self.resolution_graph, ctx.dest, *i));
-            if local.is_empty() && !global_is_empty && global.is_empty() {
-                return Err(ItemVisibilityError {
-                    file: ctx.file.clone(),
-                    ident: ident.clone(),
+            if local.is_empty() && !global_not_visible.is_empty() && global.is_empty() {
+                let declaration_idx = *global_not_visible.first().unwrap();
+                return Err(item_visibility(
+                    ctx.file,
+                    &ident,
+                    self.resolution_graph.file(declaration_idx),
+                    self.resolution_graph.inner[declaration_idx].name().unwrap(),
                     hint,
-                }
-                .into());
+                ));
             }
             match (global.is_empty(), local.is_empty()) {
-                (false, false) => Err(DisambiguationError {
-                    file: ctx.file.clone(),
-                    ident: ident.clone(),
-                    src: AmbiguitySource::Item(hint),
-                }
-                .into()),
+                (false, false) => Err(disambiguation_needed(
+                    ctx.file,
+                    &ident,
+                    AmbiguitySource::Item(hint),
+                )),
                 (true, false) => Ok(local),
                 (false, true) => Ok(global),
                 (true, true) => {
-                    if !(ctx.has_leading_colon && is_entry) {
+                    if !(ctx.leading_sep.is_some() && is_entry) {
                         let mut local_from_globs = self.resolution_graph.inner[scope]
                             .children()
                             .and_then(|children| children.get(&None))
@@ -267,36 +272,48 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                                 local_from_globs
                             })
                             .unwrap_or_default();
-                        let local_from_globs_is_empty = local_from_globs.is_empty();
+                        let local_from_globs_not_visible = local_from_globs
+                            .iter()
+                            .copied()
+                            .filter(|i| {
+                                !super::r#pub::is_target_visible(
+                                    self.resolution_graph,
+                                    ctx.dest,
+                                    *i,
+                                )
+                            })
+                            .collect::<Vec<ResolutionIndex>>();
                         local_from_globs.retain(|i| {
                             super::r#pub::is_target_visible(self.resolution_graph, ctx.dest, *i)
                         });
-                        if !local_from_globs_is_empty && local_from_globs.is_empty() {
-                            Err(ItemVisibilityError {
-                                file: ctx.file.clone(),
-                                ident: ident.clone(),
+                        if !local_from_globs_not_visible.is_empty() && local_from_globs.is_empty() {
+                            let declaration_idx = *local_from_globs_not_visible.first().unwrap();
+                            Err(item_visibility(
+                                ctx.file,
+                                &ident,
+                                self.resolution_graph.file(declaration_idx),
+                                self.resolution_graph.inner[declaration_idx].name().unwrap(),
                                 hint,
-                            }
-                            .into())
+                            ))
                         } else if local_from_globs.is_empty() {
-                            Err(UnresolvedItemError {
-                                file: ctx.file.clone(),
-                                previous_ident: ctx.previous_idents.last().cloned().cloned(),
-                                unresolved_ident: ident.clone(),
+                            Err(unresolved_item(
+                                ctx.file,
+                                ctx.previous_idents.last().copied(),
+                                &ident,
                                 hint,
-                            }
-                            .into())
+                                vec![],
+                            ))
                         } else {
                             Ok(local_from_globs)
                         }
                     } else {
-                        Err(UnresolvedItemError {
-                            file: ctx.file.clone(),
-                            previous_ident: ctx.previous_idents.last().cloned().cloned(),
-                            unresolved_ident: ident.clone(),
-                            hint: ItemHint::ExternalNamedScope,
-                        }
-                        .into())
+                        Err(unresolved_item(
+                            ctx.file,
+                            ctx.previous_idents.last().copied(),
+                            &ident,
+                            ItemHint::ExternalNamedScope,
+                            vec![],
+                        ))
                     }
                 }
             }

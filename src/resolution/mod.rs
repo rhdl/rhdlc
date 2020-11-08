@@ -40,13 +40,13 @@ use rhdl::{
 
 use crate::find_file::{FileGraph, FileId};
 
-// mod r#use;
+mod r#use;
 
 mod build;
 mod conflicts;
 mod graph;
-// mod path;
-// mod r#pub;
+mod path;
+mod r#pub;
 // mod type_existence;
 
 pub use graph::{Branch, Leaf, ResolutionGraph, ResolutionIndex, ResolutionNode};

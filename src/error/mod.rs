@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use codespan::FileId;
 use codespan_reporting::diagnostic::{Diagnostic as CodespanDiagnostic, Label};
 use lalrpop_util::{lexer::Token, ParseError};
-use rhdl::ast::{ItemMod, Spanned, Ident, Vis};
+use rhdl::ast::{Ident, ItemMod, PathSep, Span, Spanned, UseTreeGlob};
 
 pub type Diagnostic = CodespanDiagnostic<FileId>;
 
@@ -141,7 +141,7 @@ pub fn multiple_definition(
             }
         ))
         .with_labels(vec![
-            Label::primary(file_id, duplicate.span).with_message(&format!(
+            Label::primary(file_id, duplicate.span()).with_message(&format!(
                 "`{}` {} here",
                 duplicate,
                 if hint == DuplicateHint::NameBinding {
@@ -205,7 +205,11 @@ pub fn disambiguation_needed(file_id: FileId, ident: &Ident, src: AmbiguitySourc
         .with_labels(vec![
             Label::primary(file_id, ident.span()).with_message("ambiguous name")
         ])
-        .with_notes(vec![format!("rename other {}s with the same name", src)])
+        .with_notes(vec![
+            format!("rename other {}s with the same name", src),
+            "if there's an import, you can rename it like use std::path::Path as StdPath;"
+                .to_string(),
+        ])
 }
 
 #[derive(Debug)]
@@ -237,27 +241,26 @@ pub fn unresolved_item(
         }
         None => format!("no `{}` {}", unresolved_ident, hint),
     };
-    let notes = vec![];
+    let mut notes = vec![];
     if !possibilities.is_empty() {
         notes.push("Did you mean:".to_string());
     }
-    possibilities
-        .iter()
-        .map(|path| {
-            let mut acc = String::new();
-            for segment in path.iter().take(path.len().saturating_sub(1)) {
-                acc += segment;
-                acc += "::";
-            }
-            if let Some(last) = path.last() {
-                acc += last;
-            }
-            acc
-        })
-        .collect::<Vec<String>>();
+    notes.extend(possibilities.iter().map(|path| {
+        let mut acc = String::new();
+        for segment in path.iter().take(path.len().saturating_sub(1)) {
+            acc += segment;
+            acc += "::";
+        }
+        if let Some(last) = path.last() {
+            acc += last;
+        }
+        acc
+    }));
     Diagnostic::error()
         .with_message(&format!("unresolved {} `{}`", hint, unresolved_ident))
-        .with_labels(vec![Label::primary(file_id, unresolved_ident.span())])
+        .with_labels(vec![
+            Label::primary(file_id, unresolved_ident.span()).with_message(reference_msg)
+        ])
         .with_notes(notes)
 }
 
@@ -406,18 +409,18 @@ pub fn global_path_cannot_have_special_ident(
 
 pub fn glob_at_entry(
     file_id: FileId,
-    star: &Star,
+    glob: &UseTreeGlob,
     leading_sep: Option<&PathSep>,
     previous_ident: Option<&Ident>,
 ) -> Diagnostic {
     Diagnostic::error()
         .with_message("cannot glob-import without a scope")
-        .with_labels(vec![Label::primary(file_id, star.span()).with_message(
-            if has_leading_sep {
+        .with_labels(vec![Label::primary(file_id, glob.span()).with_message(
+            if leading_sep.is_some() {
                 "this would import all crates"
             } else if previous_ident
                 .as_ref()
-                .map(|prev| prev == "super")
+                .map(|prev| *prev == "super")
                 .unwrap_or_default()
             {
                 "this would re-import all local items"
@@ -427,12 +430,12 @@ pub fn glob_at_entry(
         )])
 }
 
-pub fn incorrect_visibility_restriction(file_id: FileId, vis: &Vis) -> Diagnostic {
+pub fn incorrect_visibility_restriction(file_id: FileId, span: Span) -> Diagnostic {
     Diagnostic::error()
         .with_message("incorrect visibility restriction")
-        .with_labels(vec![Label::primary(file_id, vis.span())
+        .with_labels(vec![Label::primary(file_id, span)
             ])
-            .with_note(vec!["visibility can only be restricted to the crate, super, or a path beginning with the former two".to_string()])
+            .with_notes(vec!["visibility can only be restricted to a local ancestral scope: crate, super, or a path beginning with the former two".to_string()])
 }
 
 pub fn module_with_external_file_in_fn(file_id: FileId, item_mod: &ItemMod) -> Diagnostic {
@@ -460,8 +463,8 @@ pub fn non_ancestral_visibility(
                 None => "this scope".to_string(),
             }
         ))
-        .with_labels(vec![Label::primary(file_id, vis.span())])
-        .with_note(vec![
+        .with_labels(vec![Label::primary(file_id, segment_ident.span())])
+        .with_notes(vec![
             "visibility can only be restricted to an ancestral path".to_string(),
         ])
 }

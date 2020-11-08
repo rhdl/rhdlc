@@ -53,14 +53,14 @@ impl<'ast> ResolutionGraph<'ast> {
         };
         loop {
             next_parent = match &self.inner[next_parent] {
-                ResolutionNode::Root { .. } => return self.content_files[&next_parent].clone(),
+                ResolutionNode::Root { .. } => return self.content_files[&next_parent],
                 ResolutionNode::Branch {
                     branch: Branch::Mod(_),
                     parent,
                     ..
                 } => {
                     if let Some(content_file) = self.content_files.get(&next_parent) {
-                        return content_file.clone();
+                        return *content_file;
                     }
                     *parent
                 }

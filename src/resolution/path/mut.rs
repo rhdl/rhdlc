@@ -2,7 +2,12 @@
 
 use fxhash::FxHashSet as HashSet;
 
-use rhd;::ast::{visit::Visit, Ident, UseGlob, UseName, UsePath, UseRename, UseTree};
+use rhdl::{
+    ast::{
+        Ident, SimplePath as Path, UseTree, UseTreeGlob, UseTreeName, UseTreePath, UseTreeRename,
+    },
+    visit::Visit,
+};
 
 use super::super::{
     r#use::UseResolver, Branch, Leaf, ResolutionGraph, ResolutionIndex, ResolutionNode,
@@ -13,19 +18,88 @@ use crate::error::*;
 pub struct PathFinder<'a, 'ast> {
     pub resolution_graph: &'a mut ResolutionGraph<'ast>,
     pub visited_glob_scopes: HashSet<ResolutionIndex>,
-    pub errors: &'a mut Vec<ResolutionError>,
+    pub errors: &'a mut Vec<Diagnostic>,
     pub resolved_uses: &'a mut HashSet<ResolutionIndex>,
 }
 
 impl<'a, 'ast> PathFinder<'a, 'ast> {
+    pub fn find_at_path(
+        &mut self,
+        dest: ResolutionIndex,
+        path: &'ast Path,
+    ) -> Result<Vec<ResolutionIndex>, Diagnostic> {
+        self.visited_glob_scopes.clear();
+        let mut ctx = TracingContext::new(self.resolution_graph, dest, path.leading_sep.as_ref());
+
+        let mut scopes = if path
+            .segments
+            .first()
+            .map(|seg| seg == "Self")
+            .unwrap_or_default()
+        {
+            // Seed with applicable traits/impls
+            let mut dest_scope = dest;
+            if let Some((parent, true)) =
+                self.resolution_graph.inner[dest_scope]
+                    .parent()
+                    .map(|parent| {
+                        (
+                            parent,
+                            self.resolution_graph.inner[parent].is_trait_or_impl(),
+                        )
+                    })
+            {
+                dest_scope = parent;
+            }
+            vec![dest_scope]
+        } else {
+            let mut dest_scope = dest;
+            while !self.resolution_graph.inner[dest_scope].is_valid_use_path_segment() {
+                dest_scope = self.resolution_graph.inner[dest_scope].parent().unwrap();
+            }
+
+            // Also seed this scope
+            if let ResolutionNode::Branch {
+                branch: Branch::Fn(_),
+                ..
+            } = &self.resolution_graph.inner[ctx.dest]
+            {
+                vec![dest, dest_scope]
+            } else {
+                vec![dest_scope]
+            }
+        };
+        for (i, segment) in path.segments.iter().enumerate() {
+            if segment == "Self" {
+                continue;
+            }
+            let mut results: Vec<Result<Vec<ResolutionIndex>, Diagnostic>> = scopes
+                .iter()
+                .map(|scope| {
+                    self.find_children(&ctx, *scope, segment, i + 1 != path.segments.len())
+                })
+                .collect();
+            if results.iter().all(|res| res.is_err()) {
+                return results.drain(..).next().unwrap();
+            }
+            scopes = results
+                .drain(..)
+                .filter_map(|res| res.ok())
+                .flatten()
+                .collect();
+            ctx.previous_idents.push(&segment);
+        }
+        Ok(scopes)
+    }
+
     /// Ok is guaranteed to have >= 1 node, else an unresolved error will be returned
     pub fn find_children(
         &mut self,
-        ctx: &TracingContext,
+        ctx: &TracingContext<'ast>,
         scope: ResolutionIndex,
         ident: &Ident,
         paths_only: bool,
-    ) -> Result<Vec<ResolutionIndex>, ResolutionError> {
+    ) -> Result<Vec<ResolutionIndex>, Diagnostic> {
         let is_entry = ctx.previous_idents.is_empty();
         let hint = if paths_only && is_entry {
             ItemHint::InternalNamedChildOrExternalNamedScope
@@ -44,17 +118,13 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
             .unwrap_or(true)
             && ident == "super";
         if !is_entry && is_special_ident && !is_chained_supers {
-            Err(SpecialIdentNotAtStartOfPathError {
-                file: ctx.file.clone(),
-                path_ident: ident.clone(),
-            }
-            .into())
-        } else if ctx.has_leading_colon && is_special_ident {
-            Err(GlobalPathCannotHaveSpecialIdentError {
-                file: ctx.file.clone(),
-                path_ident: ident.clone(),
-            }
-            .into())
+            Err(special_ident_not_at_start_of_path(ctx.file, &ident))
+        } else if ctx.leading_sep.is_some() && is_special_ident {
+            Err(global_path_cannot_have_special_ident(
+                ctx.file,
+                &ident,
+                ctx.leading_sep.unwrap(),
+            ))
         } else if ident == "self" {
             Ok(vec![scope])
         } else if ident == "super" {
@@ -68,11 +138,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
             if let Some(use_grandparent) = use_grandparent {
                 Ok(vec![use_grandparent])
             } else {
-                Err(TooManySupersError {
-                    file: ctx.file.clone(),
-                    ident: ident.clone(),
-                }
-                .into())
+                Err(too_many_supers(ctx.file, &ident))
             }
         } else if ident == "crate" {
             let mut root = scope;
@@ -81,7 +147,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
             }
             Ok(vec![root])
         } else {
-            let mut local = if !is_entry || !ctx.has_leading_colon {
+            let mut local = if !is_entry || ctx.leading_sep.is_none() {
                 if let Some(children) = self.resolution_graph.inner[scope].children() {
                     let mut local = children
                         .get(&Some(ident))
@@ -123,46 +189,63 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                         !paths_only
                             || self.resolution_graph.inner[**child].is_valid_use_path_segment()
                     })
-                    .cloned()
+                    .copied()
                     .collect()
             } else {
                 vec![]
             };
-            let local_is_empty = local.is_empty();
+            // TODO: once drain_filter is stabilized, dedupe this call
+            // https://github.com/rust-lang/rust/issues/43244
+            let local_not_visible = local
+                .iter()
+                .copied()
+                .filter(|i| {
+                    !super::super::r#pub::is_target_visible(self.resolution_graph, ctx.dest, *i)
+                })
+                .collect::<Vec<ResolutionIndex>>();
             local.retain(|i| {
                 super::super::r#pub::is_target_visible(self.resolution_graph, ctx.dest, *i)
             });
-            if global.is_empty() && !local_is_empty && local.is_empty() {
-                return Err(ItemVisibilityError {
-                    file: ctx.file.clone(),
-                    ident: ident.clone(),
+            if global.is_empty() && !local_not_visible.is_empty() && local.is_empty() {
+                let declaration_idx = *local_not_visible.first().unwrap();
+                return Err(item_visibility(
+                    ctx.file,
+                    &ident,
+                    self.resolution_graph.file(declaration_idx),
+                    self.resolution_graph.inner[declaration_idx].name().unwrap(),
                     hint,
-                }
-                .into());
+                ));
             }
-            let global_is_empty = global.is_empty();
+            let global_not_visible = global
+                .iter()
+                .copied()
+                .filter(|i| {
+                    !super::super::r#pub::is_target_visible(self.resolution_graph, ctx.dest, *i)
+                })
+                .collect::<Vec<ResolutionIndex>>();
             global.retain(|i| {
                 super::super::r#pub::is_target_visible(self.resolution_graph, ctx.dest, *i)
             });
-            if local.is_empty() && !global_is_empty && global.is_empty() {
-                return Err(ItemVisibilityError {
-                    file: ctx.file.clone(),
-                    ident: ident.clone(),
+            if local.is_empty() && !global_not_visible.is_empty() && global.is_empty() {
+                let declaration_idx = *global_not_visible.first().unwrap();
+                return Err(item_visibility(
+                    ctx.file,
+                    &ident,
+                    self.resolution_graph.file(declaration_idx),
+                    self.resolution_graph.inner[declaration_idx].name().unwrap(),
                     hint,
-                }
-                .into());
+                ));
             }
             match (global.is_empty(), local.is_empty()) {
-                (false, false) => Err(DisambiguationError {
-                    file: ctx.file.clone(),
-                    ident: ident.clone(),
-                    src: AmbiguitySource::Item(hint),
-                }
-                .into()),
+                (false, false) => Err(disambiguation_needed(
+                    ctx.file,
+                    &ident,
+                    AmbiguitySource::Item(hint),
+                )),
                 (true, false) => Ok(local),
                 (false, true) => Ok(global),
                 (true, true) => {
-                    if !(ctx.has_leading_colon && is_entry) {
+                    if !(ctx.leading_sep.is_some() && is_entry) {
                         let mut local_from_globs = self.resolution_graph.inner[scope]
                             .children()
                             .and_then(|children| children.get(&None))
@@ -179,7 +262,17 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                                 local_from_globs
                             })
                             .unwrap_or_default();
-                        let local_from_globs_is_empty = local_from_globs.is_empty();
+                        let local_from_globs_not_visible = local_from_globs
+                            .iter()
+                            .copied()
+                            .filter(|i| {
+                                !super::super::r#pub::is_target_visible(
+                                    self.resolution_graph,
+                                    ctx.dest,
+                                    *i,
+                                )
+                            })
+                            .collect::<Vec<ResolutionIndex>>();
                         local_from_globs.retain(|i| {
                             super::super::r#pub::is_target_visible(
                                 self.resolution_graph,
@@ -187,32 +280,34 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                                 *i,
                             )
                         });
-                        if !local_from_globs_is_empty && local_from_globs.is_empty() {
-                            Err(ItemVisibilityError {
-                                file: ctx.file.clone(),
-                                ident: ident.clone(),
+                        if !local_from_globs_not_visible.is_empty() && local_from_globs.is_empty() {
+                            let declaration_idx = *local_from_globs_not_visible.first().unwrap();
+                            Err(item_visibility(
+                                ctx.file,
+                                &ident,
+                                self.resolution_graph.file(declaration_idx),
+                                self.resolution_graph.inner[declaration_idx].name().unwrap(),
                                 hint,
-                            }
-                            .into())
+                            ))
                         } else if local_from_globs.is_empty() {
-                            Err(UnresolvedItemError {
-                                file: ctx.file.clone(),
-                                previous_ident: ctx.previous_idents.last().cloned().cloned(),
-                                unresolved_ident: ident.clone(),
+                            Err(unresolved_item(
+                                ctx.file,
+                                ctx.previous_idents.last().copied(),
+                                &ident,
                                 hint,
-                            }
-                            .into())
+                                vec![],
+                            ))
                         } else {
                             Ok(local_from_globs)
                         }
                     } else {
-                        Err(UnresolvedItemError {
-                            file: ctx.file.clone(),
-                            previous_ident: ctx.previous_idents.last().cloned().cloned(),
-                            unresolved_ident: ident.clone(),
-                            hint: ItemHint::ExternalNamedScope,
-                        }
-                        .into())
+                        Err(unresolved_item(
+                            ctx.file,
+                            ctx.previous_idents.last().copied(),
+                            &ident,
+                            ItemHint::ExternalNamedScope,
+                            vec![],
+                        ))
                     }
                 }
             }
@@ -221,7 +316,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
 
     fn matching_from_use(
         &mut self,
-        ctx: &TracingContext,
+        ctx: &TracingContext<'ast>,
         use_index: ResolutionIndex,
         ident_to_look_for: &Ident,
         paths_only: bool,
@@ -247,8 +342,8 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                         ResolutionNode::Branch {
                             branch: Branch::Use(u),
                             ..
-                        } => u.leading_colon.is_some(),
-                        _ => false,
+                        } => ctx.leading_sep,
+                        _ => None,
                     },
                 );
                 let mut use_resolver = UseResolver {
@@ -360,29 +455,33 @@ struct UseMightMatchChecker<'a> {
 }
 
 impl<'a, 'ast> Visit<'ast> for UseMightMatchChecker<'a> {
-    fn visit_use_path(&mut self, path: &'ast UsePath) {
-        // this replaces the default trait impl, need to call use_tree for use name visitation
-        self.visit_use_tree(path.tree.as_ref());
-        self.might_match |= path.ident == *self.ident_to_look_for
-            && match path.tree.as_ref() {
-                UseTree::Group(group) => group.items.iter().any(|tree| match tree {
-                    UseTree::Rename(rename) => rename.ident == "self",
-                    UseTree::Name(name) => name.ident == "self",
+    fn visit_use_tree_path(&mut self, tree_path: &'ast UseTreePath) {
+        self.visit_use_tree(tree_path.tree.as_ref());
+        self.might_match |= tree_path
+            .path
+            .segments
+            .last()
+            .map(|seg| seg == self.ident_to_look_for)
+            .unwrap_or(false)
+            && match tree_path.tree.as_ref() {
+                UseTree::Group(group) => group.trees.iter().any(|tree| match tree {
+                    UseTree::Rename(rename) => rename.name == "self",
+                    UseTree::Name(name) => name == "self",
                     _ => false,
                 }),
                 _ => false,
             }
     }
 
-    fn visit_use_name(&mut self, name: &'ast UseName) {
-        self.might_match |= name.ident == *self.ident_to_look_for
+    fn visit_use_tree_name(&mut self, name: &'ast UseTreeName) {
+        self.might_match |= name == self.ident_to_look_for
     }
 
-    fn visit_use_rename(&mut self, rename: &'ast UseRename) {
-        self.might_match |= rename.rename == *self.ident_to_look_for
+    fn visit_use_tree_rename(&mut self, rename: &'ast UseTreeRename) {
+        self.might_match |= rename.name == *self.ident_to_look_for
     }
 
-    fn visit_use_glob(&mut self, _: &'ast UseGlob) {
+    fn visit_use_tree_glob(&mut self, _: &'ast UseTreeGlob) {
         self.might_match |= true;
     }
 }

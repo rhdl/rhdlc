@@ -1,18 +1,15 @@
 use fxhash::FxHashSet as HashSet;
-use syn::{UseName, UseRename, UseTree};
+use rhdl::ast::{UseTree, UseTreeRename};
 
 use super::{
     path::{r#mut::PathFinder, TracingContext},
-    Branch, Leaf, ResolutionError, ResolutionGraph, ResolutionIndex, ResolutionNode,
+    Branch, Leaf, ResolutionGraph, ResolutionIndex, ResolutionNode,
 };
-use crate::error::{
-    AmbiguitySource, DisambiguationError, GlobAtEntryError, ItemHint, SelfUsageError,
-    SelfUsageErrorCause,
-};
+use crate::error::*;
 
 pub struct UseResolver<'a, 'ast> {
     pub resolution_graph: &'a mut ResolutionGraph<'ast>,
-    pub errors: &'a mut Vec<ResolutionError>,
+    pub errors: &'a mut Vec<Diagnostic>,
     pub resolved_uses: &'a mut HashSet<ResolutionIndex>,
 }
 
@@ -25,11 +22,10 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
             } => item_use,
             _ => return,
         };
-        let has_leading_colon = item_use.leading_colon.is_some();
         self.trace_use_entry_reenterable(&mut TracingContext::new(
             self.resolution_graph,
             dest,
-            has_leading_colon,
+            item_use.leading_sep.as_ref(),
         ));
     }
 
@@ -45,7 +41,7 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
             return;
         }
         self.resolved_uses.insert(ctx.dest);
-        let scope = if ctx.has_leading_colon {
+        let scope = if ctx.leading_sep.is_some() {
             // just give any old dummy node because it'll have to be ignored in path/name finding
             0
         } else {
@@ -66,18 +62,17 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
         tree: &'ast UseTree,
         in_group: bool,
     ) {
-        use syn::UseTree::*;
+        use rhdl::ast::UseTree::*;
         let is_entry = ctx.previous_idents.is_empty();
         match tree {
-            Path(path) => {
+            Path(path_tree) => {
                 let mut path_finder = PathFinder {
                     resolution_graph: self.resolution_graph,
                     errors: self.errors,
                     resolved_uses: self.resolved_uses,
                     visited_glob_scopes: Default::default(),
                 };
-                let found_children = match path_finder.find_children(ctx, scope, &path.ident, true)
-                {
+                let found_children = match path_finder.find_at_path(scope, &path_tree.path) {
                     Ok(v) => v,
                     Err(err) => {
                         self.errors.push(err);
@@ -85,47 +80,35 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                     }
                 };
                 if found_children.len() > 1 {
-                    self.errors.push(
-                        DisambiguationError {
-                            file: ctx.file.clone(),
-                            ident: path.ident.clone(),
-                            src: AmbiguitySource::Item(if is_entry && ctx.has_leading_colon {
-                                ItemHint::ExternalNamedScope
-                            } else if is_entry {
-                                ItemHint::InternalNamedChildOrExternalNamedScope
-                            } else {
-                                ItemHint::InternalNamedChildScope
-                            }),
-                        }
-                        .into(),
-                    );
+                    self.errors.push(disambiguation_needed(
+                        ctx.file,
+                        path_tree.path.segments.last().unwrap(),
+                        AmbiguitySource::Item(if is_entry && ctx.leading_sep.is_some() {
+                            ItemHint::ExternalNamedScope
+                        } else if is_entry {
+                            ItemHint::InternalNamedChildOrExternalNamedScope
+                        } else {
+                            ItemHint::InternalNamedChildScope
+                        }),
+                    ));
                 }
                 let new_scope = *found_children.first().unwrap();
-                ctx.previous_idents.push(&path.ident);
-                self.trace_use(ctx, new_scope, &path.tree, false);
-                ctx.previous_idents.pop();
+                ctx.previous_idents.extend(path_tree.path.segments.iter());
+                self.trace_use(ctx, new_scope, &path_tree.tree, false);
+                ctx.previous_idents
+                    .truncate(ctx.previous_idents.len() - path_tree.path.segments.len());
             }
-            Name(UseName { ident, .. }) | Rename(UseRename { ident, .. }) => {
+            Name(ident) | Rename(UseTreeRename { rename: ident, .. }) => {
                 let found_children: Vec<ResolutionIndex> = if ident == "self" {
-                    if !in_group {
-                        self.errors.push(
-                            SelfUsageError {
-                                file: ctx.file.clone(),
-                                name_ident: ident.clone(),
-                                cause: SelfUsageErrorCause::NotInGroup,
-                            }
-                            .into(),
-                        );
-                        return;
+                    let cause = if !in_group {
+                        Some(SelfUsageErrorCause::NotInGroup)
                     } else if ctx.previous_idents.is_empty() {
-                        self.errors.push(
-                            SelfUsageError {
-                                file: ctx.file.clone(),
-                                name_ident: ident.clone(),
-                                cause: SelfUsageErrorCause::InGroupAtRoot,
-                            }
-                            .into(),
-                        );
+                        Some(SelfUsageErrorCause::InGroupAtRoot)
+                    } else {
+                        None
+                    };
+                    if let Some(cause) = cause {
+                        self.errors.push(self_usage(ctx.file, &ident, cause));
                         return;
                     }
                     vec![scope]
@@ -164,25 +147,19 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
             }
             Glob(glob) => {
                 if is_entry
-                    || ctx.has_leading_colon
+                    || ctx.leading_sep.is_some()
                     || ctx
                         .previous_idents
                         .last()
                         .map(|ident| *ident == "self")
                         .unwrap_or_default()
                 {
-                    self.errors.push(
-                        GlobAtEntryError {
-                            file: ctx.file.clone(),
-                            star_span: glob.star_token.spans[0],
-                            has_leading_colon: ctx.has_leading_colon,
-                            previous_ident: ctx
-                                .previous_idents
-                                .last()
-                                .map(|ident| (*ident).clone()),
-                        }
-                        .into(),
-                    );
+                    self.errors.push(glob_at_entry(
+                        ctx.file,
+                        glob,
+                        ctx.leading_sep,
+                        ctx.previous_idents.last().copied(),
+                    ));
                     return;
                 }
                 let glob_idx = self.resolution_graph.add_node(ResolutionNode::Leaf {
@@ -192,7 +169,7 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                 self.resolution_graph.add_child(ctx.dest, glob_idx);
             }
             Group(group) => group
-                .items
+                .trees
                 .iter()
                 .for_each(|tree| self.trace_use(ctx, scope, tree, true)),
         }
