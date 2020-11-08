@@ -342,7 +342,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                         ResolutionNode::Branch {
                             branch: Branch::Use(u),
                             ..
-                        } => ctx.leading_sep,
+                        } => u.leading_sep.as_ref(),
                         _ => None,
                     },
                 );
