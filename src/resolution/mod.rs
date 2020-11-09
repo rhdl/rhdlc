@@ -47,7 +47,7 @@ mod conflicts;
 mod graph;
 mod path;
 mod r#pub;
-// mod type_existence;
+mod type_existence;
 
 pub use graph::{Branch, Leaf, ResolutionGraph, ResolutionIndex, ResolutionNode};
 
@@ -130,13 +130,13 @@ impl<'ast> Resolver<'ast> {
             };
             conflict_checker.visit_all();
         }
-        // {
-        //     let mut type_existence_checker = type_existence::TypeExistenceChecker {
-        //         resolution_graph: &self.resolution_graph,
-        //         errors: &mut self.errors,
-        //     };
-        //     type_existence_checker.visit_all();
-        // }
+        {
+            let mut type_existence_checker = type_existence::TypeExistenceChecker {
+                resolution_graph: &self.resolution_graph,
+                errors: &mut self.errors,
+            };
+            type_existence_checker.visit_all();
+        }
     }
 
     fn find_invalid_names(&self) -> Vec<Diagnostic<FileId>> {

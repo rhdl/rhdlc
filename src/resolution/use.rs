@@ -15,13 +15,13 @@ pub struct UseResolver<'a, 'ast> {
 
 impl<'a, 'ast> UseResolver<'a, 'ast> {
     pub fn resolve_use(&mut self, dest: ResolutionIndex) {
-        let item_use = match &self.resolution_graph.inner[dest] {
+        match &self.resolution_graph.inner[dest] {
             ResolutionNode::Branch {
-                branch: Branch::Use(item_use),
+                branch: Branch::Use(_),
                 ..
-            } => item_use,
+            } => {}
             _ => return,
-        };
+        }
         self.trace_use_entry_reenterable(&mut TracingContext::new(
             self.resolution_graph,
             dest,

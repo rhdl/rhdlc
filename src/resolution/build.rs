@@ -62,7 +62,7 @@ impl<'a, 'ast> Visit<'ast> for ScopeBuilder<'a, 'ast> {
                             ..
                         } => Some(item_mod.ident.clone()),
                         ResolutionNode::Root { name, .. } => {
-                            // error!("this needs to be an ident: {}", name);
+                            error!("this needs to be an ident: {}", name);
                             None
                         }
                         _ => None,

@@ -303,8 +303,8 @@ impl Display for ItemHint {
 pub fn unexpected_item(
     file_id: FileId,
     ident: &Ident,
-    actual_hint: ItemHint,
     expected_hint: ItemHint,
+    actual_hint: ItemHint,
 ) -> Diagnostic {
     Diagnostic::error()
         .with_message(format!(

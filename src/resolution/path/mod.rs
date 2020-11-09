@@ -1,6 +1,6 @@
 use fxhash::FxHashSet as HashSet;
 
-use rhdl::ast::{Ident, PathSep, SimplePath as Path};
+use rhdl::ast::{Ident, PathSep, TypePath};
 
 use super::{Branch, Leaf, ResolutionGraph, ResolutionIndex, ResolutionNode};
 use crate::error::*;
@@ -45,7 +45,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
     pub fn find_at_path(
         &mut self,
         dest: ResolutionIndex,
-        path: &'a Path,
+        path: &'a TypePath,
     ) -> Result<Vec<ResolutionIndex>, Diagnostic> {
         self.visited_glob_scopes.clear();
         let mut ctx = TracingContext::new(self.resolution_graph, dest, path.leading_sep.as_ref());
@@ -53,7 +53,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
         let mut scopes = if path
             .segments
             .first()
-            .map(|seg| seg == "Self")
+            .map(|seg| seg.ident == "Self")
             .unwrap_or_default()
         {
             // Seed with applicable traits/impls
@@ -89,13 +89,13 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
             }
         };
         for (i, segment) in path.segments.iter().enumerate() {
-            if segment == "Self" {
+            if segment.ident == "Self" {
                 continue;
             }
             let mut results: Vec<Result<Vec<ResolutionIndex>, Diagnostic>> = scopes
                 .iter()
                 .map(|scope| {
-                    self.find_children(&ctx, *scope, segment, i + 1 != path.segments.len())
+                    self.find_children(&ctx, *scope, &segment.ident, i + 1 != path.segments.len())
                 })
                 .collect();
             if results.iter().all(|res| res.is_err()) {
@@ -106,7 +106,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                 .filter_map(|res| res.ok())
                 .flatten()
                 .collect();
-            ctx.previous_idents.push(&segment);
+            ctx.previous_idents.push(&segment.ident);
         }
         Ok(scopes)
     }
