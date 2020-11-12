@@ -1,5 +1,0 @@
-error: unsupported feature
- --> top.rhdl:1:6
-  |
-1 | union a {}
-  |       ^ RHDL cannot support unions and other unsafe code: safety is not yet formally defined

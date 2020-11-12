@@ -8,7 +8,7 @@ error: could not parse ./test/compile-fail/find-file/duplicate-module-files-pars
   ┌─ ./test/compile-fail/find-file/duplicate-module-files-parse-fail/a.rhdl:1:1
   │
 1 │ ksldjflk
-  │ ^^^^^^^^ expected any of ["TokArch", "TokConst", "TokEntity", "TokEnum", "TokFn", "TokImpl", "TokMod", "TokPub", "TokStruct", "TokTokenType", "TokUse"]
+  │ ^^^^^^^^ expected any of ["TokArch", "TokConst", "TokEntity", "TokEnum", "TokFn", "TokImpl", "TokMod", "TokPub", "TokStruct", "TokTokenType", "TokTrait", "TokUse"]
   │
   ┌─ ./test/compile-fail/find-file/duplicate-module-files-parse-fail/top.rhdl:1:1
   │
@@ -19,7 +19,7 @@ error: could not parse ./test/compile-fail/find-file/duplicate-module-files-pars
   ┌─ ./test/compile-fail/find-file/duplicate-module-files-parse-fail/a/mod.rhdl:1:1
   │
 1 │ a
-  │ ^ expected any of ["TokArch", "TokConst", "TokEntity", "TokEnum", "TokFn", "TokImpl", "TokMod", "TokPub", "TokStruct", "TokTokenType", "TokUse"]
+  │ ^ expected any of ["TokArch", "TokConst", "TokEntity", "TokEnum", "TokFn", "TokImpl", "TokMod", "TokPub", "TokStruct", "TokTokenType", "TokTrait", "TokUse"]
   │
   ┌─ ./test/compile-fail/find-file/duplicate-module-files-parse-fail/top.rhdl:1:1
   │

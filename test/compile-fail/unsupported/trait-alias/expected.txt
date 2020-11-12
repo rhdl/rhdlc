@@ -1,5 +1,0 @@
-error: unsupported feature
- --> top.rhdl:1:6
-  |
-1 | trait a = b;
-  |       ^ RHDL does not support trait aliases as they are still experimental in Rust

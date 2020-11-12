@@ -110,10 +110,10 @@ mod test {
         fail_test_looper("./test/compile-fail/parse")
     }
 
-    // #[test]
-    // fn compile_fail_unsupported() {
-    //     fail_test_looper("./test/compile-fail/unsupported")
-    // }
+    #[test]
+    fn compile_fail_unsupported() {
+        fail_test_looper("./test/compile-fail/unsupported")
+    }
 
     #[test]
     fn compile_pass_resolution_use() {

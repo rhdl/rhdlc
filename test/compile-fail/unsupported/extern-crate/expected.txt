@@ -1,5 +1,0 @@
-error: unsupported feature
- --> top.rhdl:1:13
-  |
-1 | extern crate a;
-  |              ^ RHDL does not support Rust 2015 syntax, you can safely remove this. :)

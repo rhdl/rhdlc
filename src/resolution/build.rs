@@ -1,11 +1,10 @@
 use codespan_reporting::diagnostic::Diagnostic;
 use fxhash::FxHashMap as HashMap;
-use log::error;
 
 use rhdl::{
     ast::{
         Ident, ItemArch, ItemConst, ItemEntity, ItemEnum, ItemFn, ItemImpl, ItemMod, ItemStruct,
-        ItemType, ItemUse, ModContent, NamedField, UnnamedField, Variant,
+        ItemTrait, ItemType, ItemUse, ModContent, NamedField, UnnamedField, Variant,
     },
     visit::Visit,
 };
@@ -61,10 +60,7 @@ impl<'a, 'ast> Visit<'ast> for ScopeBuilder<'a, 'ast> {
                             branch: Branch::Mod(item_mod, ..),
                             ..
                         } => Some(item_mod.ident.clone()),
-                        ResolutionNode::Root { name, .. } => {
-                            error!("this needs to be an ident: {}", name);
-                            None
-                        }
+                        ResolutionNode::Root { .. } => None,
                         _ => None,
                     },
                 )
@@ -154,22 +150,22 @@ impl<'a, 'ast> Visit<'ast> for ScopeBuilder<'a, 'ast> {
         self.resolution_graph.add_child(parent, item_idx);
     }
 
-    // fn visit_item_trait(&mut self, item_trait: &'ast ItemTrait) {
-    //     let parent = *self.scope_ancestry.last().unwrap();
+    fn visit_item_trait(&mut self, item_trait: &'ast ItemTrait) {
+        let parent = *self.scope_ancestry.last().unwrap();
 
-    //     let item_idx = self.resolution_graph.add_node(ResolutionNode::Branch {
-    //         branch: Branch::Trait(item_trait),
-    //         parent,
-    //         children: HashMap::default(),
-    //     });
-    //     self.resolution_graph.add_child(parent, item_idx);
-    //     self.scope_ancestry.push(item_idx);
-    //     item_trait
-    //         .items
-    //         .iter()
-    //         .for_each(|trait_item| self.visit_trait_item(trait_item));
-    //     self.scope_ancestry.pop();
-    // }
+        let item_idx = self.resolution_graph.add_node(ResolutionNode::Branch {
+            branch: Branch::Trait(item_trait),
+            parent,
+            children: HashMap::default(),
+        });
+        self.resolution_graph.add_child(parent, item_idx);
+        // self.scope_ancestry.push(item_idx);
+        // item_trait
+        //     .items
+        //     .iter()
+        //     .for_each(|trait_item| self.visit_trait_item(trait_item));
+        // self.scope_ancestry.pop();
+    }
 
     fn visit_item_struct(&mut self, item_struct: &'ast ItemStruct) {
         let parent = *self.scope_ancestry.last().unwrap();

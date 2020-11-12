@@ -2,8 +2,8 @@ use fxhash::FxHashMap as HashMap;
 use rhdl::{
     ast::{
         Ident, ItemArch, ItemConst, ItemEntity, ItemEnum, ItemFn, ItemImpl, ItemMod, ItemStruct,
-        ItemType, ItemUse, NamedField, UnnamedField, UseTreeGlob, UseTreeName, UseTreeRename,
-        Variant, Vis,
+        ItemTrait, ItemType, ItemUse, NamedField, UnnamedField, UseTreeGlob, UseTreeName,
+        UseTreeRename, Variant, Vis,
     },
     visit::Visit,
 };
@@ -12,7 +12,6 @@ use std::fmt::Debug;
 
 use crate::error::ItemHint;
 use crate::find_file::FileId;
-// use crate::error::ItemHint;
 
 #[derive(Default, Debug)]
 pub struct ResolutionGraph<'ast> {
@@ -97,33 +96,33 @@ impl<'ast> ResolutionNode<'ast> {
     pub fn visibility(&self) -> Option<&Vis> {
         match self {
             ResolutionNode::Leaf {
-                leaf: Leaf::Const(ItemConst {vis,..}),
+                leaf: Leaf::Const(ItemConst { vis, .. }),
                 ..
-            }|
-            ResolutionNode::Leaf {
-                leaf: Leaf::Type(ItemType {vis,..}),
+            }
+            | ResolutionNode::Leaf {
+                leaf: Leaf::Type(ItemType { vis, .. }),
                 ..
-            } |
-
-            ResolutionNode::Branch {
-                branch: Branch::Fn(ItemFn { vis,.. }, ..),
+            }
+            | ResolutionNode::Branch {
+                branch: Branch::Fn(ItemFn { vis, .. }, ..),
                 ..
-            } |
-            ResolutionNode::Leaf {
+            }
+            | ResolutionNode::Leaf {
                 leaf: Leaf::NamedField(NamedField { vis, .. }),
                 ..
-            }  |
-            ResolutionNode::Leaf {
+            }
+            | ResolutionNode::Leaf {
                 leaf: Leaf::UnnamedField(UnnamedField { vis, .. }),
                 ..
-            } | ResolutionNode::Branch {
+            }
+            | ResolutionNode::Branch {
                 branch: Branch::Struct(ItemStruct { vis, .. }, ..),
                 ..
             }
-            // | ResolutionNode::Branch {
-            //     branch: Branch::Trait(ItemTrait { vis, .. }, ..),
-            //     ..
-            // }
+            | ResolutionNode::Branch {
+                branch: Branch::Trait(ItemTrait { vis, .. }, ..),
+                ..
+            }
             | ResolutionNode::Branch {
                 branch: Branch::Enum(ItemEnum { vis, .. }, ..),
                 ..
@@ -140,7 +139,10 @@ impl<'ast> ResolutionNode<'ast> {
                 branch: Branch::Variant(_),
                 ..
             }
-            | ResolutionNode::Branch {branch: Branch::Arch(..), ..}
+            | ResolutionNode::Branch {
+                branch: Branch::Arch(..),
+                ..
+            }
             | ResolutionNode::Root { .. }
             | ResolutionNode::Branch {
                 branch: Branch::Impl(_),
@@ -157,55 +159,53 @@ impl<'ast> ResolutionNode<'ast> {
             | ResolutionNode::Leaf {
                 leaf: Leaf::UseGlob(..),
                 ..
-            } | ResolutionNode::Leaf {
-                leaf: Leaf::Entity(..), ..
+            }
+            | ResolutionNode::Leaf {
+                leaf: Leaf::Entity(..),
+                ..
             } => None,
         }
     }
 
     pub fn is_valid_use_path_segment(&self) -> bool {
-        match self {
-            ResolutionNode::Branch {
-                branch: Branch::Mod { .. },
-                ..
-            }
-            | ResolutionNode::Root { .. } => true,
-            _ => false,
+        matches!(self,
+        ResolutionNode::Branch {
+            branch: Branch::Mod { .. },
+            ..
         }
+        | ResolutionNode::Root { .. })
     }
 
     pub fn is_type_existence_checking_candidate(&self) -> bool {
-        match self {
-            ResolutionNode::Branch {
-                branch: Branch::Impl { .. },
-                ..
-            }
-            // | ResolutionNode::Branch {
-            //     branch: Branch::Trait { .. },
-            //     ..
-            // }
-            | ResolutionNode::Branch {
-                branch: Branch::Fn { .. },
-                ..
-            }
-            | ResolutionNode::Branch {
-                branch: Branch::Struct { .. },
-                ..
-            }
-            | ResolutionNode::Branch {
-                branch: Branch::Enum { .. },
-                ..
-            }
-            | ResolutionNode::Leaf {
-                leaf: Leaf::Const { .. },
-                ..
-            }
-            | ResolutionNode::Leaf {
-                leaf: Leaf::Type { .. },
-                ..
-            } => true,
-            _ => false,
+        matches!(self,
+        ResolutionNode::Branch {
+            branch: Branch::Impl { .. },
+            ..
         }
+        | ResolutionNode::Branch {
+            branch: Branch::Trait { .. },
+            ..
+        }
+        | ResolutionNode::Branch {
+            branch: Branch::Fn { .. },
+            ..
+        }
+        | ResolutionNode::Branch {
+            branch: Branch::Struct { .. },
+            ..
+        }
+        | ResolutionNode::Branch {
+            branch: Branch::Enum { .. },
+            ..
+        }
+        | ResolutionNode::Leaf {
+            leaf: Leaf::Const { .. },
+            ..
+        }
+        | ResolutionNode::Leaf {
+            leaf: Leaf::Type { .. },
+            ..
+        })
     }
 
     /// The names in a name class must be unique
@@ -223,12 +223,24 @@ impl<'ast> ResolutionNode<'ast> {
             },
             ResolutionNode::Branch {
                 branch: Impl(_), ..
-            } | ResolutionNode::Branch { branch: Arch(_), ..} => false,
-            ResolutionNode::Leaf { leaf: NamedField(_), .. } => match other {
-                ResolutionNode::Leaf { leaf: NamedField(_), .. } => true,
+            }
+            | ResolutionNode::Branch {
+                branch: Arch(_), ..
+            } => false,
+            ResolutionNode::Leaf {
+                leaf: NamedField(_),
+                ..
+            } => match other {
+                ResolutionNode::Leaf {
+                    leaf: NamedField(_),
+                    ..
+                } => true,
                 _ => false,
             },
-            ResolutionNode::Leaf { leaf: UnnamedField(_), .. } => false,
+            ResolutionNode::Leaf {
+                leaf: UnnamedField(_),
+                ..
+            } => false,
             ResolutionNode::Branch {
                 branch: Variant(_), ..
             } => match other {
@@ -245,9 +257,9 @@ impl<'ast> ResolutionNode<'ast> {
                 | ResolutionNode::Branch {
                     branch: Enum(_), ..
                 }
-                // | ResolutionNode::Branch {
-                //     branch: Trait(_), ..
-                // }
+                | ResolutionNode::Branch {
+                    branch: Trait(_), ..
+                }
                 | ResolutionNode::Leaf { leaf: Type(_), .. }
                 | ResolutionNode::Leaf {
                     leaf: UseName(..), ..
@@ -268,9 +280,9 @@ impl<'ast> ResolutionNode<'ast> {
                 | ResolutionNode::Branch {
                     branch: Enum(_), ..
                 }
-                // | ResolutionNode::Branch {
-                //     branch: Trait(_), ..
-                // }
+                | ResolutionNode::Branch {
+                    branch: Trait(_), ..
+                }
                 | ResolutionNode::Leaf { leaf: Type(_), .. }
                 | ResolutionNode::Leaf {
                     leaf: UseName(..), ..
@@ -286,12 +298,13 @@ impl<'ast> ResolutionNode<'ast> {
             }
             | ResolutionNode::Branch {
                 branch: Enum(_), ..
-            } | ResolutionNode::Leaf {
-                leaf: Entity(_),..
             }
-            // | ResolutionNode::Branch {
-            //     branch: Trait(_), ..
-            // }
+            | ResolutionNode::Leaf {
+                leaf: Entity(_), ..
+            }
+            | ResolutionNode::Branch {
+                branch: Trait(_), ..
+            }
             | ResolutionNode::Leaf { leaf: Type(_), .. }
             | ResolutionNode::Leaf {
                 leaf: UseName(..), ..
@@ -308,33 +321,24 @@ impl<'ast> ResolutionNode<'ast> {
     }
 
     pub fn is_use(&self) -> bool {
-        match self {
-            ResolutionNode::Branch {
-                branch: Branch::Use(_),
-                ..
-            } => true,
-            _ => false,
-        }
+        matches!(self, ResolutionNode::Branch {
+            branch: Branch::Use(_),
+            ..
+        })
     }
 
     pub fn is_trait(&self) -> bool {
-        match self {
-            // ResolutionNode::Branch {
-            //     branch: Branch::Trait(_),
-            //     ..
-            // } => true,
-            _ => false,
-        }
+        matches!(self, ResolutionNode::Branch {
+            branch: Branch::Trait(_),
+            ..
+        })
     }
 
     pub fn is_impl(&self) -> bool {
-        match self {
-            ResolutionNode::Branch {
-                branch: Branch::Impl(_),
-                ..
-            } => true,
-            _ => false,
-        }
+        matches!(self, ResolutionNode::Branch {
+            branch: Branch::Impl(_),
+            ..
+        })
     }
 
     pub fn is_trait_or_impl(&self) -> bool {
@@ -342,21 +346,19 @@ impl<'ast> ResolutionNode<'ast> {
     }
 
     pub fn is_type(&self) -> bool {
-        match self {
-            ResolutionNode::Branch {
-                branch: Branch::Struct(_),
-                ..
-            }
-            | ResolutionNode::Branch {
-                branch: Branch::Enum(_),
-                ..
-            }
-            | ResolutionNode::Leaf {
-                leaf: Leaf::Type(_),
-                ..
-            } => true,
-            _ => false,
+        matches!(self,
+        ResolutionNode::Branch {
+            branch: Branch::Struct(_),
+            ..
         }
+        | ResolutionNode::Branch {
+            branch: Branch::Enum(_),
+            ..
+        }
+        | ResolutionNode::Leaf {
+            leaf: Leaf::Type(_),
+            ..
+        })
     }
 
     pub fn children(&self) -> Option<&HashMap<Option<&'ast Ident>, Vec<ResolutionIndex>>> {
@@ -395,7 +397,7 @@ impl<'ast> ResolutionNode<'ast> {
             ResolutionNode::Branch { branch, .. } => match branch {
                 Branch::Mod(m) => Some(&m.ident),
                 Branch::Impl(_) => None,
-                // Branch::Trait(t) => Some(&t.ident),
+                Branch::Trait(t) => Some(&t.ident),
                 Branch::Fn(f) => Some(&f.sig.ident),
                 Branch::Struct(s) => Some(&s.ident),
                 Branch::Enum(e) => Some(&e.ident),
@@ -424,7 +426,7 @@ impl<'ast> ResolutionNode<'ast> {
             ResolutionNode::Branch { branch, .. } => match branch {
                 Branch::Mod(m) => v.visit_item_mod(m),
                 Branch::Impl(i) => v.visit_item_impl(i),
-                // Branch::Trait(t) => v.visit_item_trait(t),
+                Branch::Trait(t) => v.visit_item_trait(t),
                 Branch::Fn(f) => v.visit_item_fn(f),
                 Branch::Struct(s) => v.visit_item_struct(s),
                 Branch::Enum(e) => v.visit_item_enum(e),
@@ -451,7 +453,7 @@ impl<'ast> ResolutionNode<'ast> {
             ResolutionNode::Branch { branch, .. } => match branch {
                 Branch::Mod(..) => Some(ItemHint::InternalNamedChildScope),
                 Branch::Impl(..) => Some(ItemHint::Item),
-                // Branch::Trait(..) => Some(ItemHint::Trait),
+                Branch::Trait(..) => Some(ItemHint::Trait),
                 Branch::Fn(..) => Some(ItemHint::Fn),
                 Branch::Struct(..) => Some(ItemHint::Type),
                 Branch::Enum(..) => Some(ItemHint::Type),
@@ -488,9 +490,9 @@ pub enum Branch<'ast> {
     Enum(&'ast ItemEnum),
     Variant(&'ast Variant),
     Impl(&'ast ItemImpl),
-    /// Arch will be tied as a nameless entity child
     Arch(&'ast ItemArch),
-    // Trait(&'ast ItemTrait),
+    // TODO: split trait children down into leaves
+    Trait(&'ast ItemTrait),
 }
 
 #[derive(Debug)]

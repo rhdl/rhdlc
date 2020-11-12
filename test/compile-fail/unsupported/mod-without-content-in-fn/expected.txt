@@ -1,5 +1,8 @@
-error: unsupported feature
- --> top.rhdl:2:8
-  |
-2 |     mod a;
-  |         ^ RHDL does not support modules without content inside functions
+error: a module in a function cannot be loaded from an external file
+  ┌─ ./test/compile-fail/unsupported/mod-without-content-in-fn/top.rhdl:2:5
+  │
+2 │     mod a;
+  │     ^^^^^^ give the module a body
+  │
+  = the file path of such a module would be ambiguous
+
