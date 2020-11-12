@@ -2,8 +2,8 @@ use fxhash::FxHashMap as HashMap;
 use rhdl::{
     ast::{
         Ident, ItemArch, ItemConst, ItemEntity, ItemEnum, ItemFn, ItemImpl, ItemMod, ItemStruct,
-        ItemTrait, ItemType, ItemUse, NamedField, UnnamedField, UseTreeGlob, UseTreeName,
-        UseTreeRename, Variant, Vis,
+        ItemTrait, ItemTraitAlias, ItemType, ItemUse, NamedField, UnnamedField, UseTreeGlob,
+        UseTreeName, UseTreeRename, Variant, Vis,
     },
     visit::Visit,
 };
@@ -131,6 +131,10 @@ impl<'ast> ResolutionNode<'ast> {
                 branch: Branch::Use(ItemUse { vis, .. }, ..),
                 ..
             }
+            | ResolutionNode::Leaf {
+                leaf: Leaf::TraitAlias(ItemTraitAlias { vis, .. }, ..),
+                ..
+            }
             | ResolutionNode::Branch {
                 branch: Branch::Mod(ItemMod { vis, .. }, ..),
                 ..
@@ -203,6 +207,10 @@ impl<'ast> ResolutionNode<'ast> {
             ..
         }
         | ResolutionNode::Leaf {
+            leaf: Leaf::TraitAlias(_),
+            ..
+        }
+        | ResolutionNode::Leaf {
             leaf: Leaf::Type { .. },
             ..
         })
@@ -260,6 +268,10 @@ impl<'ast> ResolutionNode<'ast> {
                 | ResolutionNode::Branch {
                     branch: Trait(_), ..
                 }
+                | ResolutionNode::Leaf {
+                    leaf: TraitAlias(_),
+                    ..
+                }
                 | ResolutionNode::Leaf { leaf: Type(_), .. }
                 | ResolutionNode::Leaf {
                     leaf: UseName(..), ..
@@ -283,6 +295,10 @@ impl<'ast> ResolutionNode<'ast> {
                 | ResolutionNode::Branch {
                     branch: Trait(_), ..
                 }
+                | ResolutionNode::Leaf {
+                    leaf: TraitAlias(_),
+                    ..
+                }
                 | ResolutionNode::Leaf { leaf: Type(_), .. }
                 | ResolutionNode::Leaf {
                     leaf: UseName(..), ..
@@ -304,6 +320,10 @@ impl<'ast> ResolutionNode<'ast> {
             }
             | ResolutionNode::Branch {
                 branch: Trait(_), ..
+            }
+            | ResolutionNode::Leaf {
+                leaf: TraitAlias(_),
+                ..
             }
             | ResolutionNode::Leaf { leaf: Type(_), .. }
             | ResolutionNode::Leaf {
@@ -408,6 +428,7 @@ impl<'ast> ResolutionNode<'ast> {
             ResolutionNode::Leaf { leaf, .. } => match leaf {
                 Leaf::NamedField(f) => Some(&f.ident),
                 Leaf::Const(c) => Some(&c.ident),
+                Leaf::TraitAlias(t) => Some(&t.ident),
                 Leaf::Type(t) => Some(&t.ident),
                 Leaf::UseRename(r, _) => Some(&r.rename),
                 Leaf::UseName(n, _) => Some(*n),
@@ -438,6 +459,7 @@ impl<'ast> ResolutionNode<'ast> {
                 Leaf::NamedField(f) => v.visit_named_field(f),
                 Leaf::UnnamedField(f) => v.visit_unnamed_field(f),
                 Leaf::Const(c) => v.visit_item_const(c),
+                Leaf::TraitAlias(t) => v.visit_item_trait_alias(t),
                 Leaf::Type(t) => v.visit_item_type(t),
                 Leaf::UseName(n, _) => v.visit_use_tree_name(n),
                 Leaf::UseRename(r, _) => v.visit_use_tree_rename(r),
@@ -465,6 +487,7 @@ impl<'ast> ResolutionNode<'ast> {
                 Leaf::NamedField(..) => None,
                 Leaf::UnnamedField(..) => None,
                 Leaf::Const(..) => Some(ItemHint::Var),
+                Leaf::TraitAlias(..) => Some(ItemHint::Trait),
                 Leaf::Type(..) => Some(ItemHint::Type),
                 Leaf::UseName(..) => Some(ItemHint::Item),
                 Leaf::UseRename(..) => Some(ItemHint::Item),
@@ -502,6 +525,7 @@ pub enum Leaf<'ast> {
     UseGlob(&'ast UseTreeGlob, ResolutionIndex),
     Const(&'ast ItemConst),
     Type(&'ast ItemType),
+    TraitAlias(&'ast ItemTraitAlias),
     NamedField(&'ast NamedField),
     UnnamedField(&'ast UnnamedField),
     Entity(&'ast ItemEntity),

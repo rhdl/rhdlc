@@ -4,7 +4,8 @@ use fxhash::FxHashMap as HashMap;
 use rhdl::{
     ast::{
         Ident, ItemArch, ItemConst, ItemEntity, ItemEnum, ItemFn, ItemImpl, ItemMod, ItemStruct,
-        ItemTrait, ItemType, ItemUse, ModContent, NamedField, UnnamedField, Variant,
+        ItemTrait, ItemTraitAlias, ItemType, ItemUse, ModContent, NamedField, UnnamedField,
+        Variant,
     },
     visit::Visit,
 };
@@ -271,5 +272,15 @@ impl<'a, 'ast> Visit<'ast> for ScopeBuilder<'a, 'ast> {
             .iter()
             .for_each(|arch_item| self.visit_arch_item(arch_item));
         self.scope_ancestry.pop();
+    }
+
+    fn visit_item_trait_alias(&mut self, item_trait_alias: &'ast ItemTraitAlias) {
+        let parent = *self.scope_ancestry.last().unwrap();
+
+        let item_idx = self.resolution_graph.add_node(ResolutionNode::Leaf {
+            leaf: Leaf::TraitAlias(item_trait_alias),
+            parent,
+        });
+        self.resolution_graph.add_child(parent, item_idx)
     }
 }
