@@ -428,9 +428,9 @@ pub fn global_path_cannot_have_special_ident(
         ])
 }
 
-pub fn global_path_in_use_group(file_id: FileId, path: &SimplePath) -> Diagnostic {
+pub fn global_path_in_prefixed_use_group(file_id: FileId, path: &SimplePath) -> Diagnostic {
     Diagnostic::error()
-        .with_message("use groups cannot contain global paths")
+        .with_message("global paths in a prefixed use group are invalid")
         .with_labels(vec![Label::primary(file_id, path.span())])
 }
 

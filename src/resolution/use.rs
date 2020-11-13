@@ -70,7 +70,7 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                     ctx.leading_sep = path_tree.path.leading_sep.as_ref();
                 } else if !ctx.previous_idents.is_empty() && path_tree.path.leading_sep.is_some() {
                     self.errors
-                        .push(global_path_in_use_group(ctx.file, &path_tree.path));
+                        .push(global_path_in_prefixed_use_group(ctx.file, &path_tree.path));
                     return;
                 }
                 let mut path_finder = PathFinder {

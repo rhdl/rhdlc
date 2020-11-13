@@ -1,0 +1,6 @@
+error: global paths in a prefixed use group are invalid
+  ┌─ ./test/compile-fail/resolution/use/global-in-prefixed-group/top.rhdl:2:10
+  │
+2 │ use a::{ ::b::c };
+  │          ^^^^^
+
