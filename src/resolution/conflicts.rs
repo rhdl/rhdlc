@@ -1,4 +1,5 @@
 use fxhash::FxHashMap as HashMap;
+use rhdl::ast::ItemEntity;
 
 use rhdl::{
     ast::{
@@ -197,9 +198,7 @@ impl<'a, 'ast> ConflictChecker<'a, 'ast> {
         let mut name_conflicts: HashMap<&'ast Ident, Vec<(ResolutionIndex, &'ast Ident)>> =
             HashMap::default();
         for import_loc in imported.values() {
-            let conflicts = name_conflicts
-                .entry(&import_loc.1)
-                .or_default();
+            let conflicts = name_conflicts.entry(&import_loc.1).or_default();
             if !conflicts.contains(import_loc) {
                 conflicts.push(*import_loc);
             }
@@ -262,6 +261,23 @@ impl<'a, 'ast> Visit<'ast> for ConflictCheckerVisitor<'a> {
                 }
             }
             Fields::Unnamed(_) => {}
+        }
+    }
+
+    fn visit_item_entity(&mut self, item_entity: &'ast ItemEntity) {
+        if let Some(ref generics) = item_entity.generics {
+            self.visit_generics(generics);
+        }
+        let mut seen_idents: HashMap<&str, &Ident> = HashMap::default();
+        for port in item_entity.ports.iter() {
+            if let Some(previous_ident) = seen_idents.insert(&port.ident.inner, &port.ident) {
+                self.errors.push(crate::error::multiple_definition(
+                    self.file,
+                    previous_ident,
+                    &port.ident,
+                    DuplicateHint::Port,
+                ))
+            }
         }
     }
 

@@ -1,0 +1,4 @@
+entity Top {
+    in clk: bit,
+    out clk: bit
+}

@@ -196,6 +196,7 @@ pub enum DuplicateHint {
     TypeParam,
     Field,
     NameBinding,
+    Port,
 }
 
 impl Display for DuplicateHint {
@@ -208,6 +209,7 @@ impl Display for DuplicateHint {
             TypeParam => write!(f, "type parameter"),
             Field => write!(f, "field"),
             NameBinding => write!(f, "name"),
+            Port => write!(f, "port")
         }
     }
 }
