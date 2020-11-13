@@ -1,8 +1,8 @@
-error: the type parameter `T` is defined multiple times
+error: the parameter `T` is defined multiple times
   ┌─ ./test/compile-fail/resolution/conflicts/type-params/top.rhdl:1:6
   │
 1 │ fn a<T, T>() {}
   │      -  ^ `T` redefined here
   │      │   
-  │      previous definition of the type parameter `T` here
+  │      previous definition of the parameter `T` here
 

@@ -340,7 +340,7 @@ impl<'a, 'ast> Visit<'ast> for ConflictCheckerVisitor<'a> {
                     self.file,
                     previous_ident,
                     &ident,
-                    DuplicateHint::TypeParam,
+                    DuplicateHint::Param,
                 ));
             }
         }

@@ -193,7 +193,7 @@ pub enum DuplicateHint {
     Variant,
     Name,
     Lifetime,
-    TypeParam,
+    Param,
     Field,
     NameBinding,
     Port,
@@ -206,7 +206,7 @@ impl Display for DuplicateHint {
             Variant => write!(f, "variant"),
             Name => write!(f, "name"),
             Lifetime => write!(f, "lifetime"),
-            TypeParam => write!(f, "type parameter"),
+            Param => write!(f, "parameter"),
             Field => write!(f, "field"),
             NameBinding => write!(f, "name"),
             Port => write!(f, "port")
