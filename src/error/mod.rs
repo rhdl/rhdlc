@@ -164,6 +164,30 @@ pub fn multiple_definition(
         ])
 }
 
+pub fn reimport(
+    file_id: FileId,
+    first: &Ident,
+    second: &Ident,
+    declaration_file_id: FileId,
+    declaration_ident: &Ident,
+    declaration_hint: Option<ItemHint>,
+) -> Diagnostic {
+    Diagnostic::warning()
+        .with_message(&format!(
+            "the {} `{}` is imported multiple times",
+            declaration_hint
+                .map(|x| x.to_string())
+                .unwrap_or("name".to_string()),
+            first
+        ))
+        .with_labels(vec![
+            Label::primary(file_id, second.span()).with_message("reimported here"),
+            Label::secondary(file_id, first.span()).with_message("imported here"),
+            Label::secondary(declaration_file_id, declaration_ident.span())
+                .with_message("declared here"),
+        ])
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum DuplicateHint {
     Variant,

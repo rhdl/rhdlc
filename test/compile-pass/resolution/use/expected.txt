@@ -1,0 +1,68 @@
+warning: the mod `e` is imported multiple times
+   ┌─ ./test/compile-pass/resolution/use/everything.rhdl:5:25
+   │
+ 5 │                 pub mod e {
+   │                         - declared here
+   ·
+47 │ use a::b::c::d::e;
+   │                 - imported here
+48 │ use a::b::c::d::e as E;
+   │                      ^ reimported here
+
+warning: the function `h` is imported multiple times
+   ┌─ ./test/compile-pass/resolution/use/everything.rhdl:38:20
+   │
+38 │             pub fn h() {}
+   │                    - declared here
+   ·
+51 │ use a::b::c::h;
+   │              - imported here
+52 │ use crate::a::b::c::{h as H, d as D};
+   │                           ^ reimported here
+
+warning: the function `I1` is imported multiple times
+   ┌─ ./test/compile-pass/resolution/use/everything.rhdl:6:40
+   │
+ 6 │                     use crate::a::i as I1;
+   │                                        -- imported here
+ 7 │                     use super::super::super::super::i as I2;
+   │                                                          ^^ reimported here
+   ·
+42 │     pub fn i() {}
+   │            - declared here
+
+warning: the mod `A1` is imported multiple times
+  ┌─ ./test/compile-pass/resolution/use/everything.rhdl:1:9
+  │
+1 │ pub mod a {
+  │         - declared here
+  ·
+9 │                     use crate::{a as A1, a as A2, self as Crate};
+  │                                      --       ^^ reimported here
+  │                                      │         
+  │                                      imported here
+
+warning: the mod `A2` is imported multiple times
+   ┌─ ./test/compile-pass/resolution/use/everything.rhdl:1:9
+   │
+ 1 │ pub mod a {
+   │         - declared here
+   ·
+ 9 │                     use crate::{a as A1, a as A2, self as Crate};
+   │                                               -- imported here
+10 │                     use crate::{g, f};
+11 │                     use crate::a;
+   │                                ^ reimported here
+
+warning: the function `I2` is imported multiple times
+   ┌─ ./test/compile-pass/resolution/use/everything.rhdl:7:58
+   │
+ 7 │                     use super::super::super::super::i as I2;
+   │                                                          -- imported here
+   ·
+12 │                     use k::i as I3;
+   │                                 ^^ reimported here
+   ·
+42 │     pub fn i() {}
+   │            - declared here
+

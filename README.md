@@ -79,5 +79,5 @@ WIP
 Make sure you've already built with `cargo build`. To look at changes for compile fail use resolution tests:
 
 ```bash
-for i in test/compile-fail/resolution/use/*; do clear; ./target/debug/rhdlc ./$i/top.rhdl 2>&1 | diff -wrt --color=auto $i/expected.txt -; echo $i; read proceed; [ $proceed == "y" ] && ./target/debug/rhdlc ./$i/top.rhdl 2>$i/expected.txt; done
+for i in test/compile-fail/resolution/use/*; do clear; ./target/debug/rhdlc ./$i/*.rhdl 2>&1 | diff -wrt --color=auto $i/expected.txt -; echo $i; read proceed; [ "$proceed" == "y" ] && ./target/debug/rhdlc ./$i/*.rhdl 2>$i/expected.txt; done
 ```

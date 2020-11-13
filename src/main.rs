@@ -161,18 +161,22 @@ mod test {
         use pretty_assertions::assert_eq;
         use std::fs;
         use std::io::Write;
-        for test in fs::read_dir(dir).unwrap() {
-            let test = test.unwrap();
-            let output = super::entry(crate::find_file::FileContentProvider::File(test.path()));
-            eprintln!("{}", test.path().to_string_lossy());
-            std::io::stderr()
-                .flush()
-                .ok()
-                .expect("Could not flush stderr");
-            std::io::stdout()
-                .flush()
-                .ok()
-                .expect("Could not flush stdout");
+        let dir = std::path::PathBuf::from(dir);
+        let input_path = dir.join("everything.rhdl");
+        let expected = fs::read_to_string(dir.join("expected.txt"));
+        let output = super::entry(crate::find_file::FileContentProvider::File(input_path));
+        eprintln!("{}", dir.to_string_lossy());
+        std::io::stderr()
+            .flush()
+            .ok()
+            .expect("Could not flush stderr");
+        std::io::stdout()
+            .flush()
+            .ok()
+            .expect("Could not flush stdout");
+        if let Ok(expected) = expected {
+            assert_eq!(output, expected);
+        } else {
             assert_eq!(output, "");
         }
     }

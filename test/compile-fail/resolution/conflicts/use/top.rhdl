@@ -1,0 +1,9 @@
+mod a {
+    pub struct b {}
+} mod c {
+    pub struct b {}
+}
+
+use a::{b, b};
+use a::b;
+use c::b;

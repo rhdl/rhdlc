@@ -1,0 +1,30 @@
+warning: the type `b` is imported multiple times
+  ┌─ ./test/compile-fail/resolution/conflicts/use/top.rhdl:2:16
+  │
+2 │     pub struct b {}
+  │                - declared here
+  ·
+7 │ use a::{b, b};
+  │         -  ^ reimported here
+  │         │   
+  │         imported here
+
+warning: the type `b` is imported multiple times
+  ┌─ ./test/compile-fail/resolution/conflicts/use/top.rhdl:2:16
+  │
+2 │     pub struct b {}
+  │                - declared here
+  ·
+7 │ use a::{b, b};
+  │            - imported here
+8 │ use a::b;
+  │        ^ reimported here
+
+error: the name `b` is defined multiple times
+  ┌─ ./test/compile-fail/resolution/conflicts/use/top.rhdl:8:8
+  │
+8 │ use a::b;
+  │        - previous definition of the name `b` here
+9 │ use c::b;
+  │        ^ `b` redefined here
+
