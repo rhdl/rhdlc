@@ -1,8 +1,6 @@
-error: item is not visible in root `super`
+error: type is not visible in root
   ┌─ ./test/compile-fail/resolution/pub/in-non-visible-super/top.rhdl:3:23
   │
 3 │         pub(in super::super) struct c {}
   │                       ^^^^^
-  │
-  = modify the visibility of the immediate child module of `super` that is an ancestor of this item
 

@@ -1,0 +1,9 @@
+mod a {
+    struct b(pub d);
+    struct d {}
+    pub struct e(pub d);
+    mod f {
+        struct g(pub super::d);
+        pub struct h(pub super::d);
+    }
+}

@@ -28,11 +28,11 @@ struct TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
 impl<'a, 'ast> TypeExistenceChecker<'a, 'ast> {
     pub fn visit_all(&mut self) {
         for scope in self.resolution_graph.node_indices() {
-            if self.resolution_graph.inner[scope].is_type_existence_checking_candidate() {
+            if self.resolution_graph[scope].is_type_existence_checking_candidate() {
                 // Cannot directly visit trait/impl content because RHDL needs the generics from the parent scope
-                if self.resolution_graph.inner[scope]
+                if self.resolution_graph[scope]
                     .parent()
-                    .map(|parent| self.resolution_graph.inner[parent].is_trait_or_impl())
+                    .map(|parent| self.resolution_graph[parent].is_trait_or_impl())
                     .unwrap_or_default()
                 {
                     continue;
@@ -43,7 +43,7 @@ impl<'a, 'ast> TypeExistenceChecker<'a, 'ast> {
                     scope,
                     generics: Default::default(),
                 };
-                self.resolution_graph.inner[scope].visit(&mut ctx_checker);
+                self.resolution_graph[scope].visit(&mut ctx_checker);
             }
         }
     }
@@ -63,7 +63,7 @@ impl<'a, 'c, 'ast> TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
             // Check that there is a single trait match
             let num_matching = matching
                 .iter()
-                .filter(|i| self.resolution_graph.inner[**i].is_trait())
+                .filter(|i| self.resolution_graph[**i].is_trait())
                 .count();
             if num_matching != 1 {
                 let file = self.resolution_graph.file(self.scope);
@@ -75,7 +75,7 @@ impl<'a, 'c, 'ast> TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
                         ItemHint::Trait,
                         matching
                             .first()
-                            .and_then(|x| self.resolution_graph.inner[*x].item_hint())
+                            .and_then(|x| self.resolution_graph[*x].item_hint())
                             .unwrap_or(ItemHint::Item),
                     ))
                 } else {
@@ -88,7 +88,7 @@ impl<'a, 'c, 'ast> TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
             } else {
                 Ok(*matching
                     .iter()
-                    .find(|i| self.resolution_graph.inner[**i].is_trait())
+                    .find(|i| self.resolution_graph[**i].is_trait())
                     .unwrap())
             }
         })
@@ -201,7 +201,7 @@ impl<'a, 'c, 'ast> Visit<'c> for TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
             generic_args: None,
         }) = type_path.segments.last()
         {
-            if ident == "Self" && self.resolution_graph.inner[self.scope].is_trait_or_impl() {
+            if ident == "Self" && self.resolution_graph[self.scope].is_trait_or_impl() {
                 return;
             }
             // Check that there is a single type match
@@ -237,7 +237,7 @@ impl<'a, 'c, 'ast> Visit<'c> for TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
         };
         let num_matching = matching
             .iter()
-            .filter(|i| self.resolution_graph.inner[**i].is_type())
+            .filter(|i| self.resolution_graph[**i].is_type())
             .count();
         if num_matching != 1 {
             let file = self.resolution_graph.file(self.scope);
@@ -249,7 +249,7 @@ impl<'a, 'c, 'ast> Visit<'c> for TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
                     ItemHint::Type,
                     matching
                         .first()
-                        .and_then(|x| self.resolution_graph.inner[*x].item_hint())
+                        .and_then(|x| self.resolution_graph[*x].item_hint())
                         .unwrap_or(ItemHint::Item),
                 ));
             } else if num_matching > 1 {

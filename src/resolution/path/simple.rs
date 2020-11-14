@@ -33,15 +33,15 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
 
         let mut scopes = {
             let mut dest_scope = dest;
-            while !self.resolution_graph.inner[dest_scope].is_valid_use_path_segment() {
-                dest_scope = self.resolution_graph.inner[dest_scope].parent().unwrap();
+            while !self.resolution_graph[dest_scope].is_valid_use_path_segment() {
+                dest_scope = self.resolution_graph[dest_scope].parent().unwrap();
             }
 
             // Also seed this scope
             if let ResolutionNode::Branch {
                 branch: Branch::Fn(_),
                 ..
-            } = &self.resolution_graph.inner[ctx.dest]
+            } = &self.resolution_graph[ctx.dest]
             {
                 vec![dest, dest_scope]
             } else {
@@ -84,7 +84,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
             Ok(vec![child])
         } else {
             let local = if !is_entry || ctx.leading_sep.is_none() {
-                if let Some(children) = self.resolution_graph.inner[scope].children() {
+                if let Some(children) = self.resolution_graph[scope].children() {
                     let mut local = children
                         .get(&Some(ident))
                         .map(|children_with_name| {
@@ -93,15 +93,14 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                                 .copied()
                                 .filter(|child| {
                                     !paths_only
-                                        || self.resolution_graph.inner[*child]
-                                            .is_valid_use_path_segment()
+                                        || self.resolution_graph[*child].is_valid_use_path_segment()
                                 })
                                 .collect::<Vec<ResolutionIndex>>()
                         })
                         .unwrap_or_default();
                     if let Some(children_unnamed) = children.get(&None).cloned() {
                         for child in children_unnamed {
-                            if self.resolution_graph.inner[child].is_use() {
+                            if self.resolution_graph[child].is_use() {
                                 local.append(
                                     &mut self
                                         .matching_from_use(ctx, child, ident, paths_only, false),
@@ -123,8 +122,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                     .copied()
                     .filter(|child| *child != ctx.root)
                     .filter(|child| {
-                        !paths_only
-                            || self.resolution_graph.inner[*child].is_valid_use_path_segment()
+                        !paths_only || self.resolution_graph[*child].is_valid_use_path_segment()
                     })
                     .collect()
             } else {
@@ -140,14 +138,14 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
             )? {
                 Ok(children)
             } else if !(ctx.leading_sep.is_some() && is_entry) {
-                let local_from_globs = self.resolution_graph.inner[scope]
+                let local_from_globs = self.resolution_graph[scope]
                     .children()
                     .and_then(|children| children.get(&None))
                     .cloned()
                     .map(|children_unnamed| {
                         let mut local_from_globs = vec![];
                         children_unnamed.iter().for_each(|child| {
-                            if self.resolution_graph.inner[*child].is_use() {
+                            if self.resolution_graph[*child].is_use() {
                                 local_from_globs.append(
                                     &mut self
                                         .matching_from_use(ctx, *child, ident, paths_only, true),
@@ -192,7 +190,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                 ident_to_look_for,
                 might_match: false,
             };
-            self.resolution_graph.inner[use_index].visit(&mut checker);
+            self.resolution_graph[use_index].visit(&mut checker);
             checker.might_match
         } {
             return vec![];
@@ -206,7 +204,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                 };
                 use_resolver.trace_use_recursive(&mut rebuilt_ctx);
             }
-            let use_children = self.resolution_graph.inner[use_index].children().unwrap();
+            let use_children = self.resolution_graph[use_index].children().unwrap();
             let matches: Vec<ResolutionIndex> = if glob_only {
                 let mut matches = vec![];
                 use_children
@@ -214,7 +212,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                     .cloned()
                     .map(|globs| {
                         globs.iter().for_each(|glob| {
-                            let glob = match self.resolution_graph.inner[*glob] {
+                            let glob = match self.resolution_graph[*glob] {
                                 ResolutionNode::Leaf {
                                     leaf: Leaf::UseGlob(_, glob),
                                     ..
@@ -225,8 +223,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                                 return;
                             }
                             self.visited_glob_scopes.insert(glob);
-                            let glob_src_children =
-                                self.resolution_graph.inner[glob].children().unwrap();
+                            let glob_src_children = self.resolution_graph[glob].children().unwrap();
                             matches.append(
                                 &mut glob_src_children
                                     .get(&Some(ident_to_look_for))
@@ -236,7 +233,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                                             .copied()
                                             .filter(|child| {
                                                 !paths_only
-                                                    || self.resolution_graph.inner[*child]
+                                                    || self.resolution_graph[*child]
                                                         .is_valid_use_path_segment()
                                             })
                                             .collect::<Vec<ResolutionIndex>>()
@@ -247,7 +244,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                                 glob_src_children.get(&None).cloned()
                             {
                                 glob_src_children_unnamed.iter().for_each(|child| {
-                                    if self.resolution_graph.inner[*child].is_use() {
+                                    if self.resolution_graph[*child].is_use() {
                                         matches.append(&mut self.matching_from_use(
                                             ctx,
                                             *child,
@@ -275,7 +272,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                     .map(|named| {
                         named
                             .iter()
-                            .filter_map(|child| match &self.resolution_graph.inner[*child] {
+                            .filter_map(|child| match &self.resolution_graph[*child] {
                                 ResolutionNode::Leaf {
                                     leaf: Leaf::UseName(_, imports),
                                     ..
@@ -290,8 +287,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                             .copied()
                             .filter(|child| {
                                 !paths_only
-                                    || self.resolution_graph.inner[*child]
-                                        .is_valid_use_path_segment()
+                                    || self.resolution_graph[*child].is_valid_use_path_segment()
                             })
                             .collect()
                     })

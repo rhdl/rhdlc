@@ -38,7 +38,7 @@ impl<'a, 'ast> Visit<'ast> for ScopeBuilder<'a, 'ast> {
                 if let ResolutionNode::Branch {
                     branch: Branch::Fn { .. },
                     ..
-                } = self.resolution_graph.inner[*ancestor]
+                } = self.resolution_graph[*ancestor]
                 {
                     true
                 } else {
@@ -56,7 +56,7 @@ impl<'a, 'ast> Visit<'ast> for ScopeBuilder<'a, 'ast> {
                 .scope_ancestry
                 .iter()
                 .filter_map(
-                    |scope_ancestor| match &self.resolution_graph.inner[*scope_ancestor] {
+                    |scope_ancestor| match &self.resolution_graph[*scope_ancestor] {
                         ResolutionNode::Branch {
                             branch: Branch::Mod(item_mod, ..),
                             ..

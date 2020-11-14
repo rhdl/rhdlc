@@ -109,7 +109,7 @@ impl<'ast> Resolver<'ast> {
         let use_indices: Vec<ResolutionIndex> = self
             .resolution_graph
             .node_indices()
-            .filter(|i| self.resolution_graph.inner[*i].is_use())
+            .filter(|i| self.resolution_graph[*i].is_use())
             .collect();
         for use_index in use_indices {
             let mut use_resolver = r#use::UseResolver {

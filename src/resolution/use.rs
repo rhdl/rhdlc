@@ -15,7 +15,7 @@ pub struct UseResolver<'a, 'ast> {
 
 impl<'a, 'ast> UseResolver<'a, 'ast> {
     pub fn resolve_use(&mut self, dest: ResolutionIndex) {
-        match &self.resolution_graph.inner[dest] {
+        match &self.resolution_graph[dest] {
             ResolutionNode::Branch {
                 branch: Branch::Use(_),
                 ..
@@ -26,7 +26,7 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
     }
 
     pub fn trace_use_recursive(&mut self, ctx: &mut TracingContext<'ast>) {
-        let tree = match &self.resolution_graph.inner[ctx.dest] {
+        let tree = match &self.resolution_graph[ctx.dest] {
             ResolutionNode::Branch {
                 branch: Branch::Use(item_use),
                 ..
@@ -39,11 +39,11 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
         self.resolved_uses.insert(ctx.dest);
         let scope = if ctx.leading_sep.is_some() {
             // just give any old dummy node because it'll have to be ignored in path/name finding
-            0
+            ctx.dest
         } else {
             let mut scope = ctx.dest;
-            while !self.resolution_graph.inner[scope].is_valid_use_path_segment() {
-                scope = self.resolution_graph.inner[scope].parent().unwrap();
+            while !self.resolution_graph[scope].is_valid_use_path_segment() {
+                scope = self.resolution_graph[scope].parent().unwrap();
             }
             scope
         };

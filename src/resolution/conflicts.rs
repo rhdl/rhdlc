@@ -30,8 +30,8 @@ impl<'a, 'ast> ConflictChecker<'a, 'ast> {
                 errors: self.errors,
                 file: self.resolution_graph.file(node),
             };
-            self.resolution_graph.inner[node].visit(&mut visitor);
-            let file = match &self.resolution_graph.inner[node] {
+            self.resolution_graph[node].visit(&mut visitor);
+            let file = match &self.resolution_graph[node] {
                 ResolutionNode::Root { .. }
                 | ResolutionNode::Branch {
                     branch: Branch::Impl(_),
@@ -68,7 +68,7 @@ impl<'a, 'ast> ConflictChecker<'a, 'ast> {
 
     fn find_name_conflicts_in(&mut self, node: ResolutionIndex, file_id: FileId) {
         // Check the scope for conflicts
-        for (ident, indices) in self.resolution_graph.inner[node].children().unwrap().iter() {
+        for (ident, indices) in self.resolution_graph[node].children().unwrap().iter() {
             let ident = if let Some(ident) = ident {
                 ident
             } else {
@@ -77,26 +77,28 @@ impl<'a, 'ast> ConflictChecker<'a, 'ast> {
             let mut names_and_indices: Vec<(ResolutionIndex, &'ast Ident)> = indices
                 .iter()
                 .copied()
-                .filter_map(|i| Some(i).zip(self.resolution_graph.inner[i].name()))
+                .filter_map(|i| Some(i).zip(self.resolution_graph[i].name()))
                 .collect();
-            if let Some(unnamed_children) = self.resolution_graph.inner[node]
+            if let Some(unnamed_children) = self.resolution_graph[node]
                 .children()
                 .and_then(|children| children.get(&None))
             {
                 unnamed_children
                     .iter()
                     .copied()
-                    .filter(|child| self.resolution_graph.inner[*child].is_use())
+                    .filter(|child| self.resolution_graph[*child].is_use())
                     .for_each(|child| {
-                        if let Some(with_name) = self.resolution_graph.inner[child]
+                        if let Some(with_name) = self.resolution_graph[child]
                             .children()
                             .and_then(|children| children.get(&Some(ident)))
                         {
                             // The child index is used here because we want to
                             // respect the position of the use in the file
-                            names_and_indices.extend(with_name.iter().copied().filter_map(|i| {
-                                Some(child).zip(self.resolution_graph.inner[i].name())
-                            }));
+                            names_and_indices.extend(
+                                with_name.iter().copied().filter_map(|i| {
+                                    Some(child).zip(self.resolution_graph[i].name())
+                                }),
+                            );
                         }
                     })
             }
@@ -111,9 +113,7 @@ impl<'a, 'ast> ConflictChecker<'a, 'ast> {
                         continue;
                     }
                     // Skip names that don't conflict
-                    if !self.resolution_graph.inner[*i]
-                        .in_same_name_class(&self.resolution_graph.inner[*j])
-                    {
+                    if !self.resolution_graph[*i].in_same_name_class(&self.resolution_graph[*j]) {
                         continue;
                     }
                     if i_name == j_name {
@@ -137,33 +137,28 @@ impl<'a, 'ast> ConflictChecker<'a, 'ast> {
     fn find_use_conflicts_in(&mut self, node: ResolutionIndex, file: FileId) {
         let mut imported: HashMap<ResolutionIndex, (ResolutionIndex, &'ast Ident)> =
             HashMap::default();
-        let unnamed_children = if let Some(unnamed_children) = self.resolution_graph.inner[node]
-            .children()
-            .unwrap()
-            .get(&None)
+        let unnamed_children = if let Some(unnamed_children) =
+            self.resolution_graph[node].children().unwrap().get(&None)
         {
             unnamed_children
         } else {
             return;
         };
         for unnamed_child in unnamed_children.iter().copied() {
-            match &self.resolution_graph.inner[unnamed_child] {
+            match &self.resolution_graph[unnamed_child] {
                 ResolutionNode::Branch {
                     branch: Branch::Use(_),
                     ..
                 } => {
-                    for (name_opt, use_leaf_indices) in self.resolution_graph.inner[unnamed_child]
-                        .children()
-                        .unwrap()
+                    for (name_opt, use_leaf_indices) in
+                        self.resolution_graph[unnamed_child].children().unwrap()
                     {
                         if name_opt.is_none() {
                             continue;
                         }
                         for named_child_idx in use_leaf_indices {
-                            let ident = self.resolution_graph.inner[*named_child_idx]
-                                .name()
-                                .unwrap();
-                            let imports = match &self.resolution_graph.inner[*named_child_idx] {
+                            let ident = self.resolution_graph[*named_child_idx].name().unwrap();
+                            let imports = match &self.resolution_graph[*named_child_idx] {
                                 ResolutionNode::Leaf {
                                     leaf: Leaf::UseName(.., imports),
                                     ..
@@ -183,8 +178,8 @@ impl<'a, 'ast> ConflictChecker<'a, 'ast> {
                                         previous_ident,
                                         ident,
                                         self.resolution_graph.file(*import),
-                                        self.resolution_graph.inner[*import].name().unwrap(),
-                                        self.resolution_graph.inner[*import].item_hint(),
+                                        self.resolution_graph[*import].name().unwrap(),
+                                        self.resolution_graph[*import].item_hint(),
                                     ));
                                 }
                             }
@@ -207,17 +202,14 @@ impl<'a, 'ast> ConflictChecker<'a, 'ast> {
             conflicts.sort_by_key(|x| x.0);
         }
         for (name, conflicts) in name_conflicts.iter() {
-            if self.resolution_graph.inner[node]
+            if self.resolution_graph[node]
                 .children()
                 .map(|children| children.get(&Some(name)).is_some())
                 .unwrap_or_default()
             {
                 continue;
             }
-            for (original, duplicate) in conflicts
-                .iter()
-                .zip(conflicts.iter().skip(1))
-            {
+            for (original, duplicate) in conflicts.iter().zip(conflicts.iter().skip(1)) {
                 self.errors.push(crate::error::multiple_definition(
                     file,
                     original.1,

@@ -5,27 +5,26 @@ use crate::error::*;
 use crate::find_file::FileId;
 
 /// If a node overrides its own visibility, make a note of it in the parent node(s) as an "export".
-/// TODO: pub in enum: "not allowed because it is implied"
 /// claim: parent scopes are always already visited so no need for recursive behavior
 pub fn apply_visibility<'ast>(
     resolution_graph: &mut ResolutionGraph<'ast>,
     node: ResolutionIndex,
 ) -> Result<(), Diagnostic> {
-    let export_dest = if let Some(vis) = resolution_graph.inner[node].visibility() {
+    if let Some(vis) = resolution_graph[node].visibility() {
         use Vis::*;
         let file = resolution_graph.file(node);
-        match vis {
-            Pub(_) => apply_visibility_pub(resolution_graph, node),
+        let export_dest = match vis {
+            Pub(_) => apply_visibility_pub(resolution_graph, node, file, vis),
             // Crate(_) => apply_visibility_crate(resolution_graph, node),
             // Super(_) => apply_visibility_pub(resolution_graph, node),
             Restricted(r) => apply_visibility_in(resolution_graph, node, file, r),
-            // ExplicitInherited(_) => Ok(Some(resolution_graph.inner[node].parent().unwrap())),
-        }?
+            // ExplicitInherited(_) => Ok(Some(resolution_graph[node].parent().unwrap())),
+        }?;
+        resolution_graph.exports.insert(node, export_dest);
+        Ok(())
     } else {
-        return Ok(());
-    };
-    resolution_graph.exports.insert(node, export_dest);
-    Ok(())
+        Ok(())
+    }
 }
 
 fn apply_visibility_in<'ast>(
@@ -37,19 +36,19 @@ fn apply_visibility_in<'ast>(
     if let Some(leading_sep) = &r.path.leading_sep {
         return Err(incorrect_visibility_restriction(file, leading_sep.span()));
     }
-    let node_parent = resolution_graph.inner[node].parent().unwrap();
-    let ancestry = build_ancestry(resolution_graph, node);
+    let node_parent = resolution_graph[node].parent().unwrap();
+    let ancestry = build_ancestry(resolution_graph, node, true);
 
     let first_segment = r
         .path
         .segments
         .first()
         .expect("error if no first segment, this should never happen");
-    let mut export_dest = if first_segment == "crate" {
-        *ancestry.last().unwrap()
+    let mut ancestry_position = if first_segment == "crate" {
+        ancestry.len().saturating_sub(1)
     } else if first_segment == "super" {
-        if let Some(grandparent) = resolution_graph.inner[node_parent].parent() {
-            grandparent
+        if ancestry.len() >= 2 {
+            1
         } else {
             return Err(too_many_supers(file, first_segment));
         }
@@ -82,39 +81,41 @@ fn apply_visibility_in<'ast>(
             ));
         }
 
-        export_dest = if segment == "super" {
-            if let Some(export_dest_parent) = resolution_graph.inner[export_dest].parent() {
-                if !is_target_visible(resolution_graph, export_dest_parent, node_parent) {
+        ancestry_position = if segment == "super" {
+            // chained supers go up towards the root
+            if ancestry_position + 1 < ancestry.len() {
+                if !is_target_visible(
+                    resolution_graph,
+                    ancestry[ancestry_position + 1],
+                    node_parent,
+                ) {
                     return Err(scope_visibility(
                         file,
-                        &segment,
-                        if resolution_graph.inner[export_dest_parent]
-                            .parent()
-                            .is_none()
-                        {
-                            ItemHint::InternalNamedRootScope
-                        } else {
+                        segment.span(),
+                        resolution_graph[node].item_hint().unwrap(),
+                        if ancestry_position + 2 < ancestry.len() {
                             ItemHint::InternalNamedChildScope
+                        } else {
+                            ItemHint::InternalNamedRootScope
                         },
                     ));
                 }
-                export_dest_parent
+                ancestry_position + 1
             } else {
                 return Err(too_many_supers(file, &segment));
             }
         } else {
-            let export_dest_children: Vec<ResolutionIndex> = resolution_graph.inner[export_dest]
+            // a regular path goes down to some scope that is also an ancestor
+            let has_matching_child = resolution_graph[ancestry[ancestry_position]]
                 .children()
                 .and_then(|children| children.get(&Some(&segment)))
                 .map(|named_children| {
                     named_children
                         .iter()
-                        .filter(|child| resolution_graph.inner[**child].is_valid_use_path_segment())
-                        .cloned()
-                        .collect()
+                        .any(|child| resolution_graph[*child].is_valid_use_path_segment())
                 })
                 .unwrap_or_default();
-            if export_dest_children.is_empty() {
+            if !has_matching_child {
                 return Err(unresolved_item(
                     file,
                     r.path.segments.iter().nth(i),
@@ -122,48 +123,89 @@ fn apply_visibility_in<'ast>(
                     ItemHint::InternalNamedChildScope,
                     vec![],
                 ));
-            } else if let Some(export_dest_child) = export_dest_children
-                .iter()
-                .find(|child| ancestry.contains(child))
-            {
-                if !is_target_visible(resolution_graph, *export_dest_child, node_parent) {
-                    return Err(scope_visibility(
-                        file,
-                        &segment,
-                        ItemHint::InternalNamedChildScope,
-                    ));
-                }
-                *export_dest_child
-            } else {
+            } else if ancestry_position == 0 {
                 return Err(non_ancestral_visibility(
                     file,
                     &segment,
                     Some(&prev_segment),
                 ));
+            } else if resolution_graph[ancestry[ancestry_position - 1]]
+                .name()
+                .unwrap()
+                != segment
+            {
+                return Err(non_ancestral_visibility(
+                    file,
+                    &segment,
+                    Some(&prev_segment),
+                ));
+            } else {
+                if !is_target_visible(
+                    resolution_graph,
+                    ancestry[ancestry_position - 1],
+                    node_parent,
+                ) {
+                    return Err(scope_visibility(
+                        file,
+                        segment.span(),
+                        resolution_graph[node].item_hint().unwrap(),
+                        ItemHint::InternalNamedChildScope,
+                    ));
+                }
+                ancestry_position - 1
             }
         };
     }
     // TODO: are beyond root exports for a given path possible?
-    Ok(Some(export_dest))
+    Ok(Some(ancestry[ancestry_position]))
 }
 
-fn apply_visibility_pub<'ast>(
-    resolution_graph: &ResolutionGraph<'ast>,
+fn apply_visibility_pub(
+    resolution_graph: &ResolutionGraph<'_>,
     node: ResolutionIndex,
+    file: FileId,
+    vis: &Vis,
 ) -> Result<Option<ResolutionIndex>, Diagnostic> {
-    let parent = resolution_graph.inner[node].parent().unwrap();
-    let grandparent = resolution_graph.inner[parent].parent();
-    Ok(grandparent)
+    let ancestry = build_ancestry(resolution_graph, node, true);
+    if let Some(grandparent) = ancestry.iter().skip(1).next().copied() {
+        if !is_target_visible(
+            resolution_graph,
+            grandparent,
+            resolution_graph[node].parent().unwrap(),
+        ) {
+            Err(scope_visibility(
+                file,
+                vis.span(),
+                resolution_graph[node].item_hint().unwrap(),
+                if ancestry.len() > 2 {
+                    ItemHint::InternalNamedChildScope
+                } else {
+                    ItemHint::InternalNamedRootScope
+                },
+            ))
+        } else {
+            Ok(Some(grandparent))
+        }
+    } else {
+        if !resolution_graph[resolution_graph[node].parent().unwrap()].is_valid_use_path_segment() {
+            todo!("explicitly exporting fields beyond a root is not yet supported")
+        } else {
+            Ok(None)
+        }
+    }
 }
 
-fn build_ancestry<'ast>(
-    resolution_graph: &ResolutionGraph<'ast>,
+fn build_ancestry(
+    resolution_graph: &ResolutionGraph<'_>,
     node: ResolutionIndex,
+    segments_only: bool,
 ) -> Vec<ResolutionIndex> {
     let mut prev_parent = node;
     let mut ancestry = vec![];
-    while let Some(parent) = resolution_graph.inner[prev_parent].parent() {
-        ancestry.push(parent);
+    while let Some(parent) = resolution_graph[prev_parent].parent() {
+        if !segments_only || resolution_graph[parent].is_valid_use_path_segment() {
+            ancestry.push(parent);
+        }
         prev_parent = parent;
     }
     ancestry
@@ -184,19 +226,19 @@ fn build_ancestry<'ast>(
 /// * target == target_parent (use a::{self, b}, always visible)
 /// * target is actually a parent of target_parent (use super::super::b, always visible)
 /// * target_parent is a parent of dest_parent (use super::a, always visible)
-pub fn is_target_visible<'ast>(
-    resolution_graph: &ResolutionGraph<'ast>,
+pub fn is_target_visible(
+    resolution_graph: &ResolutionGraph<'_>,
     dest: ResolutionIndex,
     target: ResolutionIndex,
 ) -> bool {
-    let target_parent = if let Some(target_parent) = resolution_graph.inner[target].parent() {
+    let target_parent = if let Some(target_parent) = resolution_graph[target].parent() {
         target_parent
     } else {
         // this is necessarily a root
         return true;
     };
     if target_parent == target
-        || resolution_graph.inner[target_parent]
+        || resolution_graph[target_parent]
             .parent()
             .map(|g| g == target)
             .unwrap_or_default()
@@ -205,13 +247,13 @@ pub fn is_target_visible<'ast>(
         // self
         return true;
     }
-    let dest_ancestry = build_ancestry(resolution_graph, dest);
+    let dest_ancestry = build_ancestry(resolution_graph, dest, false);
     // targets in an ancestor of the use are always visible
     if dest_ancestry.contains(&target_parent) {
         return true;
     }
 
-    let target_parent_ancestry = build_ancestry(resolution_graph, target_parent);
+    let target_parent_ancestry = build_ancestry(resolution_graph, target_parent, false);
     resolution_graph
         .exports
         .get(&target)

@@ -22,7 +22,7 @@ impl<'ast> TracingContext<'ast> {
         leading_sep: Option<&'ast PathSep>,
     ) -> Self {
         let mut root = dest;
-        while let Some(parent) = resolution_graph.inner[root].parent() {
+        while let Some(parent) = resolution_graph[root].parent() {
             root = parent;
         }
         Self {
@@ -62,12 +62,12 @@ fn handle_special_ident<'ast>(
     } else if ident == "self" {
         Ok(Some(scope))
     } else if ident == "super" {
-        let mut use_grandparent = resolution_graph.inner[scope].parent();
+        let mut use_grandparent = resolution_graph[scope].parent();
         while use_grandparent
-            .map(|i| !resolution_graph.inner[i].is_valid_use_path_segment())
+            .map(|i| !resolution_graph[i].is_valid_use_path_segment())
             .unwrap_or_default()
         {
-            use_grandparent = resolution_graph.inner[use_grandparent.unwrap()].parent();
+            use_grandparent = resolution_graph[use_grandparent.unwrap()].parent();
         }
         if let Some(use_grandparent) = use_grandparent {
             Ok(Some(use_grandparent))
@@ -76,7 +76,7 @@ fn handle_special_ident<'ast>(
         }
     } else if ident == "crate" {
         let mut root = scope;
-        while let Some(next_parent) = resolution_graph.inner[root].parent() {
+        while let Some(next_parent) = resolution_graph[root].parent() {
             root = next_parent;
         }
         Ok(Some(root))
@@ -116,7 +116,7 @@ fn find_children_from_local_and_global<'ast>(
             ctx.file,
             &ident,
             resolution_graph.file(declaration_idx),
-            resolution_graph.inner[declaration_idx].name().unwrap(),
+            resolution_graph[declaration_idx].name().unwrap(),
             hint,
         ));
     }
@@ -132,7 +132,7 @@ fn find_children_from_local_and_global<'ast>(
             ctx.file,
             &ident,
             resolution_graph.file(declaration_idx),
-            resolution_graph.inner[declaration_idx].name().unwrap(),
+            resolution_graph[declaration_idx].name().unwrap(),
             hint,
         ));
     }
@@ -188,7 +188,7 @@ fn find_children_from_globs<'ast>(
             ctx.file,
             &ident,
             resolution_graph.file(declaration_idx),
-            resolution_graph.inner[declaration_idx].name().unwrap(),
+            resolution_graph[declaration_idx].name().unwrap(),
             hint,
         ))
     } else if local_from_globs.is_empty() {

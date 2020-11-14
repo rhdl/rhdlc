@@ -1,0 +1,12 @@
+error: field is not visible in root
+  ┌─ ./test/compile-fail/resolution/pub/field-beyond-struct/top.rhdl:2:14
+  │
+2 │     struct b(pub d);
+  │              ^^^
+
+error: field is not visible in mod
+  ┌─ ./test/compile-fail/resolution/pub/field-beyond-struct/top.rhdl:6:18
+  │
+6 │         struct g(pub super::d);
+  │                  ^^^
+

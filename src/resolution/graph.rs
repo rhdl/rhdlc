@@ -25,7 +25,7 @@ pub struct ResolutionGraph<'ast> {
 
 impl<'ast> ResolutionGraph<'ast> {
     pub fn add_node(&mut self, node: ResolutionNode<'ast>) -> ResolutionIndex {
-        let idx = self.inner.len();
+        let idx = ResolutionIndex(self.inner.len());
         if let ResolutionNode::Root { .. } = &node {
             self.roots.push(idx);
         }
@@ -35,23 +35,23 @@ impl<'ast> ResolutionGraph<'ast> {
     }
 
     pub fn add_child(&mut self, parent: ResolutionIndex, child: ResolutionIndex) {
-        let name = self.inner[child].name();
-        if let Some(children) = self.inner[parent].children_mut() {
+        let name = self[child].name();
+        if let Some(children) = self[parent].children_mut() {
             children.entry(name).or_default().push(child)
         }
     }
 
     pub fn node_indices(&self) -> impl Iterator<Item = ResolutionIndex> {
-        0..self.inner.len()
+        (0..self.inner.len()).map(|x| ResolutionIndex(x))
     }
 
     pub fn file(&self, node: ResolutionIndex) -> FileId {
-        let mut next_parent = match &self.inner[node] {
+        let mut next_parent = match &self[node] {
             ResolutionNode::Root { .. } => node,
             ResolutionNode::Leaf { parent, .. } | ResolutionNode::Branch { parent, .. } => *parent,
         };
         loop {
-            next_parent = match &self.inner[next_parent] {
+            next_parent = match &self[next_parent] {
                 ResolutionNode::Root { .. } => return self.content_files[&next_parent],
                 ResolutionNode::Branch {
                     branch: Branch::Mod(_),
@@ -71,7 +71,24 @@ impl<'ast> ResolutionGraph<'ast> {
     }
 }
 
-pub type ResolutionIndex = usize;
+impl<'ast> std::ops::Index<ResolutionIndex> for ResolutionGraph<'ast> {
+    type Output = ResolutionNode<'ast>;
+    fn index(&self, index: ResolutionIndex) -> &<Self as std::ops::Index<ResolutionIndex>>::Output {
+        &self.inner[index.0]
+    }
+}
+
+impl<'ast> std::ops::IndexMut<ResolutionIndex> for ResolutionGraph<'ast> {
+    fn index_mut(
+        &mut self,
+        index: ResolutionIndex,
+    ) -> &mut <Self as std::ops::Index<ResolutionIndex>>::Output {
+        &mut self.inner[index.0]
+    }
+}
+
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ResolutionIndex(usize);
 
 #[derive(Debug)]
 pub enum ResolutionNode<'ast> {
@@ -484,8 +501,8 @@ impl<'ast> ResolutionNode<'ast> {
                 Branch::Arch(..) => Some(ItemHint::Item),
             },
             ResolutionNode::Leaf { leaf, .. } => match leaf {
-                Leaf::NamedField(..) => None,
-                Leaf::UnnamedField(..) => None,
+                Leaf::NamedField(..) => Some(ItemHint::Field),
+                Leaf::UnnamedField(..) => Some(ItemHint::Field),
                 Leaf::Const(..) => Some(ItemHint::Var),
                 Leaf::TraitAlias(..) => Some(ItemHint::Trait),
                 Leaf::Type(..) => Some(ItemHint::Type),

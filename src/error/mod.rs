@@ -307,6 +307,8 @@ pub enum ItemHint {
     Var,
     /// a method or function
     Fn,
+    /// a field in an enum or struct
+    Field,
 }
 
 impl Display for ItemHint {
@@ -322,6 +324,7 @@ impl Display for ItemHint {
             Type => write!(f, "type"),
             Var => write!(f, "variable"),
             Fn => write!(f, "function"),
+            Field => write!(f, "field"),
         }
     }
 }
@@ -396,13 +399,15 @@ pub fn item_visibility(
         )])
 }
 
-pub fn scope_visibility(file_id: FileId, ident: &Ident, hint: ItemHint) -> Diagnostic {
+pub fn scope_visibility(
+    file_id: FileId,
+    span: Span,
+    item_hint: ItemHint,
+    scope_hint: ItemHint,
+) -> Diagnostic {
     Diagnostic::error()
-        .with_message(format!("item is not visible in {} `{}`", hint, ident))
-        .with_labels(vec![
-            Label::primary(file_id, ident.span()),
-        ])
-        .with_notes(vec![format!("modify the visibility of the immediate child module of `{}` that is an ancestor of this item", ident)])
+        .with_message(format!("{} is not visible in {}", item_hint, scope_hint))
+        .with_labels(vec![Label::primary(file_id, span)])
 }
 
 pub fn invalid_raw_identifier(file_id: FileId, ident: &Ident) -> Diagnostic {
