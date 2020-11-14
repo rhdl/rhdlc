@@ -16,10 +16,10 @@ pub fn apply_visibility<'ast>(
         let file = resolution_graph.file(node);
         match vis {
             Pub(_) => apply_visibility_pub(resolution_graph, node),
-            Crate(_) => apply_visibility_crate(resolution_graph, node),
-            Super(_) => apply_visibility_pub(resolution_graph, node),
+            // Crate(_) => apply_visibility_crate(resolution_graph, node),
+            // Super(_) => apply_visibility_pub(resolution_graph, node),
             Restricted(r) => apply_visibility_in(resolution_graph, node, file, r),
-            ExplicitInherited(_) => Ok(Some(resolution_graph.inner[node].parent().unwrap())),
+            // ExplicitInherited(_) => Ok(Some(resolution_graph.inner[node].parent().unwrap())),
         }?
     } else {
         return Ok(());
@@ -170,13 +170,13 @@ fn build_ancestry<'ast>(
 }
 
 /// TODO: https://github.com/rust-lang/rust/issues/53120
-fn apply_visibility_crate<'ast>(
-    resolution_graph: &ResolutionGraph<'ast>,
-    node: ResolutionIndex,
-) -> Result<Option<ResolutionIndex>, Diagnostic> {
-    let root = *build_ancestry(resolution_graph, node).last().unwrap();
-    Ok(Some(root))
-}
+// fn apply_visibility_crate<'ast>(
+//     resolution_graph: &ResolutionGraph<'ast>,
+//     node: ResolutionIndex,
+// ) -> Result<Option<ResolutionIndex>, Diagnostic> {
+//     let root = *build_ancestry(resolution_graph, node).last().unwrap();
+//     Ok(Some(root))
+// }
 
 /// Possibilities:
 /// * dest_parent == target_parent (self, always visible)
