@@ -11,7 +11,7 @@ use rhdl::{
 };
 
 use crate::error::*;
-use crate::resolution::{path::PathFinder, ResolutionGraph, ResolutionIndex};
+use crate::resolution::{path::r#type::PathFinder, ResolutionGraph, ResolutionIndex};
 
 pub struct TypeExistenceChecker<'a, 'ast> {
     pub resolution_graph: &'a ResolutionGraph<'ast>,

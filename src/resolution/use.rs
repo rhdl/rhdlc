@@ -2,7 +2,7 @@ use fxhash::FxHashSet as HashSet;
 use rhdl::ast::{UseTree, UseTreeRename};
 
 use super::{
-    path::{r#mut::PathFinder, TracingContext},
+    path::{simple::PathFinder, TracingContext},
     Branch, Leaf, ResolutionGraph, ResolutionIndex, ResolutionNode,
 };
 use crate::error::*;
