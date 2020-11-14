@@ -102,12 +102,12 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                         .map(|children_with_name| {
                             children_with_name
                                 .iter()
+                                .copied()
                                 .filter(|child| {
                                     !paths_only
-                                        || self.resolution_graph.inner[**child]
+                                        || self.resolution_graph.inner[*child]
                                             .is_valid_use_path_segment()
                                 })
-                                .cloned()
                                 .collect::<Vec<ResolutionIndex>>()
                         })
                         .unwrap_or_default();
@@ -225,12 +225,12 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                                     .map(|glob_src_children_with_name| {
                                         glob_src_children_with_name
                                             .iter()
+                                            .copied()
                                             .filter(|child| {
                                                 !paths_only
-                                                    || self.resolution_graph.inner[**child]
+                                                    || self.resolution_graph.inner[*child]
                                                         .is_valid_use_path_segment()
                                             })
-                                            .cloned()
                                             .collect::<Vec<ResolutionIndex>>()
                                     })
                                     .unwrap_or_default(),
@@ -277,12 +277,12 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                                 _ => None,
                             })
                             .flatten()
+                            .copied()
                             .filter(|child| {
                                 !paths_only
-                                    || self.resolution_graph.inner[**child]
+                                    || self.resolution_graph.inner[*child]
                                         .is_valid_use_path_segment()
                             })
-                            .cloned()
                             .collect()
                     })
                     .unwrap_or_default()

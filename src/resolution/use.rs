@@ -22,14 +22,10 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
             } => {}
             _ => return,
         }
-        self.trace_use_entry_reenterable(&mut TracingContext::new(
-            self.resolution_graph,
-            dest,
-            None,
-        ));
+        self.trace_use_recursive(&mut TracingContext::new(self.resolution_graph, dest, None));
     }
 
-    pub fn trace_use_entry_reenterable(&mut self, ctx: &mut TracingContext<'ast>) {
+    pub fn trace_use_recursive(&mut self, ctx: &mut TracingContext<'ast>) {
         let tree = match &self.resolution_graph.inner[ctx.dest] {
             ResolutionNode::Branch {
                 branch: Branch::Use(item_use),

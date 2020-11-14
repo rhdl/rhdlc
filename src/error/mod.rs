@@ -209,7 +209,7 @@ impl Display for DuplicateHint {
             Param => write!(f, "parameter"),
             Field => write!(f, "field"),
             NameBinding => write!(f, "name"),
-            Port => write!(f, "port")
+            Port => write!(f, "port"),
         }
     }
 }
