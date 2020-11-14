@@ -22,8 +22,8 @@ pub mod a {
                     }
                     pub(in super::super) fn n() {}
                     pub(in crate::a) enum o {}
-                    pub(super) struct p {}
-                    pub(crate) fn q() {}
+                    pub(in super) struct p {}
+                    pub(in crate) fn q() {}
                 }
                 pub struct f {}
                 impl f {
