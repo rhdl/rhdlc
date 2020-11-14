@@ -216,7 +216,6 @@ impl<'a, 'ast> ConflictChecker<'a, 'ast> {
             }
             for (original, duplicate) in conflicts
                 .iter()
-                .take(conflicts.len().saturating_sub(1))
                 .zip(conflicts.iter().skip(1))
             {
                 self.errors.push(crate::error::multiple_definition(
