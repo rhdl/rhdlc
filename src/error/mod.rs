@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use codespan::FileId;
 use codespan_reporting::diagnostic::{Diagnostic as CodespanDiagnostic, Label};
 use lalrpop_util::{lexer::Token, ParseError};
-use rhdl::ast::{Ident, ItemMod, PathSep, Span, Spanned, UseTreeGlob};
+use rhdl::ast::{Ident, ItemMod, PathSep, Span, Spanned, UseTreeGlob, Vis};
 
 pub type Diagnostic = CodespanDiagnostic<FileId>;
 
@@ -309,6 +309,8 @@ pub enum ItemHint {
     Fn,
     /// a field in an enum or struct
     Field,
+    /// a variant in an enum
+    Variant,
 }
 
 impl Display for ItemHint {
@@ -325,6 +327,7 @@ impl Display for ItemHint {
             Var => write!(f, "variable"),
             Fn => write!(f, "function"),
             Field => write!(f, "field"),
+            Variant => write!(f, "variant"),
         }
     }
 }

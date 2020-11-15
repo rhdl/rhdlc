@@ -194,6 +194,28 @@ impl<'ast> ResolutionNode<'ast> {
             branch: Branch::Mod { .. },
             ..
         }
+        | ResolutionNode::Branch {
+            branch: Branch::Enum { .. },
+            ..
+        }
+        | ResolutionNode::Root { .. })
+    }
+
+    pub fn is_valid_pub_path_segment(&self) -> bool {
+        matches!(self,
+        ResolutionNode::Branch {
+            branch: Branch::Mod { .. },
+            ..
+        }
+        | ResolutionNode::Root { .. })
+    }
+
+    pub fn is_valid_type_path_segment(&self) -> bool {
+        matches!(self,
+        ResolutionNode::Branch {
+            branch: Branch::Mod { .. },
+            ..
+        }
         | ResolutionNode::Root { .. })
     }
 
@@ -496,7 +518,7 @@ impl<'ast> ResolutionNode<'ast> {
                 Branch::Fn(..) => Some(ItemHint::Fn),
                 Branch::Struct(..) => Some(ItemHint::Type),
                 Branch::Enum(..) => Some(ItemHint::Type),
-                Branch::Variant(..) => None,
+                Branch::Variant(..) => Some(ItemHint::Variant),
                 Branch::Use(..) => None,
                 Branch::Arch(..) => Some(ItemHint::Item),
             },

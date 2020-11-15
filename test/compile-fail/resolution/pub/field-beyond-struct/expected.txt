@@ -1,12 +1,30 @@
 error: field is not visible in root
-  ┌─ ./test/compile-fail/resolution/pub/field-beyond-struct/top.rhdl:2:14
+  ┌─ ./test/compile-fail/resolution/pub/field-beyond-struct/top.rhdl:3:14
   │
-2 │     struct b(pub d);
+3 │     struct b(pub x);
   │              ^^^
 
 error: field is not visible in mod
   ┌─ ./test/compile-fail/resolution/pub/field-beyond-struct/top.rhdl:6:18
   │
-6 │         struct g(pub super::d);
+6 │         struct g(pub super::x);
   │                  ^^^
+
+error: field is not visible in root
+  ┌─ ./test/compile-fail/resolution/pub/field-beyond-struct/top.rhdl:9:14
+  │
+9 │     struct i(pub(in super) x);
+  │              ^^^^^^^^^^^^^
+
+error: field is not visible in root
+   ┌─ ./test/compile-fail/resolution/pub/field-beyond-struct/top.rhdl:10:16
+   │
+10 │     enum j { a(pub x), b { pub inner: x } }
+   │                ^^^
+
+error: field is not visible in root
+   ┌─ ./test/compile-fail/resolution/pub/field-beyond-struct/top.rhdl:10:28
+   │
+10 │     enum j { a(pub x), b { pub inner: x } }
+   │                            ^^^
 

@@ -228,6 +228,9 @@ impl<'a, 'ast> Visit<'ast> for ScopeBuilder<'a, 'ast> {
             children: HashMap::default(),
         });
         self.resolution_graph.add_child(parent, item_idx);
+        self.scope_ancestry.push(item_idx);
+        self.visit_variant_type(&variant.variant_type);
+        self.scope_ancestry.pop();
     }
 
     fn visit_item_impl(&mut self, item_impl: &'ast ItemImpl) {

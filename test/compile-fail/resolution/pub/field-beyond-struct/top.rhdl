@@ -1,9 +1,12 @@
 mod a {
-    struct b(pub d);
-    struct d {}
-    pub struct e(pub d);
+    struct x {}
+    struct b(pub x);
+    pub struct e(pub x);
     mod f {
-        struct g(pub super::d);
-        pub struct h(pub super::d);
+        struct g(pub super::x);
+        pub struct h(pub super::x);
     }
+    struct i(pub(in super) x);
+    enum j { a(pub x), b { pub inner: x } }
+    pub enum k { a(pub x), b { pub inner: x } }
 }

@@ -4,9 +4,9 @@ warning: the mod `e` is imported multiple times
  5 │                 pub mod e {
    │                         - declared here
    ·
-47 │ use a::b::c::d::e;
+49 │ use a::b::c::d::e;
    │                 - imported here
-48 │ use a::b::c::d::e as E;
+50 │ use a::b::c::d::e as E;
    │                      ^ reimported here
 
 warning: the function `h` is imported multiple times
@@ -15,9 +15,9 @@ warning: the function `h` is imported multiple times
 38 │             pub fn h() {}
    │                    - declared here
    ·
-51 │ use a::b::c::h;
+53 │ use a::b::c::h;
    │              - imported here
-52 │ use crate::a::b::c::{h as H, d as D};
+54 │ use crate::a::b::c::{h as H, d as D};
    │                           ^ reimported here
 
 warning: the function `I1` is imported multiple times

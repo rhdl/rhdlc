@@ -37,7 +37,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
             vec![dest_scope]
         } else {
             let mut dest_scope = dest;
-            while !self.resolution_graph[dest_scope].is_valid_use_path_segment() {
+            while !self.resolution_graph[dest_scope].is_valid_type_path_segment() {
                 dest_scope = self.resolution_graph[dest_scope].parent().unwrap();
             }
 
@@ -99,7 +99,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                                 .copied()
                                 .filter(|child| {
                                     !paths_only
-                                        || self.resolution_graph[*child].is_valid_use_path_segment()
+                                        || self.resolution_graph[*child].is_valid_type_path_segment()
                                 })
                                 .collect::<Vec<ResolutionIndex>>()
                         })
@@ -127,7 +127,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                     .iter()
                     .filter(|child| **child != ctx.root)
                     .filter(|child| {
-                        !paths_only || self.resolution_graph[**child].is_valid_use_path_segment()
+                        !paths_only || self.resolution_graph[**child].is_valid_type_path_segment()
                     })
                     .copied()
                     .collect()
@@ -220,7 +220,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                                             .filter(|child| {
                                                 !paths_only
                                                     || self.resolution_graph[*child]
-                                                        .is_valid_use_path_segment()
+                                                        .is_valid_type_path_segment()
                                             })
                                             .collect::<Vec<ResolutionIndex>>()
                                     })
@@ -271,7 +271,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                             .copied()
                             .filter(|child| {
                                 !paths_only
-                                    || self.resolution_graph[*child].is_valid_use_path_segment()
+                                    || self.resolution_graph[*child].is_valid_type_path_segment()
                             })
                             .collect()
                     })

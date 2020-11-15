@@ -1,6 +1,6 @@
 use rhdl::ast::{Spanned, Vis, VisRestricted};
 
-use super::{ResolutionGraph, ResolutionIndex};
+use super::{Branch, ResolutionGraph, ResolutionIndex, ResolutionNode};
 use crate::error::*;
 use crate::find_file::FileId;
 
@@ -21,10 +21,8 @@ pub fn apply_visibility<'ast>(
             // ExplicitInherited(_) => Ok(Some(resolution_graph[node].parent().unwrap())),
         }?;
         resolution_graph.exports.insert(node, export_dest);
-        Ok(())
-    } else {
-        Ok(())
     }
+    Ok(())
 }
 
 fn apply_visibility_in<'ast>(
@@ -56,7 +54,7 @@ fn apply_visibility_in<'ast>(
         if r.path.segments.len() > 1 {
             return Err(non_ancestral_visibility(file, &first_segment, None));
         }
-        return Ok(Some(node_parent));
+        0
     } else {
         return Err(incorrect_visibility_restriction(file, first_segment.span()));
     };
@@ -112,7 +110,7 @@ fn apply_visibility_in<'ast>(
                 .map(|named_children| {
                     named_children
                         .iter()
-                        .any(|child| resolution_graph[*child].is_valid_use_path_segment())
+                        .any(|child| resolution_graph[*child].is_valid_pub_path_segment())
                 })
                 .unwrap_or_default();
             if !has_matching_child {
@@ -156,8 +154,25 @@ fn apply_visibility_in<'ast>(
             }
         };
     }
-    // TODO: are beyond root exports for a given path possible?
-    Ok(Some(ancestry[ancestry_position]))
+    if !is_target_visible(
+        resolution_graph,
+        ancestry[ancestry_position],
+        visibility_parent(resolution_graph, node),
+    ) {
+        Err(scope_visibility(
+            file,
+            r.span(),
+            resolution_graph[node].item_hint().unwrap(),
+            if ancestry.len() > 2 {
+                ItemHint::InternalNamedChildScope
+            } else {
+                ItemHint::InternalNamedRootScope
+            },
+        ))
+    } else {
+        // TODO: are beyond root exports for a given path possible?
+        Ok(Some(ancestry[ancestry_position]))
+    }
 }
 
 fn apply_visibility_pub(
@@ -171,7 +186,7 @@ fn apply_visibility_pub(
         if !is_target_visible(
             resolution_graph,
             grandparent,
-            resolution_graph[node].parent().unwrap(),
+            visibility_parent(resolution_graph, node),
         ) {
             Err(scope_visibility(
                 file,
@@ -187,11 +202,31 @@ fn apply_visibility_pub(
             Ok(Some(grandparent))
         }
     } else {
-        if !resolution_graph[resolution_graph[node].parent().unwrap()].is_valid_use_path_segment() {
+        if !resolution_graph[resolution_graph[node].parent().unwrap()].is_valid_pub_path_segment() {
             todo!("explicitly exporting fields beyond a root is not yet supported")
         } else {
             Ok(None)
         }
+    }
+}
+
+fn visibility_parent(
+    resolution_graph: &ResolutionGraph<'_>,
+    node: ResolutionIndex,
+) -> ResolutionIndex {
+    let parent = resolution_graph[node].parent();
+    if parent.is_none() {
+        return node;
+    }
+    let parent = parent.unwrap();
+    if let ResolutionNode::Branch {
+        branch: Branch::Variant(_),
+        ..
+    } = resolution_graph[parent]
+    {
+        resolution_graph[parent].parent().unwrap()
+    } else {
+        parent
     }
 }
 
@@ -203,7 +238,7 @@ fn build_ancestry(
     let mut prev_parent = node;
     let mut ancestry = vec![];
     while let Some(parent) = resolution_graph[prev_parent].parent() {
-        if !segments_only || resolution_graph[parent].is_valid_use_path_segment() {
+        if !segments_only || resolution_graph[parent].is_valid_pub_path_segment() {
             ancestry.push(parent);
         }
         prev_parent = parent;
@@ -266,5 +301,16 @@ pub fn is_target_visible(
                 })
                 .unwrap_or(true)
         })
-        .unwrap_or_default()
+        .unwrap_or_else(|| {
+            // variants are visible by default
+            if let ResolutionNode::Branch {
+                branch: Branch::Variant(_),
+                ..
+            } = resolution_graph[target]
+            {
+                true
+            } else {
+                false
+            }
+        })
 }
