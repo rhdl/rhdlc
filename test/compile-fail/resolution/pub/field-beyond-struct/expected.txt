@@ -19,12 +19,18 @@ error: field is not visible in root
 error: field is not visible in root
    ┌─ ./test/compile-fail/resolution/pub/field-beyond-struct/top.rhdl:10:16
    │
-10 │     enum j { a(pub x), b { pub inner: x } }
+10 │     enum j { a(pub x), b { pub inner: x }, c(pub(crate) x) }
    │                ^^^
 
 error: field is not visible in root
    ┌─ ./test/compile-fail/resolution/pub/field-beyond-struct/top.rhdl:10:28
    │
-10 │     enum j { a(pub x), b { pub inner: x } }
+10 │     enum j { a(pub x), b { pub inner: x }, c(pub(crate) x) }
    │                            ^^^
+
+error: field is not visible in root
+   ┌─ ./test/compile-fail/resolution/pub/field-beyond-struct/top.rhdl:10:46
+   │
+10 │     enum j { a(pub x), b { pub inner: x }, c(pub(crate) x) }
+   │                                              ^^^^^^^^^^
 

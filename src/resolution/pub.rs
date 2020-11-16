@@ -15,10 +15,11 @@ pub fn apply_visibility<'ast>(
         let file = resolution_graph.file(node);
         let export_dest = match vis {
             Pub(_) => apply_visibility_pub(resolution_graph, node, file, vis),
-            // Crate(_) => apply_visibility_crate(resolution_graph, node),
-            // Super(_) => apply_visibility_pub(resolution_graph, node),
+            Crate(_) => apply_visibility_crate(resolution_graph, node, file, vis),
+            Super(_) => apply_visibility_pub(resolution_graph, node, file, vis),
             Restricted(r) => apply_visibility_in(resolution_graph, node, file, r),
-            // ExplicitInherited(_) => Ok(Some(resolution_graph[node].parent().unwrap())),
+            LowerSelf(_) => Ok(Some(resolution_graph[node].parent().unwrap())),
+            Priv(_) => Ok(Some(resolution_graph[node].parent().unwrap())),
         }?;
         resolution_graph.exports.insert(node, export_dest);
     }
@@ -210,6 +211,30 @@ fn apply_visibility_pub(
     }
 }
 
+/// TODO: https://github.com/rust-lang/rust/issues/53120
+fn apply_visibility_crate<'ast>(
+    resolution_graph: &ResolutionGraph<'ast>,
+    node: ResolutionIndex,
+    file: FileId,
+    vis: &Vis,
+) -> Result<Option<ResolutionIndex>, Diagnostic> {
+    let root = *build_ancestry(resolution_graph, node, true).last().unwrap();
+    if !is_target_visible(
+        resolution_graph,
+        root,
+        visibility_parent(resolution_graph, node),
+    ) {
+        Err(scope_visibility(
+            file,
+            vis.span(),
+            resolution_graph[node].item_hint().unwrap(),
+            ItemHint::InternalNamedRootScope,
+        ))
+    } else {
+        Ok(Some(root))
+    }
+}
+
 fn visibility_parent(
     resolution_graph: &ResolutionGraph<'_>,
     node: ResolutionIndex,
@@ -245,15 +270,6 @@ fn build_ancestry(
     }
     ancestry
 }
-
-/// TODO: https://github.com/rust-lang/rust/issues/53120
-// fn apply_visibility_crate<'ast>(
-//     resolution_graph: &ResolutionGraph<'ast>,
-//     node: ResolutionIndex,
-// ) -> Result<Option<ResolutionIndex>, Diagnostic> {
-//     let root = *build_ancestry(resolution_graph, node).last().unwrap();
-//     Ok(Some(root))
-// }
 
 /// Possibilities:
 /// * dest_parent == target_parent (self, always visible)
@@ -302,15 +318,13 @@ pub fn is_target_visible(
                 .unwrap_or(true)
         })
         .unwrap_or_else(|| {
-            // variants are visible by default
-            if let ResolutionNode::Branch {
+            // variants and enum fields are visible by default
+            matches!(resolution_graph[target], ResolutionNode::Branch {
                 branch: Branch::Variant(_),
                 ..
-            } = resolution_graph[target]
-            {
-                true
-            } else {
-                false
-            }
+            }) || matches!(resolution_graph[target_parent], ResolutionNode::Branch {
+                branch: Branch::Variant(_),
+                ..
+            })
         })
 }

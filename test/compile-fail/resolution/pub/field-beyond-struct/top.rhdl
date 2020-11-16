@@ -7,6 +7,6 @@ mod a {
         pub struct h(pub super::x);
     }
     struct i(pub(in super) x);
-    enum j { a(pub x), b { pub inner: x } }
-    pub enum k { a(pub x), b { pub inner: x } }
+    enum j { a(pub x), b { pub inner: x }, c(pub(crate) x) }
+    pub enum k { a(pub x), b { pub inner: x }, c(pub(crate) x) }
 }

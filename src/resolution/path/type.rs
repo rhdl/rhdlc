@@ -99,7 +99,8 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                                 .copied()
                                 .filter(|child| {
                                     !paths_only
-                                        || self.resolution_graph[*child].is_valid_type_path_segment()
+                                        || self.resolution_graph[*child]
+                                            .is_valid_type_path_segment()
                                 })
                                 .collect::<Vec<ResolutionIndex>>()
                         })

@@ -1,4 +1,4 @@
-//! TODO: error for items that could do visibilty hole punching:
+//! TODO: error for items that could do visibility hole punching:
 //! * function with params that are not as visible as the function
 //! * structs with members that are not as visible as their types (?)
 
