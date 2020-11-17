@@ -1,8 +1,8 @@
 error: the port `clk` is defined multiple times
   ┌─ ./test/compile-fail/resolution/conflicts/entity/top.rhdl:2:8
   │
-2 │     in clk: bit,
+2 │     in clk: x,
   │        --- previous definition of the port `clk` here
-3 │     out clk: bit
+3 │     out clk: x
   │         ^^^ `clk` redefined here
 

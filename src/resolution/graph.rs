@@ -241,12 +241,20 @@ impl<'ast> ResolutionNode<'ast> {
             branch: Branch::Enum { .. },
             ..
         }
+        | ResolutionNode::Branch {
+            branch: Branch::Arch { .. },
+            ..
+        }
         | ResolutionNode::Leaf {
             leaf: Leaf::Const { .. },
             ..
         }
         | ResolutionNode::Leaf {
             leaf: Leaf::TraitAlias(_),
+            ..
+        }
+        | ResolutionNode::Leaf {
+            leaf: Leaf::Entity(_),
             ..
         }
         | ResolutionNode::Leaf {
@@ -400,8 +408,10 @@ impl<'ast> ResolutionNode<'ast> {
         })
     }
 
-    pub fn is_trait_or_impl(&self) -> bool {
-        self.is_trait() || self.is_impl()
+    pub fn is_trait_or_impl_or_arch(&self) -> bool {
+        self.is_trait()
+            || self.is_impl()
+            || matches!(self, ResolutionNode::Branch{branch: Branch::Arch(_), ..})
     }
 
     pub fn is_type(&self) -> bool {

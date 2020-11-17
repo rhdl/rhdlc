@@ -4,8 +4,8 @@
 
 use rhdl::{
     ast::{
-        File, GenericParam, GenericParamType, Generics, Item, ItemFn, ItemImpl, ItemMod, ItemType,
-        PathSegment, TypePath,
+        Block, File, GenericParam, GenericParamType, Generics, Item, ItemArch, ItemEntity, ItemFn,
+        ItemImpl, ItemMod, ItemTrait, ItemType, PathSegment, TypePath,
     },
     visit::Visit,
 };
@@ -29,10 +29,10 @@ impl<'a, 'ast> TypeExistenceChecker<'a, 'ast> {
     pub fn visit_all(&mut self) {
         for scope in self.resolution_graph.node_indices() {
             if self.resolution_graph[scope].is_type_existence_checking_candidate() {
-                // Cannot directly visit trait/impl content because RHDL needs the generics from the parent scope
+                // Cannot directly visit these because RHDL needs the generics from the parent scope
                 if self.resolution_graph[scope]
                     .parent()
-                    .map(|parent| self.resolution_graph[parent].is_trait_or_impl())
+                    .map(|parent| self.resolution_graph[parent].is_trait_or_impl_or_arch())
                     .unwrap_or_default()
                 {
                     continue;
@@ -41,7 +41,7 @@ impl<'a, 'ast> TypeExistenceChecker<'a, 'ast> {
                     resolution_graph: self.resolution_graph,
                     errors: self.errors,
                     scope,
-                    generics: Default::default(),
+                    generics: vec![],
                 };
                 self.resolution_graph[scope].visit(&mut ctx_checker);
             }
@@ -50,7 +50,7 @@ impl<'a, 'ast> TypeExistenceChecker<'a, 'ast> {
 }
 
 impl<'a, 'c, 'ast> TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
-    fn find_trait(&mut self, path: &TypePath) -> Result<ResolutionIndex, Diagnostic> {
+    fn find_trait(&self, path: &TypePath) -> Result<ResolutionIndex, Diagnostic> {
         // TODO: private trait in public trait declaration
         let res = {
             let mut path_finder = PathFinder {
@@ -61,14 +61,15 @@ impl<'a, 'c, 'ast> TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
         };
         res.and_then(|matching| {
             // Check that there is a single trait match
-            let num_matching = matching
+            let matching_traits = matching
                 .iter()
-                .filter(|i| self.resolution_graph[**i].is_trait())
-                .count();
-            if num_matching != 1 {
+                .copied()
+                .filter(|i| self.resolution_graph[*i].is_trait())
+                .collect::<Vec<ResolutionIndex>>();
+            if matching_traits.len() != 1 {
                 let file = self.resolution_graph.file(self.scope);
                 let ident = &path.segments.last().as_ref().unwrap().ident;
-                if num_matching == 0 {
+                if matching_traits.is_empty() {
                     Err(unexpected_item(
                         file,
                         ident,
@@ -86,14 +87,12 @@ impl<'a, 'c, 'ast> TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
                     ))
                 }
             } else {
-                Ok(*matching
-                    .iter()
-                    .find(|i| self.resolution_graph[**i].is_trait())
-                    .unwrap())
+                Ok(*matching_traits.first().unwrap())
             }
         })
     }
 }
+
 impl<'a, 'c, 'ast> Visit<'c> for TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
     fn visit_file(&mut self, _file: &'c File) {
         // purposefully do nothing so we don't recurse out of this scope
@@ -127,18 +126,50 @@ impl<'a, 'c, 'ast> Visit<'c> for TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
         }
     }
 
-    // fn visit_item_trait(&mut self, item_trait: &'c ItemTrait) {
-    //     self.visit_generics(&item_trait.generics);
-    //     item_trait
-    //         .supertraits
-    //         .iter()
-    //         .for_each(|supertrait| self.visit_type_param_bound(supertrait));
-    //     item_trait
-    //         .items
-    //         .iter()
-    //         .for_each(|item| self.visit_trait_item(item));
-    //     self.generics.pop();
-    // }
+    fn visit_item_arch(&mut self, item_arch: &'c ItemArch) {
+        if let Some(generics) = &item_arch.generics {
+            self.visit_generics(generics);
+        }
+        self.visit_type_path(&item_arch.entity);
+        item_arch
+            .items
+            .iter()
+            .for_each(|item| self.visit_arch_item(item));
+        if item_arch.generics.is_some() {
+            self.generics.pop();
+        }
+    }
+
+    fn visit_item_entity(&mut self, item_entity: &'c ItemEntity) {
+        if let Some(generics) = &item_entity.generics {
+            self.visit_generics(generics);
+        }
+        item_entity
+            .ports
+            .iter()
+            .for_each(|port| self.visit_port(port));
+        if item_entity.generics.is_some() {
+            self.generics.pop();
+        }
+    }
+
+    fn visit_item_trait(&mut self, item_trait: &'c ItemTrait) {
+        if let Some(generics) = &item_trait.generics {
+            self.visit_generics(generics);
+        }
+        if let Some((_, super_traits)) = &item_trait.super_traits {
+            for super_trait in super_traits.iter() {
+                if let Err(err) = self.find_trait(super_trait) {
+                    self.errors.push(err)
+                }
+            }
+        }
+        item_trait
+            .items
+            .iter()
+            .for_each(|item| self.visit_trait_item(item));
+        self.generics.pop();
+    }
 
     fn visit_item_type(&mut self, item_type: &'c ItemType) {
         if let Some(ref generics) = item_type.generics {
@@ -152,13 +183,23 @@ impl<'a, 'c, 'ast> Visit<'c> for TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
 
     fn visit_item_fn(&mut self, item_fn: &'c ItemFn) {
         self.visit_sig(&item_fn.sig);
-        // TODO: special handling is needed for body, to avoid recursing into local items like structs
-        // this can be done in a way that would also work for impl methods
         self.visit_block(&item_fn.block);
-        // also: can inferrability be handled now?, that would be cool
+        // TODO: can inferrability be handled now?, that would be cool
         // pop off signature generics
         if item_fn.sig.generics.is_some() {
             self.generics.pop();
+        }
+    }
+
+    fn visit_block(&mut self, block: &'c Block) {
+        for stmt in block.statements.iter() {
+            use rhdl::ast::Stmt::*;
+            match stmt {
+                Local(l) => self.visit_stmt_local(l),
+                Expr(e) => self.visit_stmt_expr(e),
+                // Skip local items
+                Item(_) => continue,
+            }
         }
     }
 
@@ -201,7 +242,7 @@ impl<'a, 'c, 'ast> Visit<'c> for TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
             generic_args: None,
         }) = type_path.segments.last()
         {
-            if ident == "Self" && self.resolution_graph[self.scope].is_trait_or_impl() {
+            if ident == "Self" && self.resolution_graph[self.scope].is_trait_or_impl_or_arch() {
                 return;
             }
             // Check that there is a single type match

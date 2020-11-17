@@ -1,4 +1,5 @@
 entity Top {
-    in clk: bit,
-    out clk: bit
+    in clk: x,
+    out clk: x
 }
+struct x {}

@@ -30,7 +30,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
             let mut dest_scope = dest;
             if let Some((parent, true)) = self.resolution_graph[dest_scope]
                 .parent()
-                .map(|parent| (parent, self.resolution_graph[parent].is_trait_or_impl()))
+                .map(|parent| (parent, self.resolution_graph[parent].is_trait_or_impl_or_arch()))
             {
                 dest_scope = parent;
             }
