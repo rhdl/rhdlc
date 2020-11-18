@@ -1,5 +1,6 @@
 error: expected trait, found type `b`
- --> top.rhdl:1:12
-  |
-1 | struct a<T: b> {}
-  |             ^ not a trait
+  ┌─ ./test/compile-fail/resolution/type-existence/not-trait/top.rhdl:1:13
+  │
+1 │ struct a<T: b> {}
+  │             ^ not a trait
+

@@ -1,6 +1,6 @@
 use fxhash::FxHashSet as HashSet;
 
-use rhdl::ast::{Ident, TypePath};
+use rhdl::ast::{Generics, Ident, TypePath};
 
 use super::TracingContext;
 use crate::error::*;
@@ -16,6 +16,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
         &mut self,
         dest: ResolutionIndex,
         path: &'a TypePath,
+        generics: &'a Vec<&'ast Generics>,
     ) -> Result<Vec<ResolutionIndex>, Diagnostic> {
         self.visited_glob_scopes.clear();
         let mut ctx = TracingContext::new(self.resolution_graph, dest, path.leading_sep.as_ref());
@@ -26,26 +27,34 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
             .map(|seg| seg.ident == "Self")
             .unwrap_or_default()
         {
-            // Seed with applicable traits/impls
-            let mut dest_scope = dest;
-            if let Some((parent, true)) = self.resolution_graph[dest_scope]
-                .parent()
-                .map(|parent| (parent, self.resolution_graph[parent].is_trait_or_impl_or_arch()))
-            {
-                dest_scope = parent;
+            // TODO: also allow type/trait aliases to use Self
+            if let Some((parent, true)) = self.resolution_graph[dest].parent().map(|parent| {
+                (
+                    parent,
+                    self.resolution_graph[parent].is_trait_or_impl_or_arch(),
+                )
+            }) {
+                vec![parent]
+            } else {
+                return Err(unresolved_item(
+                    self.resolution_graph.file(dest),
+                    None,
+                    &path.segments.first().unwrap().ident,
+                    ItemHint::Type,
+                    vec![],
+                ));
             }
-            vec![dest_scope]
         } else {
             let mut dest_scope = dest;
             while !self.resolution_graph[dest_scope].is_valid_type_path_segment() {
                 dest_scope = self.resolution_graph[dest_scope].parent().unwrap();
             }
 
-            // Also seed this scope
+            // Also seed this scope because we can have local items
             if let ResolutionNode::Branch {
                 branch: Branch::Fn(_),
                 ..
-            } = &self.resolution_graph[ctx.dest]
+            } = &self.resolution_graph[dest]
             {
                 vec![dest, dest_scope]
             } else {

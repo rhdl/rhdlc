@@ -1,5 +1,6 @@
 error: expected type, found trait `X`
- --> top.rhdl:2:9
-  |
-2 | type a = X;
-  |          ^ not a type
+  ┌─ ./test/compile-fail/resolution/type-existence/type-alias-trait-not-type/top.rhdl:2:10
+  │
+2 │ type a = X;
+  │          ^ not a type
+

@@ -50,46 +50,52 @@ impl<'a, 'ast> TypeExistenceChecker<'a, 'ast> {
 }
 
 impl<'a, 'c, 'ast> TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
-    fn find_trait(&self, path: &TypePath) -> Result<ResolutionIndex, Diagnostic> {
+    fn find_in_scope<F>(
+        &self,
+        path: &TypePath,
+        filter: F,
+        hint: ItemHint,
+    ) -> Result<ResolutionIndex, Diagnostic>
+    where
+        F: Fn(ResolutionIndex) -> bool,
+    {
         // TODO: private trait in public trait declaration
-        let res = {
+        let found = {
             let mut path_finder = PathFinder {
                 resolution_graph: &self.resolution_graph,
                 visited_glob_scopes: Default::default(),
             };
-            path_finder.find_at_path(self.scope, &path)
-        };
-        res.and_then(|matching| {
-            // Check that there is a single trait match
-            let matching_traits = matching
-                .iter()
-                .copied()
-                .filter(|i| self.resolution_graph[*i].is_trait())
-                .collect::<Vec<ResolutionIndex>>();
-            if matching_traits.len() != 1 {
-                let file = self.resolution_graph.file(self.scope);
-                let ident = &path.segments.last().as_ref().unwrap().ident;
-                if matching_traits.is_empty() {
-                    Err(unexpected_item(
-                        file,
-                        ident,
-                        ItemHint::Trait,
-                        matching
-                            .first()
-                            .and_then(|x| self.resolution_graph[*x].item_hint())
-                            .unwrap_or(ItemHint::Item),
-                    ))
-                } else {
-                    Err(disambiguation_needed(
-                        file,
-                        ident,
-                        AmbiguitySource::Item(ItemHint::Trait),
-                    ))
-                }
+            path_finder.find_at_path(self.scope, &path, &self.generics)
+        }?;
+        // Check that there is a single match
+        let matching = found
+            .iter()
+            .copied()
+            .filter(|i| filter(*i))
+            .collect::<Vec<ResolutionIndex>>();
+        if matching.len() != 1 {
+            let file = self.resolution_graph.file(self.scope);
+            let ident = &path.segments.last().as_ref().unwrap().ident;
+            if matching.is_empty() {
+                Err(unexpected_item(
+                    file,
+                    ident,
+                    hint,
+                    found
+                        .first()
+                        .and_then(|x| self.resolution_graph[*x].item_hint())
+                        .unwrap(),
+                ))
             } else {
-                Ok(*matching_traits.first().unwrap())
+                Err(disambiguation_needed(
+                    file,
+                    ident,
+                    AmbiguitySource::Item(hint),
+                ))
             }
-        })
+        } else {
+            Ok(*matching.first().unwrap())
+        }
     }
 }
 
@@ -111,7 +117,11 @@ impl<'a, 'c, 'ast> Visit<'c> for TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
             self.visit_generics(generics);
         }
         if let Some((of_ty, _for)) = &item_impl.of {
-            if let Err(err) = self.find_trait(of_ty) {
+            if let Err(err) = self.find_in_scope(
+                of_ty,
+                |i| self.resolution_graph[i].is_trait(),
+                ItemHint::Trait,
+            ) {
                 self.errors.push(err)
             }
             self.visit_type_path(of_ty)
@@ -159,7 +169,11 @@ impl<'a, 'c, 'ast> Visit<'c> for TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
         }
         if let Some((_, super_traits)) = &item_trait.super_traits {
             for super_trait in super_traits.iter() {
-                if let Err(err) = self.find_trait(super_trait) {
+                if let Err(err) = self.find_in_scope(
+                    super_trait,
+                    |i| self.resolution_graph[i].is_trait(),
+                    ItemHint::Trait,
+                ) {
                     self.errors.push(err)
                 }
             }
@@ -185,7 +199,6 @@ impl<'a, 'c, 'ast> Visit<'c> for TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
         self.visit_sig(&item_fn.sig);
         self.visit_block(&item_fn.block);
         // TODO: can inferrability be handled now?, that would be cool
-        // pop off signature generics
         if item_fn.sig.generics.is_some() {
             self.generics.pop();
         }
@@ -213,7 +226,11 @@ impl<'a, 'c, 'ast> Visit<'c> for TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
     fn visit_generic_param_type(&mut self, generic_type_param: &'c GenericParamType) {
         if let Some((_, bounds)) = &generic_type_param.bounds {
             for type_path in bounds.iter() {
-                if let Err(err) = self.find_trait(type_path) {
+                if let Err(err) = self.find_in_scope(
+                    type_path,
+                    |i| self.resolution_graph[i].is_trait(),
+                    ItemHint::Trait,
+                ) {
                     self.errors.push(err)
                 }
                 for seg in type_path.segments.iter() {
@@ -224,82 +241,12 @@ impl<'a, 'c, 'ast> Visit<'c> for TypeExistenceCheckerVisitor<'a, 'c, 'ast> {
     }
 
     fn visit_type_path(&mut self, type_path: &'c TypePath) {
-        type_path
-            .segments
-            .iter()
-            .rev()
-            .enumerate()
-            .filter(|(_, seg)| seg.generic_args.is_some())
-            .for_each(|(i, seg)| {
-                if i != 0 {
-                    todo!("error for path arguments not at the end of a path");
-                }
-                self.visit_generic_args(seg.generic_args.as_ref().unwrap())
-            });
-
-        if let Some(PathSegment {
-            ident,
-            generic_args: None,
-        }) = type_path.segments.last()
-        {
-            if ident == "Self" && self.resolution_graph[self.scope].is_trait_or_impl_or_arch() {
-                return;
-            }
-            // Check that there is a single type match
-            // TODO: need *concrete* types + generics here.
-            // * is_type includes type aliases which could actually point to trait
-            // * also need to skip self so the type alias doesn't point to itself
-            // * also avoid T that uses T in its type param bound
-            let is_type_param = self.generics.iter().rev().any(|generics| {
-                generics.params.iter().any(|param| {
-                    if let GenericParam::Type(GenericParamType {
-                        ident: param_type_ident,
-                        ..
-                    }) = param
-                    {
-                        ident == param_type_ident
-                    } else {
-                        false
-                    }
-                })
-            });
-            if is_type_param {
-                return;
-            }
-        }
-
-        let mut path_finder = PathFinder {
-            resolution_graph: &self.resolution_graph,
-            visited_glob_scopes: Default::default(),
-        };
-        let matching = match path_finder.find_at_path(self.scope, &type_path) {
-            Ok(matching) => matching,
-            Err(err) => return self.errors.push(err),
-        };
-        let num_matching = matching
-            .iter()
-            .filter(|i| self.resolution_graph[**i].is_type())
-            .count();
-        if num_matching != 1 {
-            let file = self.resolution_graph.file(self.scope);
-            let ident = &type_path.segments.iter().last().unwrap().ident;
-            if num_matching == 0 {
-                self.errors.push(unexpected_item(
-                    file,
-                    &ident,
-                    ItemHint::Type,
-                    matching
-                        .first()
-                        .and_then(|x| self.resolution_graph[*x].item_hint())
-                        .unwrap_or(ItemHint::Item),
-                ));
-            } else if num_matching > 1 {
-                self.errors.push(disambiguation_needed(
-                    file,
-                    ident,
-                    AmbiguitySource::Item(ItemHint::Type),
-                ));
-            }
+        if let Err(err) = self.find_in_scope(
+            &type_path,
+            |i| self.resolution_graph[i].is_type(),
+            ItemHint::Type,
+        ) {
+            self.errors.push(err);
         }
     }
 }

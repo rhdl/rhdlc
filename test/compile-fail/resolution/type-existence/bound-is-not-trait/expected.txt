@@ -1,5 +1,6 @@
 error: expected trait, found type `X`
- --> top.rhdl:2:8
-  |
-2 | fn a<T: X>() {}
-  |         ^ not a trait
+  ┌─ ./test/compile-fail/resolution/type-existence/bound-is-not-trait/top.rhdl:2:9
+  │
+2 │ fn a<T: X>() {}
+  │         ^ not a trait
+

@@ -94,10 +94,10 @@ mod test {
         fail_test_looper("./test/compile-fail/resolution/conflicts")
     }
 
-    // #[test]
-    // fn compile_fail_resolution_type_existence() {
-    //     fail_test_looper("./test/compile-fail/resolution/type-existence")
-    // }
+    #[test]
+    fn compile_fail_resolution_type_existence() {
+        fail_test_looper("./test/compile-fail/resolution/type-existence")
+    }
 
     /// TODO: consider allowing these identifiers at the parser level and blocking them during resolution
     #[test]

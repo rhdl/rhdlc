@@ -1,10 +1,12 @@
 error: expected type, found mod `X`
- --> top.rhdl:3:8
-  |
-3 | fn a(x: X) {
-  |         ^ not a type
+  ┌─ ./test/compile-fail/resolution/type-existence/fn-unknown-struct/top.rhdl:3:9
+  │
+3 │ fn a(x: X) {
+  │         ^ not a type
+
 error: unresolved item `Y`
- --> top.rhdl:4:11
-  |
-4 |     let y: Y = Y {};
-  |            ^ no `Y` item
+  ┌─ ./test/compile-fail/resolution/type-existence/fn-unknown-struct/top.rhdl:4:12
+  │
+4 │     let y: Y = Y {};
+  │            ^ no `Y` item
+
