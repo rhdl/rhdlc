@@ -21,14 +21,11 @@ jobs:
         with:
           version: '0.14.2'
           args: '--features no-color -- --nocapture --test-threads 1'
+          out-type: Lcov
       - name: Upload to codecov.io
         uses: codecov/codecov-action@v1
         with:
           token: ${{secrets.CODECOV_TOKEN}}
-      - name: Coveralls
-        uses: coverallsapp/github-action@master
-        with:
-          github-token: ${{ secrets.COVERALLS_TOKEN }}
       - name: Archive code coverage results
         uses: actions/upload-artifact@v1
         with:
