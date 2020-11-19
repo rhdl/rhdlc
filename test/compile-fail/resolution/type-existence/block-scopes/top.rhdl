@@ -1,0 +1,6 @@
+fn a() {
+    {
+        struct x {}
+    }
+    struct y(x);
+}

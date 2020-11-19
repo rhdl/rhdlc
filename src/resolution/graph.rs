@@ -1,9 +1,9 @@
 use fxhash::FxHashMap as HashMap;
 use rhdl::{
     ast::{
-        Ident, ItemArch, ItemConst, ItemEntity, ItemEnum, ItemFn, ItemImpl, ItemMod, ItemStruct,
-        ItemTrait, ItemTraitAlias, ItemType, ItemUse, NamedField, UnnamedField, UseTreeGlob,
-        UseTreeName, UseTreeRename, Variant, Vis,
+        Block, Ident, ItemArch, ItemConst, ItemEntity, ItemEnum, ItemFn, ItemImpl, ItemMod,
+        ItemStruct, ItemTrait, ItemTraitAlias, ItemType, ItemUse, NamedField, UnnamedField,
+        UseTreeGlob, UseTreeName, UseTreeRename, Variant, Vis,
     },
     visit::Visit,
 };
@@ -169,6 +169,10 @@ impl<'ast> ResolutionNode<'ast> {
                 branch: Branch::Impl(_),
                 ..
             }
+            | ResolutionNode::Branch {
+                branch: Branch::Block(_),
+                ..
+            }
             | ResolutionNode::Leaf {
                 leaf: Leaf::UseName(..),
                 ..
@@ -184,7 +188,8 @@ impl<'ast> ResolutionNode<'ast> {
             | ResolutionNode::Leaf {
                 leaf: Leaf::Entity(..),
                 ..
-            } => None,
+            }
+            => None,
         }
     }
 
@@ -368,6 +373,10 @@ impl<'ast> ResolutionNode<'ast> {
             | ResolutionNode::Branch {
                 branch: Trait(_), ..
             }
+            | ResolutionNode::Branch {
+                branch: Branch::Block(_),
+                ..
+            }
             | ResolutionNode::Leaf {
                 leaf: TraitAlias(_),
                 ..
@@ -473,6 +482,7 @@ impl<'ast> ResolutionNode<'ast> {
                 Branch::Variant(v) => Some(&v.ident),
                 Branch::Use(_) => None,
                 Branch::Arch(_) => None,
+                Branch::Block(_) => None,
             },
             ResolutionNode::Leaf { leaf, .. } => match leaf {
                 Leaf::NamedField(f) => Some(&f.ident),
@@ -503,6 +513,7 @@ impl<'ast> ResolutionNode<'ast> {
                 Branch::Variant(var) => v.visit_variant(var),
                 Branch::Use(u) => v.visit_item_use(u),
                 Branch::Arch(a) => v.visit_item_arch(a),
+                Branch::Block(b) => v.visit_block(b),
             },
             ResolutionNode::Leaf { leaf, .. } => match leaf {
                 Leaf::NamedField(f) => v.visit_named_field(f),
@@ -530,6 +541,7 @@ impl<'ast> ResolutionNode<'ast> {
                 Branch::Enum(..) => Some(ItemHint::Type),
                 Branch::Variant(..) => Some(ItemHint::Variant),
                 Branch::Use(..) => None,
+                Branch::Block(..) => None,
                 Branch::Arch(..) => Some(ItemHint::Item),
             },
             ResolutionNode::Leaf { leaf, .. } => match leaf {
@@ -565,6 +577,7 @@ pub enum Branch<'ast> {
     Arch(&'ast ItemArch),
     // TODO: split trait children down into leaves
     Trait(&'ast ItemTrait),
+    Block(&'ast Block),
 }
 
 #[derive(Debug)]
