@@ -1,6 +1,6 @@
 # Rust Hardware Design Language (RHDL)
 
-![rhdlc](https://github.com/rhdl/rhdlc/workflows/rhdlc/badge.svg) [![codecov](https://codecov.io/gh/rhdl/rhdlc/branch/master/graph/badge.svg)](https://codecov.io/gh/rhdl/rhdlc)[![coveralls](https://coveralls.io/repos/github/rhdl/rhdlc/badge.svg?branch=master)](https://coveralls.io/github/rhdl/rhdlc?branch=master)
+![rhdlc](https://github.com/rhdl/rhdlc/workflows/rhdlc/badge.svg) [![codecov](https://codecov.io/gh/rhdl/rhdlc/branch/master/graph/badge.svg)](https://codecov.io/gh/rhdl/rhdlc)
 
 An experiment in using Rust syntax to describe hardware.
 
