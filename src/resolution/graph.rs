@@ -111,13 +111,19 @@ pub enum ResolutionNode<'ast> {
 
 impl<'ast> ResolutionNode<'ast> {
     pub fn visibility(&self) -> Option<&Vis> {
-        let mut visitor = VisibilityVisitor { vis: None };
+        let mut visitor = VisibilityVisitor {
+            vis: None,
+            block_visited: !matches!(self, ResolutionNode::Branch{branch: Branch::Block(_), ..}),
+        };
         self.visit(&mut visitor);
         visitor.vis
     }
 
     pub fn generics(&self) -> Option<&Generics> {
-        let mut visitor = GenericsVisitor { generics: None };
+        let mut visitor = GenericsVisitor {
+            generics: None,
+            block_visited: !matches!(self, ResolutionNode::Branch{branch: Branch::Block(_), ..}),
+        };
         self.visit(&mut visitor);
         visitor.generics
     }
@@ -177,6 +183,10 @@ impl<'ast> ResolutionNode<'ast> {
         }
         | ResolutionNode::Branch {
             branch: Branch::Arch { .. },
+            ..
+        }
+        | ResolutionNode::Branch {
+            branch: Branch::Block { .. },
             ..
         }
         | ResolutionNode::Leaf {
@@ -527,8 +537,10 @@ macro_rules! node_only_visitor {
         struct $name<'ast> {
             $(
                 $member: $ty
-            ),*
+            ),*,
+            block_visited: bool,
         }
+
         impl<'ast> Visit<'ast> for $name<'ast> {
             fn visit_file(&mut self, _file: &'ast File) {
                 // purposefully do nothing so we don't recurse out of this scope
@@ -597,6 +609,13 @@ macro_rules! node_only_visitor {
                 // purposefully do nothing else so we don't recurse out of this scope
             }
 
+            fn visit_block(&mut self, block: &'ast Block) {
+                if !self.block_visited {
+                    self.block_visited = true;
+                    block.statements.iter().for_each(|stmt| self.visit_stmt(stmt));
+                }
+            }
+
             fn visit_item_trait(&mut self, item_trait: &'ast ItemTrait) {
                 if let Some(vis) = &item_trait.vis {
                     self.visit_vis(vis);
@@ -627,9 +646,6 @@ node_only_visitor! {
 node_only_visitor! {
     VisibilityVisitor { vis: Option<&'ast Vis> },
     fn visit_vis(&mut self, vis: &'ast Vis) {
-        if self.vis.is_some() {
-            panic!("already visited");
-        }
         self.vis = self.vis.or(Some(vis));
     }
 }

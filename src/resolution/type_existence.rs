@@ -4,14 +4,16 @@
 
 use rhdl::{
     ast::{
-        Block, File, GenericParamType, Generics, Item, ItemArch, ItemEntity, ItemFn, ItemImpl,
-        ItemMod, ItemTrait, ItemType, TypePath,
+        Block, File, GenericParam, GenericParamType, Generics, Item, ItemArch, ItemImpl, ItemMod,
+        ItemTrait, Qualifier, TypePath,
     },
     visit::Visit,
 };
 
 use crate::error::*;
-use crate::resolution::{path::r#type::PathFinder, ResolutionGraph, ResolutionIndex};
+use crate::resolution::{
+    path::r#type::PathFinder, Branch, ResolutionGraph, ResolutionIndex, ResolutionNode,
+};
 
 pub struct TypeExistenceChecker<'a, 'ast> {
     pub resolution_graph: &'a ResolutionGraph<'ast>,
@@ -22,6 +24,7 @@ struct TypeExistenceCheckerVisitor<'a, 'ast> {
     resolution_graph: &'a ResolutionGraph<'ast>,
     errors: &'a mut Vec<Diagnostic>,
     scope: ResolutionIndex,
+    block_visited: bool,
 }
 
 impl<'a, 'ast> TypeExistenceChecker<'a, 'ast> {
@@ -32,6 +35,7 @@ impl<'a, 'ast> TypeExistenceChecker<'a, 'ast> {
                     resolution_graph: self.resolution_graph,
                     errors: self.errors,
                     scope,
+                    block_visited: !matches!(self.resolution_graph[scope], ResolutionNode::Branch{branch: Branch::Block(_), ..}),
                 };
                 self.resolution_graph[scope].visit(&mut ctx_checker);
             }
@@ -114,13 +118,8 @@ impl<'a, 'ast> Visit<'ast> for TypeExistenceCheckerVisitor<'a, 'ast> {
             ) {
                 self.errors.push(err)
             }
-            self.visit_type_path(of_ty)
         }
         self.visit_type(&item_impl.ty);
-        // item_impl
-        //     .items
-        //     .iter()
-        //     .for_each(|item| self.visit_impl_item(item));
     }
 
     fn visit_item_arch(&mut self, item_arch: &'ast ItemArch) {
@@ -128,10 +127,6 @@ impl<'a, 'ast> Visit<'ast> for TypeExistenceCheckerVisitor<'a, 'ast> {
             self.visit_generics(generics);
         }
         self.visit_type_path(&item_arch.entity);
-        // item_arch
-        //     .items
-        //     .iter()
-        //     .for_each(|item| self.visit_arch_item(item));
     }
 
     fn visit_item_trait(&mut self, item_trait: &'ast ItemTrait) {
@@ -149,10 +144,29 @@ impl<'a, 'ast> Visit<'ast> for TypeExistenceCheckerVisitor<'a, 'ast> {
                 }
             }
         }
-        // item_trait
-        //     .items
-        //     .iter()
-        //     .for_each(|item| self.visit_trait_item(item));
+    }
+
+    fn visit_qualifier(&mut self, qualifier: &'ast Qualifier) {
+        self.visit_type(&qualifier.ty);
+        if let Some((_, trait_path)) = &qualifier.cast {
+            if let Err(err) = self.find_in_scope(
+                trait_path,
+                |i| self.resolution_graph[i].is_trait(),
+                ItemHint::Trait,
+            ) {
+                self.errors.push(err)
+            }
+        }
+    }
+
+    fn visit_block(&mut self, block: &'ast Block) {
+        if !self.block_visited {
+            self.block_visited = true;
+            block
+                .statements
+                .iter()
+                .for_each(|stmt| self.visit_stmt(stmt));
+        }
     }
 
     fn visit_generics(&mut self, generics: &'ast Generics) {
@@ -181,9 +195,44 @@ impl<'a, 'ast> Visit<'ast> for TypeExistenceCheckerVisitor<'a, 'ast> {
     fn visit_type_path(&mut self, type_path: &'ast TypePath) {
         if let Err(err) = self.find_in_scope(
             &type_path,
-            |i| self.resolution_graph[i].is_type(),
+            |i| {
+                self.resolution_graph[i].is_type()
+                    || (type_path.segments.len() == 1
+                        && type_path
+                            .segments
+                            .first()
+                            .map(|seg| seg.ident == "Self")
+                            .unwrap_or_default()
+                        && self.resolution_graph[i].is_trait_or_impl_or_arch())
+            },
             ItemHint::Type,
         ) {
+            // Find a generic, if there is one
+            if type_path.segments.len() == 1 {
+                let first = &type_path.segments.first().unwrap();
+                if first.generic_args.is_none() {
+                    let mut current = self.scope;
+                    loop {
+                        if let Some(param) =
+                            self.resolution_graph[current]
+                                .generics()
+                                .and_then(|generics| {
+                                    generics
+                                        .params
+                                        .iter()
+                                        .filter(|g| matches!(g, GenericParam::Type(_)))
+                                        .find(|g| *g.ident() == first.ident)
+                                })
+                        {
+                            return;
+                        }
+                        current = self.resolution_graph[current].parent().unwrap();
+                        if self.resolution_graph[current].is_valid_pub_path_segment() {
+                            break;
+                        }
+                    }
+                }
+            }
             self.errors.push(err);
         }
     }

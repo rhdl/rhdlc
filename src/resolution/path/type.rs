@@ -1,10 +1,10 @@
 use fxhash::FxHashSet as HashSet;
 
-use rhdl::ast::{Generics, Ident, TypePath};
+use rhdl::ast::{GenericParam, Ident, TypePath};
 
 use super::TracingContext;
 use crate::error::*;
-use crate::resolution::{Branch, Leaf, ResolutionGraph, ResolutionIndex, ResolutionNode};
+use crate::resolution::{Leaf, ResolutionGraph, ResolutionIndex, ResolutionNode};
 
 pub struct PathFinder<'a, 'ast> {
     pub resolution_graph: &'a ResolutionGraph<'ast>,
@@ -59,6 +59,10 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
         for scope in scopes.iter().rev().copied() {
             let mut dfs_state = vec![scope];
             for (i, segment) in path.segments.iter().enumerate() {
+                // already seeded earlier
+                if i == 0 && segment.ident == "Self" {
+                    continue;
+                }
                 let mut results: Vec<Result<Vec<ResolutionIndex>, Diagnostic>> = dfs_state
                     .iter()
                     .map(|scope| {
@@ -87,7 +91,20 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
             }
             if !dfs_state.is_empty() {
                 return Ok(dfs_state);
-            } else if let Some(generics) = self.resolution_graph[scope].generics() {
+            } else if let Some(matching_generic) =
+                self.resolution_graph[scope]
+                    .generics()
+                    .and_then(|generics| {
+                        generics
+                            .params
+                            .iter()
+                            .filter(|g| matches!(g, GenericParam::Type(_)))
+                            .find(|g| *g.ident() == first.ident)
+                    })
+            {
+                if path.segments.len() != 1 {
+                    todo!("check generic children: {:#?}", matching_generic);
+                }
             }
         }
         return Err(unresolved_item(
