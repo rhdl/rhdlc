@@ -1,4 +1,4 @@
-error: unresolved item `b`
+error[E0425]: unresolved item `b`
   ┌─ ./test/compile-fail/resolution/type-existence/no-such-item/top.rhdl:1:11
   │
 1 │ fn a() -> b {}

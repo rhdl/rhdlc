@@ -1,4 +1,4 @@
-error: unresolved item `c`
+error[E0425]: unresolved item `c`
   ┌─ ./test/compile-fail/resolution/use/no-name-group/top.rhdl:5:12
   │
 5 │ use a::{b, c, self};

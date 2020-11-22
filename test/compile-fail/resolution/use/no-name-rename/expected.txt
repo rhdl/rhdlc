@@ -1,4 +1,4 @@
-error: unresolved item `b`
+error[E0425]: unresolved item `b`
   ┌─ ./test/compile-fail/resolution/use/no-name-rename/top.rhdl:3:8
   │
 3 │ use a::b as c;

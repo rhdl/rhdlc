@@ -1,0 +1,11 @@
+error: item `X` is private
+  ┌─ ./test/compile-fail/resolution/use/private-glob/top.rhdl:2:12
+  │
+2 │     struct X {}
+  │            - declared here
+  ·
+7 │ struct Y(X);
+  │          ^ item is private
+  │
+  = modify the visibility of `X` if you want to use it
+

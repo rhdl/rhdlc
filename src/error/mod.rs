@@ -251,6 +251,7 @@ impl Display for AmbiguitySource {
     }
 }
 
+pub const UNRESOLVED_ITEM_CODE: &str = "E0425";
 pub fn unresolved_item(
     file_id: FileId,
     previous_ident: Option<&Ident>,
@@ -280,6 +281,7 @@ pub fn unresolved_item(
         acc
     }));
     Diagnostic::error()
+        .with_code(UNRESOLVED_ITEM_CODE)
         .with_message(&format!("unresolved {} `{}`", hint, unresolved_ident))
         .with_labels(vec![
             Label::primary(file_id, unresolved_ident.span()).with_message(reference_msg)

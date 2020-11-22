@@ -1,4 +1,4 @@
-error: unresolved item `d`
+error[E0425]: unresolved item `d`
   ┌─ ./test/compile-fail/resolution/use/renamed-reentrant-tracing/top.rhdl:1:11
   │
 1 │ use a::b::d;

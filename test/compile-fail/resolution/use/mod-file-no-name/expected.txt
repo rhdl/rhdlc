@@ -1,4 +1,4 @@
-error: unresolved item `b`
+error[E0425]: unresolved item `b`
   ┌─ ./test/compile-fail/resolution/use/mod-file-no-name/top.rhdl:2:8
   │
 2 │ use a::b;

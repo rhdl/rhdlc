@@ -1,4 +1,4 @@
-error: unresolved item `X`
+error[E0425]: unresolved item `X`
   ┌─ ./test/compile-fail/resolution/use/use-item-in-fn/top.rhdl:3:9
   │
 3 │     use X as Y;

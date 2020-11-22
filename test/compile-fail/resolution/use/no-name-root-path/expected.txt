@@ -1,4 +1,4 @@
-error: unresolved crate `c`
+error[E0425]: unresolved crate `c`
   ┌─ ./test/compile-fail/resolution/use/no-name-root-path/top.rhdl:6:15
   │
 6 │         use ::c::d;

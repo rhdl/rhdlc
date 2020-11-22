@@ -1,4 +1,4 @@
-error: unresolved item `b`
+error[E0425]: unresolved item `b`
   ┌─ ./test/compile-fail/resolution/use/self-no-name/top.rhdl:3:14
   │
 3 │ use self::a::b;

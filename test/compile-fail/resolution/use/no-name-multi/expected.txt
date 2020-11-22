@@ -1,4 +1,4 @@
-error: unresolved item `c`
+error[E0425]: unresolved item `c`
   ┌─ ./test/compile-fail/resolution/use/no-name-multi/top.rhdl:7:8
   │
 7 │ use a::c;

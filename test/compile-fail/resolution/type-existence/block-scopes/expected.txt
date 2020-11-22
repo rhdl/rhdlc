@@ -1,4 +1,4 @@
-error: unresolved item `x`
+error[E0425]: unresolved item `x`
   ┌─ ./test/compile-fail/resolution/type-existence/block-scopes/top.rhdl:5:14
   │
 5 │     struct y(x);

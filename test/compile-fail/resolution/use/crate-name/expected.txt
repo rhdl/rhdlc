@@ -1,4 +1,4 @@
-error: unresolved item `a`
+error[E0425]: unresolved item `a`
   ┌─ ./test/compile-fail/resolution/use/crate-name/top.rhdl:1:12
   │
 1 │ use crate::a;

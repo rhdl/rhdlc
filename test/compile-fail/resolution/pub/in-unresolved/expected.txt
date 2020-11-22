@@ -1,4 +1,4 @@
-error: unresolved mod `b`
+error[E0425]: unresolved mod `b`
   ┌─ ./test/compile-fail/resolution/pub/in-unresolved/top.rhdl:1:15
   │
 1 │ pub(in crate::b) struct a {}

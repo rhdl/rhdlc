@@ -4,7 +4,7 @@ error: expected type, found mod `X`
 3 │ fn a(x: X) {
   │         ^ not a type
 
-error: unresolved item `Y`
+error[E0425]: unresolved item `Y`
   ┌─ ./test/compile-fail/resolution/type-existence/fn-unknown-struct/top.rhdl:4:12
   │
 4 │     let y: Y = Y {};

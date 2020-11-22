@@ -75,8 +75,23 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                     })
                     .collect();
 
-                // A scope was entered but nothing was found
-                if i != 0 && results.iter().all(|res| res.is_err()) {
+                if i == 0 {
+                    // first segment found
+                    if let Some(err) =
+                        results
+                            .iter()
+                            .filter_map(|res| res.as_ref().err())
+                            .find(|err| {
+                                if let Some(code) = &err.code {
+                                    code != UNRESOLVED_ITEM_CODE
+                                } else {
+                                    true
+                                }
+                            })
+                    {
+                        return Err(err.clone());
+                    }
+                } else if results.iter().all(|res| res.is_err()) {
                     return results.first().unwrap().clone();
                 }
                 dfs_state = results
