@@ -598,6 +598,9 @@ macro_rules! node_only_visitor {
             }
 
             fn visit_item_trait(&mut self, item_trait: &'ast ItemTrait) {
+                if let Some(vis) = &item_trait.vis {
+                    self.visit_vis(vis);
+                }
                 if let Some(generics) = &item_trait.generics {
                     self.visit_generics(generics);
                 }
