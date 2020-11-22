@@ -2,5 +2,5 @@ error: could not parse ./test/compile-fail/identifier/use-as-path-segment-keywor
   ┌─ ./test/compile-fail/identifier/use-as-path-segment-keyword/top.rhdl:2:10
   │
 2 │ use a as r#self;
-  │          ^^^^^^ expected any of ["NonKeywordIdentifier", "RawIdentifier"]
+  │          ^^^^^^ expected any of ["NonKeywordIdentifier", "RawIdentifier", "TokCrate", "TokLowerSelf", "TokPathSep", "TokSuper", "TokUpperSelf"]
 

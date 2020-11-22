@@ -1,9 +1,9 @@
 use fxhash::FxHashMap as HashMap;
 use rhdl::{
     ast::{
-        Block, Ident, ItemArch, ItemConst, ItemEntity, ItemEnum, ItemFn, ItemImpl, ItemMod,
-        ItemStruct, ItemTrait, ItemTraitAlias, ItemType, ItemUse, NamedField, UnnamedField,
-        UseTreeGlob, UseTreeName, UseTreeRename, Variant, Vis,
+        Block, File, Generics, Ident, Item, ItemArch, ItemConst, ItemEntity, ItemEnum, ItemFn,
+        ItemImpl, ItemMod, ItemStruct, ItemTrait, ItemTraitAlias, ItemType, ItemUse, NamedField,
+        UnnamedField, UseTreeGlob, UseTreeName, UseTreeRename, Variant, VariantType, Vis,
     },
     visit::Visit,
 };
@@ -111,86 +111,15 @@ pub enum ResolutionNode<'ast> {
 
 impl<'ast> ResolutionNode<'ast> {
     pub fn visibility(&self) -> Option<&Vis> {
-        match self {
-            ResolutionNode::Leaf {
-                leaf: Leaf::Const(ItemConst { vis, .. }),
-                ..
-            }
-            | ResolutionNode::Leaf {
-                leaf: Leaf::Type(ItemType { vis, .. }),
-                ..
-            }
-            | ResolutionNode::Branch {
-                branch: Branch::Fn(ItemFn { vis, .. }, ..),
-                ..
-            }
-            | ResolutionNode::Leaf {
-                leaf: Leaf::NamedField(NamedField { vis, .. }),
-                ..
-            }
-            | ResolutionNode::Leaf {
-                leaf: Leaf::UnnamedField(UnnamedField { vis, .. }),
-                ..
-            }
-            | ResolutionNode::Branch {
-                branch: Branch::Struct(ItemStruct { vis, .. }, ..),
-                ..
-            }
-            | ResolutionNode::Branch {
-                branch: Branch::Trait(ItemTrait { vis, .. }, ..),
-                ..
-            }
-            | ResolutionNode::Branch {
-                branch: Branch::Enum(ItemEnum { vis, .. }, ..),
-                ..
-            }
-            | ResolutionNode::Branch {
-                branch: Branch::Use(ItemUse { vis, .. }, ..),
-                ..
-            }
-            | ResolutionNode::Leaf {
-                leaf: Leaf::TraitAlias(ItemTraitAlias { vis, .. }, ..),
-                ..
-            }
-            | ResolutionNode::Branch {
-                branch: Branch::Mod(ItemMod { vis, .. }, ..),
-                ..
-            } => vis.as_ref(),
-            ResolutionNode::Branch {
-                branch: Branch::Variant(_),
-                ..
-            }
-            | ResolutionNode::Branch {
-                branch: Branch::Arch(..),
-                ..
-            }
-            | ResolutionNode::Root { .. }
-            | ResolutionNode::Branch {
-                branch: Branch::Impl(_),
-                ..
-            }
-            | ResolutionNode::Branch {
-                branch: Branch::Block(_),
-                ..
-            }
-            | ResolutionNode::Leaf {
-                leaf: Leaf::UseName(..),
-                ..
-            }
-            | ResolutionNode::Leaf {
-                leaf: Leaf::UseRename(..),
-                ..
-            }
-            | ResolutionNode::Leaf {
-                leaf: Leaf::UseGlob(..),
-                ..
-            }
-            | ResolutionNode::Leaf {
-                leaf: Leaf::Entity(..),
-                ..
-            }
-            => None,
-        }
+        let mut visitor = VisibilityVisitor { vis: None };
+        self.visit(&mut visitor);
+        visitor.vis
+    }
+
+    pub fn generics(&self) -> Option<&Generics> {
+        let mut visitor = GenericsVisitor { generics: None };
+        self.visit(&mut visitor);
+        visitor.generics
     }
 
     pub fn is_valid_use_path_segment(&self) -> bool {
@@ -591,4 +520,113 @@ pub enum Leaf<'ast> {
     NamedField(&'ast NamedField),
     UnnamedField(&'ast UnnamedField),
     Entity(&'ast ItemEntity),
+}
+
+macro_rules! node_only_visitor {
+    ($name: ident { $($member:ident : $ty: ty),* }, $visitor_override: item) => {
+        struct $name<'ast> {
+            $(
+                $member: $ty
+            ),*
+        }
+        impl<'ast> Visit<'ast> for $name<'ast> {
+            fn visit_file(&mut self, _file: &'ast File) {
+                // purposefully do nothing so we don't recurse out of this scope
+            }
+
+            fn visit_item_mod(&mut self, item_mod: &'ast ItemMod) {
+                if let Some(vis) = &item_mod.vis {
+                    self.visit_vis(vis);
+                }
+                self.visit_ident(&item_mod.ident);
+                // purposefully do nothing else so we don't recurse out of this scope
+            }
+
+            fn visit_item(&mut self, _item: &'ast Item) {
+                // purposefully do nothing so we don't recurse out of this scope
+            }
+
+            fn visit_item_struct(&mut self, item_struct: &'ast ItemStruct) {
+                if let Some(vis) = &item_struct.vis {
+                    self.visit_vis(vis);
+                }
+                self.visit_ident(&item_struct.ident);
+                if let Some(generics) = &item_struct.generics {
+                    self.visit_generics(generics);
+                }
+                // purposefully do nothing else so we don't recurse out of this scope
+            }
+
+            fn visit_item_enum(&mut self, item_enum: &'ast ItemEnum) {
+                if let Some(vis) = &item_enum.vis {
+                    self.visit_vis(vis);
+                }
+                self.visit_ident(&item_enum.ident);
+                if let Some(generics) = &item_enum.generics {
+                    self.visit_generics(generics);
+                }
+                // purposefully do nothing else so we don't recurse out of this scope
+            }
+
+            fn visit_variant(&mut self, variant: &'ast Variant) {
+                self.visit_ident(&variant.ident);
+                match &variant.variant_type {
+                    VariantType::Unit(u) => self.visit_variant_type_unit(u),
+                    VariantType::Discrim(d) => self.visit_variant_type_discrim(d),
+                    VariantType::Fields(_) => {}
+                }
+                // purposefully do nothing else so we don't recurse out of this scope
+            }
+
+            fn visit_item_impl(&mut self, item_impl: &'ast ItemImpl) {
+                if let Some(generics) = &item_impl.generics {
+                    self.visit_generics(generics);
+                }
+                if let Some((of_ty, _for)) = &item_impl.of {
+                    self.visit_type_path(of_ty)
+                }
+                self.visit_type(&item_impl.ty);
+                // purposefully do nothing else so we don't recurse out of this scope
+            }
+
+            fn visit_item_arch(&mut self, item_arch: &'ast ItemArch) {
+                if let Some(generics) = &item_arch.generics {
+                    self.visit_generics(generics);
+                }
+                self.visit_type_path(&item_arch.entity);
+                // purposefully do nothing else so we don't recurse out of this scope
+            }
+
+            fn visit_item_trait(&mut self, item_trait: &'ast ItemTrait) {
+                if let Some(generics) = &item_trait.generics {
+                    self.visit_generics(generics);
+                }
+                if let Some((_, super_traits)) = &item_trait.super_traits {
+                    for super_trait in super_traits.iter() {
+                        self.visit_type_path(super_trait);
+                    }
+                }
+                // purposefully do nothing else so we don't recurse out of this scope
+            }
+
+            $visitor_override
+        }
+    };
+}
+
+node_only_visitor! {
+    GenericsVisitor { generics: Option<&'ast Generics> },
+    fn visit_generics(&mut self, generics: &'ast Generics) {
+        self.generics = self.generics.or(Some(generics));
+    }
+}
+
+node_only_visitor! {
+    VisibilityVisitor { vis: Option<&'ast Vis> },
+    fn visit_vis(&mut self, vis: &'ast Vis) {
+        if self.vis.is_some() {
+            panic!("already visited");
+        }
+        self.vis = self.vis.or(Some(vis));
+    }
 }

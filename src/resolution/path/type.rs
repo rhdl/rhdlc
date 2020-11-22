@@ -16,12 +16,11 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
         &mut self,
         dest: ResolutionIndex,
         path: &'a TypePath,
-        generics: &'a Vec<&'ast Generics>,
     ) -> Result<Vec<ResolutionIndex>, Diagnostic> {
         self.visited_glob_scopes.clear();
         let mut ctx = TracingContext::new(self.resolution_graph, dest, path.leading_sep.as_ref());
 
-        let mut scopes = if path
+        let scopes = if path
             .segments
             .first()
             .map(|seg| seg.ident == "Self")
@@ -45,46 +44,61 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                 ));
             }
         } else {
-            let mut dest_scope = dest;
-            while !self.resolution_graph[dest_scope].is_valid_type_path_segment() {
-                dest_scope = self.resolution_graph[dest_scope].parent().unwrap();
+            let mut scopes = vec![dest];
+            while !self.resolution_graph[*scopes.last().unwrap()].is_valid_pub_path_segment() {
+                scopes.push(
+                    self.resolution_graph[*scopes.last().unwrap()]
+                        .parent()
+                        .unwrap(),
+                );
             }
-
-            // Also seed this scope because we can have local items
-            if let ResolutionNode::Branch {
-                branch: Branch::Fn(_),
-                ..
-            } = &self.resolution_graph[dest]
-            {
-                vec![dest, dest_scope]
-            } else {
-                vec![dest_scope]
-            }
+            scopes
         };
-        for (i, segment) in path.segments.iter().enumerate() {
-            if segment.ident == "Self" {
-                continue;
+        let first = path.segments.first().unwrap();
+        // DFS from each scope, followed by a check on that scope's generics
+        for scope in scopes.iter().rev().copied() {
+            let mut dfs_state = vec![scope];
+            for (i, segment) in path.segments.iter().enumerate() {
+                let mut results: Vec<Result<Vec<ResolutionIndex>, Diagnostic>> = dfs_state
+                    .iter()
+                    .map(|scope| {
+                        self.find_children(
+                            &ctx,
+                            *scope,
+                            &segment.ident,
+                            i + 1 != path.segments.len(),
+                        )
+                    })
+                    .collect();
+
+                // A scope was entered but nothing was found
+                if i != 0 && results.iter().all(|res| res.is_err()) {
+                    return results.first().unwrap().clone();
+                }
+                dfs_state = results
+                    .drain(..)
+                    .filter_map(|res| res.ok())
+                    .flatten()
+                    .collect();
+                if dfs_state.is_empty() {
+                    break;
+                }
+                ctx.previous_idents.push(&segment.ident);
             }
-            let mut results: Vec<Result<Vec<ResolutionIndex>, Diagnostic>> = scopes
-                .iter()
-                .map(|scope| {
-                    self.find_children(&ctx, *scope, &segment.ident, i + 1 != path.segments.len())
-                })
-                .collect();
-            if results.iter().all(|res| res.is_err()) {
-                return results.drain(..).next().unwrap();
+            if !dfs_state.is_empty() {
+                return Ok(dfs_state);
+            } else if let Some(generics) = self.resolution_graph[scope].generics() {
             }
-            scopes = results
-                .drain(..)
-                .filter_map(|res| res.ok())
-                .flatten()
-                .collect();
-            ctx.previous_idents.push(&segment.ident);
         }
-        Ok(scopes)
+        return Err(unresolved_item(
+            ctx.file,
+            None,
+            &first.ident,
+            ItemHint::Item,
+            vec![],
+        ));
     }
 
-    /// Ok is guaranteed to have >= 1 node, else an unresolved error will be returned
     pub fn find_children(
         &mut self,
         ctx: &TracingContext,

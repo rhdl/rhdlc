@@ -30,8 +30,8 @@ mod b {
     trait G {
         const Y: super::I = super::I {};
         type X;
-        fn a(&self) {}
-        fn c(&self) -> Self::X;
+        fn a(self) {}
+        fn c(self) -> Self::X;
     }
 
     struct H {}
@@ -40,11 +40,11 @@ mod b {
     }
     impl G for H {
         type X = Self;
-        fn a(&self) {
+        fn a(self) {
             Self::b();
         }
-        fn c(&self) -> Self::X {
-            *self
+        fn c(self) -> Self::X {
+            self
         }
     }
 
@@ -56,21 +56,21 @@ mod b {
     struct J<T> {
         t: T,
     }
-    impl<'a, T> J<T> {
-        fn x(&'a self) -> &'a T {
-            &self.t
+    impl<T> J<T> {
+        fn x(self) -> T {
+            self.t
         }
     }
-    impl<'a, T: G<X = X> + E, X> G for J<T> {
+    impl<T: G<X = X> + E, X> G for J<T> {
         type X = X;
 
-        fn a(&self) {
+        fn a(self) {
             let t = a::<T>(self.t);
-            <T as G>::a(&t)
+            <T as G>::a(t)
         }
 
-        fn c(&self) -> Self::X {
-            <T as G>::c(&self.t)
+        fn c(self) -> Self::X {
+            <T as G>::c(self.t)
         }
     }
 }

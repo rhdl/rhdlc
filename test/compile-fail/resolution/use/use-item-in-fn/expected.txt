@@ -1,0 +1,6 @@
+error: unresolved item `X`
+  ┌─ ./test/compile-fail/resolution/use/use-item-in-fn/top.rhdl:3:9
+  │
+3 │     use X as Y;
+  │         ^ no `X` item
+

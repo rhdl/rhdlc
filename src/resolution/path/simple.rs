@@ -9,9 +9,7 @@ use rhdl::{
     visit::Visit,
 };
 
-use super::super::{
-    r#use::UseResolver, Branch, Leaf, ResolutionGraph, ResolutionIndex, ResolutionNode,
-};
+use super::super::{r#use::UseResolver, Leaf, ResolutionGraph, ResolutionIndex, ResolutionNode};
 use super::TracingContext;
 use crate::error::*;
 
@@ -31,22 +29,23 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
         self.visited_glob_scopes.clear();
         let mut ctx = TracingContext::new(self.resolution_graph, dest, path.leading_sep.as_ref());
 
+        // TODO: align with the Rust compiler on this.
+        // It looks like they use only 1 scope seed
         let mut scopes = {
-            let mut dest_scope = dest;
-            while !self.resolution_graph[dest_scope].is_valid_use_path_segment() {
-                dest_scope = self.resolution_graph[dest_scope].parent().unwrap();
+            let mut scope = dest;
+            while !self.resolution_graph[scope].is_valid_pub_path_segment() {
+                scope = self.resolution_graph[scope].parent().unwrap();
             }
-
-            // Also seed this scope
-            if let ResolutionNode::Branch {
-                branch: Branch::Fn(_),
-                ..
-            } = &self.resolution_graph[ctx.dest]
-            {
-                vec![dest, dest_scope]
-            } else {
-                vec![dest_scope]
-            }
+            vec![scope]
+            // let mut scopes = vec![dest];
+            // while !self.resolution_graph[*scopes.last().unwrap()].is_valid_pub_path_segment() {
+            //     scopes.push(
+            //         self.resolution_graph[*scopes.last().unwrap()]
+            //             .parent()
+            //             .unwrap(),
+            //     );
+            // }
+            // scopes
         };
         for (i, segment) in path.segments.iter().enumerate() {
             // TODO: resolve hint precision regression in test/compile-fail/resolution/use/no-path
