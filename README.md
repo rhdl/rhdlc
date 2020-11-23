@@ -81,3 +81,25 @@ Make sure you've already built with `cargo build`. To look at changes for compil
 ```bash
 for i in test/compile-fail/resolution/use/*; do clear; ./target/debug/rhdlc ./$i/*.rhdl 2>&1 | diff -wrt --color=auto $i/expected.txt -; echo $i; read proceed; [ "$proceed" == "y" ] && ./target/debug/rhdlc ./$i/*.rhdl 2>$i/expected.txt; done
 ```
+
+
+### Fuzzing
+
+
+Install fuzzer:
+
+```
+cargo install afl
+```
+
+Seed fuzzer with tests:
+
+```
+for i in `find test/ -type f -name '*rhdl'`; do cp $i fuzz/$(echo $i | sed 's|/|-|g'); done
+```
+
+Run fuzzer:
+
+```
+cargo afl fuzz -i fuzz -o fuzz_state/ target/debug/rhdlc
+```
