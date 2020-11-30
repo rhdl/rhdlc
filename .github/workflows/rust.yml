@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v1
       - name: Install Z3
-        run: sudo apt-get install z3
+        run: sudo apt-get install libz3-dev
       - name: Build
         run: cargo build
       - name: Run cargo-tarpaulin
