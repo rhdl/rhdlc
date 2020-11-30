@@ -60,7 +60,8 @@ fn entry(src: FileContentProvider) -> String {
         emit(&mut writer, &config, &finder.file_graph.inner, &diagnostic).unwrap()
     });
 
-    let mut scope_builder = Resolver::from(&finder.file_graph);
+    let ctx = z3::Context::new(&z3::Config::new());
+    let mut scope_builder = Resolver::build(&finder.file_graph, &ctx);
     scope_builder.build_graph();
     scope_builder.check_graph();
     scope_builder.errors.iter().for_each(|diagnostic| {

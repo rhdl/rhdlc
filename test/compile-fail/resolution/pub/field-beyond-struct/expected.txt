@@ -1,36 +1,66 @@
-error: field is not visible in root
+error[E0449]: unnecessary visibility qualifier
   ┌─ ./test/compile-fail/resolution/pub/field-beyond-struct/top.rhdl:3:14
   │
 3 │     struct b(pub x);
   │              ^^^
 
-error: field is not visible in mod
+error[E0449]: unnecessary visibility qualifier
+  ┌─ ./test/compile-fail/resolution/pub/field-beyond-struct/top.rhdl:4:18
+  │
+4 │     pub struct e(pub x);
+  │                  ^^^
+
+error[E0449]: unnecessary visibility qualifier
   ┌─ ./test/compile-fail/resolution/pub/field-beyond-struct/top.rhdl:6:18
   │
 6 │         struct g(pub super::x);
   │                  ^^^
 
-error: field is not visible in root
+error[E0449]: unnecessary visibility qualifier
+  ┌─ ./test/compile-fail/resolution/pub/field-beyond-struct/top.rhdl:7:22
+  │
+7 │         pub struct h(pub super::x);
+  │                      ^^^
+
+error[E0449]: unnecessary visibility qualifier
   ┌─ ./test/compile-fail/resolution/pub/field-beyond-struct/top.rhdl:9:14
   │
 9 │     struct i(pub(in super) x);
   │              ^^^^^^^^^^^^^
 
-error: field is not visible in root
+error[E0449]: unnecessary visibility qualifier
    ┌─ ./test/compile-fail/resolution/pub/field-beyond-struct/top.rhdl:10:16
    │
 10 │     enum j { a(pub x), b { pub inner: x }, c(pub(crate) x) }
    │                ^^^
 
-error: field is not visible in root
+error[E0449]: unnecessary visibility qualifier
    ┌─ ./test/compile-fail/resolution/pub/field-beyond-struct/top.rhdl:10:28
    │
 10 │     enum j { a(pub x), b { pub inner: x }, c(pub(crate) x) }
    │                            ^^^
 
-error: field is not visible in root
+error[E0449]: unnecessary visibility qualifier
    ┌─ ./test/compile-fail/resolution/pub/field-beyond-struct/top.rhdl:10:46
    │
 10 │     enum j { a(pub x), b { pub inner: x }, c(pub(crate) x) }
    │                                              ^^^^^^^^^^
+
+error[E0449]: unnecessary visibility qualifier
+   ┌─ ./test/compile-fail/resolution/pub/field-beyond-struct/top.rhdl:11:20
+   │
+11 │     pub enum k { a(pub x), b { pub inner: x }, c(pub(crate) x) }
+   │                    ^^^
+
+error[E0449]: unnecessary visibility qualifier
+   ┌─ ./test/compile-fail/resolution/pub/field-beyond-struct/top.rhdl:11:32
+   │
+11 │     pub enum k { a(pub x), b { pub inner: x }, c(pub(crate) x) }
+   │                                ^^^
+
+error[E0449]: unnecessary visibility qualifier
+   ┌─ ./test/compile-fail/resolution/pub/field-beyond-struct/top.rhdl:11:50
+   │
+11 │     pub enum k { a(pub x), b { pub inner: x }, c(pub(crate) x) }
+   │                                                  ^^^^^^^^^^
 

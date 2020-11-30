@@ -1,7 +1,3 @@
-//! TODO: error for items that could do visibility hole punching:
-//! * function with params that are not as visible as the function
-//! * structs with members that are not as visible as their types (?)
-
 use rhdl::{
     ast::{
         Block, File, GenericParam, GenericParamType, Generics, Item, ItemArch, ItemImpl, ItemMod,
@@ -11,17 +7,20 @@ use rhdl::{
 };
 
 use crate::error::*;
+use crate::resolution::r#pub::VisibilitySolver;
 use crate::resolution::{
     path::r#type::PathFinder, Branch, ResolutionGraph, ResolutionIndex, ResolutionNode,
 };
 
 pub struct TypeExistenceChecker<'a, 'ast> {
     pub resolution_graph: &'a ResolutionGraph<'ast>,
+    pub vis_solver: &'a VisibilitySolver<'ast>,
     pub errors: &'a mut Vec<Diagnostic>,
 }
 
 struct TypeExistenceCheckerVisitor<'a, 'ast> {
     resolution_graph: &'a ResolutionGraph<'ast>,
+    vis_solver: &'a VisibilitySolver<'ast>,
     errors: &'a mut Vec<Diagnostic>,
     scope: ResolutionIndex,
     block_visited: bool,
@@ -33,6 +32,7 @@ impl<'a, 'ast> TypeExistenceChecker<'a, 'ast> {
             if self.resolution_graph[scope].is_type_existence_checking_candidate() {
                 let mut ctx_checker = TypeExistenceCheckerVisitor {
                     resolution_graph: self.resolution_graph,
+                    vis_solver: &self.vis_solver,
                     errors: self.errors,
                     scope,
                     block_visited: !matches!(self.resolution_graph[scope], ResolutionNode::Branch{branch: Branch::Block(_), ..}),
@@ -57,6 +57,7 @@ impl<'a, 'ast> TypeExistenceCheckerVisitor<'a, 'ast> {
         let found = {
             let mut path_finder = PathFinder {
                 resolution_graph: &self.resolution_graph,
+                vis_solver: &self.vis_solver,
                 visited_glob_scopes: Default::default(),
             };
             path_finder.find_at_path(self.scope, &path)

@@ -1,3 +1,4 @@
+use crate::resolution::r#pub::VisibilitySolver;
 use rhdl::ast::Ident;
 use rhdl::ast::PathSep;
 
@@ -37,6 +38,7 @@ impl<'ast> TracingContext<'ast> {
 
 fn handle_special_ident<'ast>(
     resolution_graph: &ResolutionGraph,
+    vis_solver: &VisibilitySolver<'ast>,
     ctx: &TracingContext<'ast>,
     scope: ResolutionIndex,
     ident: &Ident,
@@ -87,6 +89,7 @@ fn handle_special_ident<'ast>(
 
 fn find_children_from_local_and_global<'ast>(
     resolution_graph: &ResolutionGraph,
+    vis_solver: &VisibilitySolver<'ast>,
     ctx: &TracingContext<'ast>,
     ident: &Ident,
     paths_only: bool,
@@ -107,9 +110,9 @@ fn find_children_from_local_and_global<'ast>(
     let local_not_visible = local
         .iter()
         .copied()
-        .filter(|i| !crate::resolution::r#pub::is_target_visible(resolution_graph, ctx.dest, *i))
+        .filter(|i| !vis_solver.is_target_visible(resolution_graph, ctx.dest, *i))
         .collect::<Vec<ResolutionIndex>>();
-    local.retain(|i| crate::resolution::r#pub::is_target_visible(resolution_graph, ctx.dest, *i));
+    local.retain(|i| vis_solver.is_target_visible(resolution_graph, ctx.dest, *i));
     if global.is_empty() && !local_not_visible.is_empty() && local.is_empty() {
         let declaration_idx = *local_not_visible.first().unwrap();
         return Err(item_visibility(
@@ -123,9 +126,9 @@ fn find_children_from_local_and_global<'ast>(
     let global_not_visible = global
         .iter()
         .copied()
-        .filter(|i| !crate::resolution::r#pub::is_target_visible(resolution_graph, ctx.dest, *i))
+        .filter(|i| !vis_solver.is_target_visible(resolution_graph, ctx.dest, *i))
         .collect::<Vec<ResolutionIndex>>();
-    global.retain(|i| crate::resolution::r#pub::is_target_visible(resolution_graph, ctx.dest, *i));
+    global.retain(|i| vis_solver.is_target_visible(resolution_graph, ctx.dest, *i));
     if local.is_empty() && !global_not_visible.is_empty() && global.is_empty() {
         let declaration_idx = *global_not_visible.first().unwrap();
         return Err(item_visibility(
@@ -162,6 +165,7 @@ fn find_children_from_local_and_global<'ast>(
 
 fn find_children_from_globs<'ast>(
     resolution_graph: &ResolutionGraph,
+    vis_solver: &VisibilitySolver<'ast>,
     ctx: &TracingContext<'ast>,
     ident: &Ident,
     paths_only: bool,
@@ -178,10 +182,9 @@ fn find_children_from_globs<'ast>(
     let local_from_globs_not_visible = local_from_globs
         .iter()
         .copied()
-        .filter(|i| !crate::resolution::r#pub::is_target_visible(resolution_graph, ctx.dest, *i))
+        .filter(|i| !vis_solver.is_target_visible(resolution_graph, ctx.dest, *i))
         .collect::<Vec<ResolutionIndex>>();
-    local_from_globs
-        .retain(|i| crate::resolution::r#pub::is_target_visible(resolution_graph, ctx.dest, *i));
+    local_from_globs.retain(|i| vis_solver.is_target_visible(resolution_graph, ctx.dest, *i));
     if !local_from_globs_not_visible.is_empty() && local_from_globs.is_empty() {
         let declaration_idx = *local_from_globs_not_visible.first().unwrap();
         Err(item_visibility(

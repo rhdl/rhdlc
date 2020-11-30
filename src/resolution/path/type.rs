@@ -4,10 +4,12 @@ use rhdl::ast::{GenericParam, Ident, TypePath};
 
 use super::TracingContext;
 use crate::error::*;
+use crate::resolution::r#pub::VisibilitySolver;
 use crate::resolution::{Leaf, ResolutionGraph, ResolutionIndex, ResolutionNode};
 
 pub struct PathFinder<'a, 'ast> {
     pub resolution_graph: &'a ResolutionGraph<'ast>,
+    pub vis_solver: &'a VisibilitySolver<'ast>,
     pub visited_glob_scopes: HashSet<ResolutionIndex>,
 }
 
@@ -140,7 +142,8 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
     ) -> Result<Vec<ResolutionIndex>, Diagnostic> {
         let is_entry = ctx.previous_idents.is_empty();
 
-        if let Some(child) = super::handle_special_ident(self.resolution_graph, ctx, scope, ident)?
+        if let Some(child) =
+            super::handle_special_ident(self.resolution_graph, self.vis_solver, ctx, scope, ident)?
         {
             Ok(vec![child])
         } else {
@@ -192,6 +195,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
             };
             if let Some(children) = super::find_children_from_local_and_global(
                 self.resolution_graph,
+                self.vis_solver,
                 ctx,
                 ident,
                 paths_only,
@@ -218,6 +222,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
                     .unwrap_or_default();
                 super::find_children_from_globs(
                     self.resolution_graph,
+                    self.vis_solver,
                     ctx,
                     ident,
                     paths_only,
@@ -243,7 +248,9 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
         paths_only: bool,
         glob_only: bool,
     ) -> Vec<ResolutionIndex> {
-        if !crate::resolution::r#pub::is_target_visible(self.resolution_graph, ctx.dest, use_index)
+        if !self
+            .vis_solver
+            .is_target_visible(self.resolution_graph, ctx.dest, use_index)
         {
             vec![]
         } else {

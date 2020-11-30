@@ -1,29 +1,217 @@
 use rhdl::ast::{Spanned, Vis, VisRestricted};
+use z3::{ast::*, Context, Solver, Sort};
 
-use super::{Branch, ResolutionGraph, ResolutionIndex, ResolutionNode};
+use super::{Branch, Leaf, ResolutionGraph, ResolutionIndex, ResolutionNode};
 use crate::error::*;
 use crate::find_file::FileId;
 
-/// If a node overrides its own visibility, make a note of it in the parent node(s) as an "export".
-/// claim: parent scopes are always already visited so no need for recursive behavior
-pub fn apply_visibility<'ast>(
+#[derive(Debug)]
+pub struct VisibilitySolver<'ast> {
+    ctx: &'ast Context,
+    solver: Solver<'ast>,
+    nodes: Vec<Dynamic<'ast>>,
+    root: Dynamic<'ast>,
+    ancestry: Array<'ast>,
+    parents: Array<'ast>,
+    children: Array<'ast>,
+    exports: Array<'ast>,
+}
+
+impl<'ast> VisibilitySolver<'ast> {
+    /// Possibilities:
+    /// 1. Target is exported to grandparent scope (implicitly assume the visibility of the grandparent scope was already checked)
+    /// 2. Target is directly exported to destination
+    /// 3. Target is exported to some ancestral scope of destination
+    /// 4. Target lies in some ancestral scope of destination
+    pub fn is_target_visible(
+        &self,
+        resolution_graph: &ResolutionGraph<'_>,
+        dest: ResolutionIndex,
+        target: ResolutionIndex,
+    ) -> bool {
+        let dest_node = &self.nodes[Into::<usize>::into(dest)];
+        let target_node = &self.nodes[Into::<usize>::into(target)];
+        self.solver.push();
+        // Where the target is exported
+        let target_export = self.exports.select(target_node);
+        // 1. Target is exported to grandparent scope
+        // 2. Target is directly exported to destination
+        // 3. Target is exported to some ancestral scope of destination
+        // 4. Target lies in some ancestral scope of destination
+        let parent = &self.parents.select(target_node);
+        self.solver.assert(&Bool::or(
+            self.ctx,
+            &[
+                &self
+                    .ancestry
+                    .select(&parent)
+                    .as_set()
+                    .unwrap()
+                    .member(&target_export),
+                &dest_node._eq(&target_export),
+                &target_export._eq(&self.root),
+                &self
+                    .ancestry
+                    .select(&dest_node)
+                    .as_set()
+                    .unwrap()
+                    .member(&target_export),
+                &self
+                    .ancestry
+                    .select(&target_node)
+                    .as_set()
+                    .unwrap()
+                    .set_subset(&self.ancestry.select(&dest_node).as_set().unwrap()),
+            ],
+        ));
+
+        use z3::SatResult::*;
+        let visible = match self.solver.check() {
+            Unsat => false,
+            Sat => true,
+            Unknown => false,
+        };
+        self.solver.pop(1);
+        visible
+    }
+}
+
+pub fn build_visibility_solver<'ast>(
     resolution_graph: &mut ResolutionGraph<'ast>,
-    node: ResolutionIndex,
-) -> Result<(), Diagnostic> {
-    if let Some(vis) = resolution_graph[node].visibility() {
+    errors: &mut Vec<Diagnostic>,
+    ctx: &'ast Context,
+) -> VisibilitySolver<'ast> {
+    let node_ty = Sort::int(ctx);
+    // let ancestry_ty = Sort::array(&ctx, &idx_ty, &node_ty);
+    let solver = Solver::new(&ctx);
+
+    // Create nodes
+    let root: Dynamic = Int::from_i64(ctx, -1).into();
+    let nodes = resolution_graph
+        .node_indices()
+        .map(|i| Int::from_u64(&ctx, Into::<usize>::into(i) as u64).into())
+        .collect::<Vec<Dynamic>>();
+
+    // Store visibility state
+    let mut z3_parents = Array::new_const(&ctx, "parents", &node_ty, &node_ty);
+    let mut z3_ancestry = Array::new_const(&ctx, "ancestry", &node_ty, &Sort::set(&ctx, &node_ty))
+        .store(&root, &Set::empty(ctx, &node_ty).into());
+    let mut z3_children = Array::new_const(&ctx, "children", &node_ty, &Sort::set(&ctx, &node_ty))
+        .store(
+            &root,
+            &{
+                let mut root_children = Set::empty(ctx, &node_ty);
+                for root in resolution_graph.roots.iter() {
+                    root_children = root_children.add(&nodes[Into::<usize>::into(*root)]);
+                }
+                root_children
+            }
+            .into(),
+        );
+    let mut z3_exports = Array::new_const(&ctx, "exports", &node_ty, &node_ty);
+    for node in resolution_graph.node_indices() {
+        let idx = Into::<usize>::into(node);
+        let ancestry = build_ancestry(resolution_graph, node, false);
+
+        let ancestry_const = Set::new_const(&ctx, format!("x{}_ancestry", idx), &node_ty);
+        solver.assert(&ancestry_const._eq(&if let Some(parent) =
+            ancestry.first().map(|p| Into::<usize>::into(*p))
+        {
+            Set::set_union(
+                ctx,
+                &[
+                    &z3_ancestry
+                        .select(&Int::from_u64(ctx, parent as u64).into())
+                        .as_set()
+                        .unwrap(),
+                    &Set::empty(ctx, &node_ty).add(&nodes[parent]),
+                ],
+            )
+        } else {
+            Set::empty(ctx, &node_ty).add(&root)
+        }));
+        z3_ancestry = z3_ancestry.store(&nodes[idx], &ancestry_const.into());
+        let mut children_const = Set::empty(&ctx, &node_ty);
+        if let Some(children) = resolution_graph[node].children() {
+            for child in children.values().flatten() {
+                children_const = children_const.add(&nodes[Into::<usize>::into(*child)]);
+            }
+        }
+        z3_children = z3_children.store(&nodes[idx], &children_const.into());
         use Vis::*;
         let file = resolution_graph.file(node);
-        let export_dest = match vis {
-            Pub(_) => apply_visibility_pub(resolution_graph, node, file, vis),
-            Crate(_) => apply_visibility_crate(resolution_graph, node, file, vis),
-            Super(_) => apply_visibility_pub(resolution_graph, node, file, vis),
-            Restricted(r) => apply_visibility_in(resolution_graph, node, file, r),
-            LowerSelf(_) => Ok(Some(resolution_graph[node].parent().unwrap())),
-            Priv(_) => Ok(Some(resolution_graph[node].parent().unwrap())),
-        }?;
-        resolution_graph.exports.insert(node, export_dest);
+        let parent = if let Some(parent) = ancestry.first() {
+            &nodes[Into::<usize>::into(*parent)]
+        } else {
+            &root
+        };
+        z3_parents = z3_parents.store(&nodes[idx], parent);
+        let grandparent = if let Some(grandparent) = ancestry.iter().skip(1).next() {
+            &nodes[Into::<usize>::into(*grandparent)]
+        } else {
+            // Forest "root"
+            &root
+        };
+        // TODO: once trait items are split into leaves, assert their exports to same as trait
+        if matches!(resolution_graph[node], ResolutionNode::Leaf{leaf: Leaf::NamedField(_), ..} | ResolutionNode::Leaf{leaf: Leaf::UnnamedField(_), ..} | ResolutionNode::Branch{branch: Branch::Variant(_), ..})
+        {
+            // bad visibility usage
+            if let Some(vis) = resolution_graph[node].visibility() {
+                errors.push(unnecessary_visibility(file, vis));
+            }
+            solver.assert(
+                &z3_exports
+                    .select(&nodes[idx])
+                    ._eq(&z3_exports.select(parent)),
+            );
+        } else if let Some(vis) = resolution_graph[node].visibility() {
+            match vis {
+                Pub(_) | Super(_) => {
+                    z3_exports = z3_exports.store(&nodes[idx], &grandparent);
+                }
+                Crate(_) => {
+                    z3_exports = z3_exports.store(
+                        &nodes[idx],
+                        &nodes[Into::<usize>::into(*ancestry.last().unwrap())],
+                    );
+                }
+                Restricted(r) => match apply_visibility_in(resolution_graph, node, file, r) {
+                    Ok(dest) => {
+                        z3_exports = z3_exports.store(
+                            &nodes[idx],
+                            if let Some(dest) = dest {
+                                &nodes[Into::<usize>::into(dest)]
+                            } else {
+                                &root
+                            },
+                        );
+                    }
+                    Err(err) => {
+                        errors.push(err);
+                        z3_exports = z3_exports.store(&nodes[idx], parent);
+                    }
+                },
+                // export to parent is an easy way of not making it visible anywhere else
+                Priv(_) | LowerSelf(_) => {
+                    z3_exports = z3_exports.store(&nodes[idx], parent);
+                }
+            }
+        } else {
+            // treated the same as an explicit export to self
+            z3_exports = z3_exports.store(&nodes[idx], parent);
+        }
     }
-    Ok(())
+
+    VisibilitySolver {
+        ctx,
+        solver,
+        nodes,
+        root,
+        ancestry: z3_ancestry,
+        parents: z3_parents,
+        children: z3_children,
+        exports: z3_exports,
+    }
 }
 
 fn apply_visibility_in<'ast>(
@@ -83,22 +271,23 @@ fn apply_visibility_in<'ast>(
         ancestry_position = if segment == "super" {
             // chained supers go up towards the root
             if ancestry_position + 1 < ancestry.len() {
-                if !is_target_visible(
-                    resolution_graph,
-                    ancestry[ancestry_position + 1],
-                    node_parent,
-                ) {
-                    return Err(scope_visibility(
-                        file,
-                        segment.span(),
-                        resolution_graph[node].item_hint().unwrap(),
-                        if ancestry_position + 2 < ancestry.len() {
-                            ItemHint::InternalNamedChildScope
-                        } else {
-                            ItemHint::InternalNamedRootScope
-                        },
-                    ));
-                }
+                // TODO: apparently, rust is fine with this
+                // if !is_target_visible(
+                //     resolution_graph,
+                //     ancestry[ancestry_position + 1],
+                //     node_parent,
+                // ) {
+                //     return Err(scope_visibility(
+                //         file,
+                //         segment.span(),
+                //         resolution_graph[node].item_hint().unwrap(),
+                //         if ancestry_position + 2 < ancestry.len() {
+                //             ItemHint::InternalNamedChildScope
+                //         } else {
+                //             ItemHint::InternalNamedRootScope
+                //         },
+                //     ));
+                // }
                 ancestry_position + 1
             } else {
                 return Err(too_many_supers(file, &segment));
@@ -139,120 +328,26 @@ fn apply_visibility_in<'ast>(
                     Some(&prev_segment),
                 ));
             } else {
-                if !is_target_visible(
-                    resolution_graph,
-                    ancestry[ancestry_position - 1],
-                    node_parent,
-                ) {
-                    return Err(scope_visibility(
-                        file,
-                        segment.span(),
-                        resolution_graph[node].item_hint().unwrap(),
-                        ItemHint::InternalNamedChildScope,
-                    ));
-                }
+                // TODO: apparently rust is fine with this
+                // if !is_target_visible(
+                //     resolution_graph,
+                //     ancestry[ancestry_position - 1],
+                //     node_parent,
+                // ) {
+                //     return Err(scope_visibility(
+                //         file,
+                //         segment.span(),
+                //         resolution_graph[node].item_hint().unwrap(),
+                //         ItemHint::InternalNamedChildScope,
+                //     ));
+                // }
                 ancestry_position - 1
             }
         };
     }
-    if !is_target_visible(
-        resolution_graph,
-        ancestry[ancestry_position],
-        visibility_parent(resolution_graph, node),
-    ) {
-        Err(scope_visibility(
-            file,
-            r.span(),
-            resolution_graph[node].item_hint().unwrap(),
-            if ancestry.len() > 2 {
-                ItemHint::InternalNamedChildScope
-            } else {
-                ItemHint::InternalNamedRootScope
-            },
-        ))
-    } else {
-        // TODO: are beyond root exports for a given path possible?
-        Ok(Some(ancestry[ancestry_position]))
-    }
-}
 
-fn apply_visibility_pub(
-    resolution_graph: &ResolutionGraph<'_>,
-    node: ResolutionIndex,
-    file: FileId,
-    vis: &Vis,
-) -> Result<Option<ResolutionIndex>, Diagnostic> {
-    let ancestry = build_ancestry(resolution_graph, node, true);
-    if let Some(grandparent) = ancestry.iter().skip(1).next().copied() {
-        if !is_target_visible(
-            resolution_graph,
-            grandparent,
-            visibility_parent(resolution_graph, node),
-        ) {
-            Err(scope_visibility(
-                file,
-                vis.span(),
-                resolution_graph[node].item_hint().unwrap(),
-                if ancestry.len() > 2 {
-                    ItemHint::InternalNamedChildScope
-                } else {
-                    ItemHint::InternalNamedRootScope
-                },
-            ))
-        } else {
-            Ok(Some(grandparent))
-        }
-    } else {
-        if !resolution_graph[resolution_graph[node].parent().unwrap()].is_valid_pub_path_segment() {
-            todo!("explicitly exporting fields beyond a root is not yet supported")
-        } else {
-            Ok(None)
-        }
-    }
-}
-
-/// TODO: https://github.com/rust-lang/rust/issues/53120
-fn apply_visibility_crate<'ast>(
-    resolution_graph: &ResolutionGraph<'ast>,
-    node: ResolutionIndex,
-    file: FileId,
-    vis: &Vis,
-) -> Result<Option<ResolutionIndex>, Diagnostic> {
-    let root = *build_ancestry(resolution_graph, node, true).last().unwrap();
-    if !is_target_visible(
-        resolution_graph,
-        root,
-        visibility_parent(resolution_graph, node),
-    ) {
-        Err(scope_visibility(
-            file,
-            vis.span(),
-            resolution_graph[node].item_hint().unwrap(),
-            ItemHint::InternalNamedRootScope,
-        ))
-    } else {
-        Ok(Some(root))
-    }
-}
-
-fn visibility_parent(
-    resolution_graph: &ResolutionGraph<'_>,
-    node: ResolutionIndex,
-) -> ResolutionIndex {
-    let parent = resolution_graph[node].parent();
-    if parent.is_none() {
-        return node;
-    }
-    let parent = parent.unwrap();
-    if let ResolutionNode::Branch {
-        branch: Branch::Variant(_),
-        ..
-    } = resolution_graph[parent]
-    {
-        resolution_graph[parent].parent().unwrap()
-    } else {
-        parent
-    }
+    // TODO: are beyond crate-root exports for a given path possible?
+    Ok(Some(ancestry[ancestry_position]))
 }
 
 fn build_ancestry(
@@ -269,62 +364,4 @@ fn build_ancestry(
         prev_parent = parent;
     }
     ancestry
-}
-
-/// Possibilities:
-/// * dest_parent == target_parent (self, always visible)
-/// * target_parent == root && dest_root == root (crate, always visible)
-/// * target == target_parent (use a::{self, b}, always visible)
-/// * target is actually a parent of target_parent (use super::super::b, always visible)
-/// * target_parent is a parent of dest_parent (use super::a, always visible)
-pub fn is_target_visible(
-    resolution_graph: &ResolutionGraph<'_>,
-    dest: ResolutionIndex,
-    target: ResolutionIndex,
-) -> bool {
-    let target_parent = if let Some(target_parent) = resolution_graph[target].parent() {
-        target_parent
-    } else {
-        // this is necessarily a root
-        return true;
-    };
-    if target_parent == target
-        || resolution_graph[target_parent]
-            .parent()
-            .map(|g| g == target)
-            .unwrap_or_default()
-        || dest == target_parent
-    {
-        // self
-        return true;
-    }
-    let dest_ancestry = build_ancestry(resolution_graph, dest, false);
-    // targets in an ancestor of the use are always visible
-    if dest_ancestry.contains(&target_parent) {
-        return true;
-    }
-
-    let target_parent_ancestry = build_ancestry(resolution_graph, target_parent, false);
-    resolution_graph
-        .exports
-        .get(&target)
-        .map(|export_dest_opt| {
-            // exported to dest/dest_ancestry, out of the crate, or to target grandparent
-            export_dest_opt
-                .map(|export_dest| {
-                    target_parent_ancestry.contains(&export_dest)
-                        || dest_ancestry.contains(&export_dest)
-                })
-                .unwrap_or(true)
-        })
-        .unwrap_or_else(|| {
-            // variants and enum fields are visible by default
-            matches!(resolution_graph[target], ResolutionNode::Branch {
-                branch: Branch::Variant(_),
-                ..
-            }) || matches!(resolution_graph[target_parent], ResolutionNode::Branch {
-                branch: Branch::Variant(_),
-                ..
-            })
-        })
 }

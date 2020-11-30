@@ -45,6 +45,10 @@ impl<'ast> ResolutionGraph<'ast> {
         (0..self.inner.len()).map(|x| ResolutionIndex(x))
     }
 
+    pub fn iter(&self) -> impl Iterator<Item = &ResolutionNode<'ast>> {
+        self.inner.iter()
+    }
+
     pub fn file(&self, node: ResolutionIndex) -> FileId {
         let mut next_parent = match &self[node] {
             ResolutionNode::Root { .. } => node,
@@ -89,6 +93,18 @@ impl<'ast> std::ops::IndexMut<ResolutionIndex> for ResolutionGraph<'ast> {
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ResolutionIndex(usize);
+
+impl std::fmt::Display for ResolutionIndex {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl From<ResolutionIndex> for usize {
+    fn from(idx: ResolutionIndex) -> Self {
+        idx.0
+    }
+}
 
 #[derive(Debug)]
 pub enum ResolutionNode<'ast> {

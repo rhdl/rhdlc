@@ -19,6 +19,7 @@ rhdl = { version = "*", git = "https://github.com/rhdl/rhdl.git", branch = "main
 codespan = "0.9"
 codespan-reporting = "0.9"
 lalrpop-util = "*"
+z3 = { version = "0.7", git = "https://github.com/rhdl/z3.rs.git", features = ["static-link-z3"] }
 
 [features]
 no-color = []

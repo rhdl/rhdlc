@@ -1,6 +1,0 @@
-error: type is not visible in mod
-  ┌─ ./test/compile-fail/resolution/pub/in-non-visible-ancestor-mod/top.rhdl:4:27
-  │
-4 │             pub(in crate::a) struct d {}
-  │                           ^
-

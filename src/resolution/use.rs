@@ -6,9 +6,11 @@ use super::{
     Branch, Leaf, ResolutionGraph, ResolutionIndex, ResolutionNode,
 };
 use crate::error::*;
+use crate::resolution::r#pub::VisibilitySolver;
 
 pub struct UseResolver<'a, 'ast> {
     pub resolution_graph: &'a mut ResolutionGraph<'ast>,
+    pub vis_solver: &'a VisibilitySolver<'ast>,
     pub errors: &'a mut Vec<Diagnostic>,
     pub resolved_uses: &'a mut HashSet<ResolutionIndex>,
 }
@@ -71,6 +73,7 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                 }
                 let mut path_finder = PathFinder {
                     resolution_graph: self.resolution_graph,
+                    vis_solver: self.vis_solver,
                     errors: self.errors,
                     resolved_uses: self.resolved_uses,
                     visited_glob_scopes: Default::default(),
@@ -123,6 +126,7 @@ impl<'a, 'ast> UseResolver<'a, 'ast> {
                 } else {
                     let mut path_finder = PathFinder {
                         resolution_graph: self.resolution_graph,
+                        vis_solver: self.vis_solver,
                         errors: self.errors,
                         resolved_uses: self.resolved_uses,
                         visited_glob_scopes: Default::default(),

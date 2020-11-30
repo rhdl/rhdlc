@@ -486,6 +486,13 @@ pub fn module_with_external_file_in_fn(file_id: FileId, item_mod: &ItemMod) -> D
         ])
 }
 
+pub fn unnecessary_visibility(file_id: FileId, vis: &Vis) -> Diagnostic {
+    Diagnostic::error()
+        .with_code("E0449")
+        .with_message("unnecessary visibility qualifier")
+        .with_labels(vec![Label::primary(file_id, vis.span()).with_message("")])
+}
+
 pub fn non_ancestral_visibility(
     file_id: FileId,
     segment_ident: &Ident,

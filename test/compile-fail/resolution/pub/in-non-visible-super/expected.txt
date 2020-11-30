@@ -1,6 +1,0 @@
-error: type is not visible in root
-  ┌─ ./test/compile-fail/resolution/pub/in-non-visible-super/top.rhdl:3:23
-  │
-3 │         pub(in super::super) struct c {}
-  │                       ^^^^^
-

@@ -56,55 +56,49 @@ pub struct Resolver<'ast> {
     file_graph: &'ast FileGraph,
     pub resolution_graph: ResolutionGraph<'ast>,
     pub errors: Vec<Diagnostic<FileId>>,
+    ctx: &'ast z3::Context,
+    vis_solver: r#pub::VisibilitySolver<'ast>,
     resolved_uses: HashSet<ResolutionIndex>,
 }
 
-impl<'ast> From<&'ast FileGraph> for Resolver<'ast> {
-    fn from(file_graph: &'ast FileGraph) -> Self {
-        Self {
-            file_graph,
-            resolution_graph: Default::default(),
-            errors: vec![],
-            resolved_uses: Default::default(),
-        }
-    }
-}
-
 impl<'ast> Resolver<'ast> {
-    /// Find all names given a source forest
-    /// Externals are paths to standalone source code: a top + lib.rs of each crate
-    pub fn build_graph(&mut self) {
+    pub fn build(file_graph: &'ast FileGraph, ctx: &'ast z3::Context) -> Self {
         // Stage one: add nodes
-        let files: Vec<FileId> = self.file_graph.roots.clone();
+        let files: Vec<FileId> = file_graph.roots.clone();
+        let mut resolution_graph: ResolutionGraph<'ast> = Default::default();
+        let mut errors = vec![];
         for file_index in files {
-            let resolution_index = self.resolution_graph.add_node(ResolutionNode::Root {
+            let resolution_index = resolution_graph.add_node(ResolutionNode::Root {
                 // TODO: attach a real name
                 name: String::default(),
                 children: HashMap::default(),
             });
-            self.resolution_graph
+            resolution_graph
                 .content_files
                 .insert(resolution_index, file_index);
             let mut builder = build::ScopeBuilder {
-                errors: &mut self.errors,
-                file_graph: &mut self.file_graph,
-                resolution_graph: &mut self.resolution_graph,
+                errors: &mut errors,
+                file_graph: &file_graph,
+                resolution_graph: &mut resolution_graph,
                 file_ancestry: vec![file_index],
                 scope_ancestry: vec![resolution_index],
             };
-            if let Some(parsed) = &self.file_graph[file_index].parsed {
+            if let Some(parsed) = &file_graph[file_index].parsed {
                 builder.visit_file(parsed);
             }
         }
 
-        // Stage two: apply visibility
-        let mut visibility_errors = self
-            .resolution_graph
-            .node_indices()
-            .filter_map(|i| r#pub::apply_visibility(&mut self.resolution_graph, i).err())
-            .collect::<Vec<Diagnostic<FileId>>>();
-        self.errors.append(&mut visibility_errors);
+        Self {
+            vis_solver: r#pub::build_visibility_solver(&mut resolution_graph, &mut errors, ctx),
+            file_graph,
+            resolution_graph,
+            errors,
+            ctx,
+            resolved_uses: Default::default(),
+        }
+    }
 
+    pub fn build_graph(&mut self) {
         // // Stage three: trace use nodes
         let use_indices: Vec<ResolutionIndex> = self
             .resolution_graph
@@ -114,6 +108,7 @@ impl<'ast> Resolver<'ast> {
         for use_index in use_indices {
             let mut use_resolver = r#use::UseResolver {
                 resolved_uses: &mut self.resolved_uses,
+                vis_solver: &self.vis_solver,
                 resolution_graph: &mut self.resolution_graph,
                 errors: &mut self.errors,
             };
@@ -133,6 +128,7 @@ impl<'ast> Resolver<'ast> {
         {
             let mut type_existence_checker = type_existence::TypeExistenceChecker {
                 resolution_graph: &self.resolution_graph,
+                vis_solver: &self.vis_solver,
                 errors: &mut self.errors,
             };
             type_existence_checker.visit_all();
