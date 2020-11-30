@@ -23,21 +23,11 @@ impl<'ast> VisibilitySolver<'ast> {
     /// 2. Target is directly exported to destination
     /// 3. Target is exported to some ancestral scope of destination
     /// 4. Target lies in some ancestral scope of destination
-    pub fn is_target_visible(
-        &self,
-        resolution_graph: &ResolutionGraph<'_>,
-        dest: ResolutionIndex,
-        target: ResolutionIndex,
-    ) -> bool {
+    pub fn is_target_visible(&self, dest: ResolutionIndex, target: ResolutionIndex) -> bool {
         let dest_node = &self.nodes[Into::<usize>::into(dest)];
         let target_node = &self.nodes[Into::<usize>::into(target)];
         self.solver.push();
-        // Where the target is exported
         let target_export = self.exports.select(target_node);
-        // 1. Target is exported to grandparent scope
-        // 2. Target is directly exported to destination
-        // 3. Target is exported to some ancestral scope of destination
-        // 4. Target lies in some ancestral scope of destination
         let parent = &self.parents.select(target_node);
         self.solver.assert(&Bool::or(
             self.ctx,

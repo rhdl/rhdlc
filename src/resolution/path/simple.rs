@@ -188,7 +188,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
     ) -> Vec<ResolutionIndex> {
         if !self
             .vis_solver
-            .is_target_visible(self.resolution_graph, ctx.dest, use_index)
+            .is_target_visible( ctx.dest, use_index)
         {
             vec![]
         } else if !{
