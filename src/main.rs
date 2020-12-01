@@ -132,7 +132,7 @@ mod test {
             "string".to_string(),
             Box::new("struct a {}".as_bytes()),
         ));
-        assert_eq!(output, "");
+        assert_eq!("", output);
     }
 
     fn fail_test_looper(dir: &str) {
@@ -154,7 +154,7 @@ mod test {
                 .flush()
                 .ok()
                 .expect("Could not flush stdout");
-            assert_eq!(output, expected);
+            assert_eq!(expected, output);
         }
     }
 
@@ -176,9 +176,9 @@ mod test {
             .ok()
             .expect("Could not flush stdout");
         if let Ok(expected) = expected {
-            assert_eq!(output, expected);
+            assert_eq!(expected, output);
         } else {
-            assert_eq!(output, "");
+            assert_eq!("", output);
         }
     }
 }
