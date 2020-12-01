@@ -10,7 +10,8 @@ pub struct VisibilitySolver<'ast> {
     ctx: &'ast Context,
     solver: Solver<'ast>,
     nodes: Vec<Dynamic<'ast>>,
-    root: Dynamic<'ast>,
+    /// Since this isn't a crate root, name it `base` to avoid confusion
+    base: Dynamic<'ast>,
     ancestry: Array<'ast>,
     parents: Array<'ast>,
     children: Array<'ast>,
@@ -21,6 +22,7 @@ impl<'ast> VisibilitySolver<'ast> {
     /// Possibilities:
     /// 1. Target is exported to grandparent scope (implicitly assume the visibility of the grandparent scope was already checked)
     /// 2. Target is directly exported to destination
+    /// 3. Target is exported outside of its crate
     /// 3. Target is exported to some ancestral scope of destination
     /// 4. Target lies in some ancestral scope of destination
     pub fn is_target_visible(&self, dest: ResolutionIndex, target: ResolutionIndex) -> bool {
@@ -39,7 +41,7 @@ impl<'ast> VisibilitySolver<'ast> {
                     .unwrap()
                     .member(&target_export),
                 &dest_node._eq(&target_export),
-                &target_export._eq(&self.root),
+                &target_export._eq(&self.base),
                 &self
                     .ancestry
                     .select(&dest_node)
@@ -72,11 +74,10 @@ pub fn build_visibility_solver<'ast>(
     ctx: &'ast Context,
 ) -> VisibilitySolver<'ast> {
     let node_ty = Sort::int(ctx);
-    // let ancestry_ty = Sort::array(&ctx, &idx_ty, &node_ty);
     let solver = Solver::new(&ctx);
 
     // Create nodes
-    let root: Dynamic = Int::from_i64(ctx, -1).into();
+    let base: Dynamic = Int::from_i64(ctx, -1).into();
     let nodes = resolution_graph
         .node_indices()
         .map(|i| Int::from_u64(&ctx, Into::<usize>::into(i) as u64).into())
@@ -85,16 +86,16 @@ pub fn build_visibility_solver<'ast>(
     // Store visibility state
     let mut z3_parents = Array::new_const(&ctx, "parents", &node_ty, &node_ty);
     let mut z3_ancestry = Array::new_const(&ctx, "ancestry", &node_ty, &Sort::set(&ctx, &node_ty))
-        .store(&root, &Set::empty(ctx, &node_ty).into());
+        .store(&base, &Set::empty(ctx, &node_ty).into());
     let mut z3_children = Array::new_const(&ctx, "children", &node_ty, &Sort::set(&ctx, &node_ty))
         .store(
-            &root,
+            &base,
             &{
-                let mut root_children = Set::empty(ctx, &node_ty);
+                let mut base_children = Set::empty(ctx, &node_ty);
                 for root in resolution_graph.roots.iter() {
-                    root_children = root_children.add(&nodes[Into::<usize>::into(*root)]);
+                    base_children = base_children.add(&nodes[Into::<usize>::into(*root)]);
                 }
-                root_children
+                base_children
             }
             .into(),
         );
@@ -118,7 +119,7 @@ pub fn build_visibility_solver<'ast>(
                 ],
             )
         } else {
-            Set::empty(ctx, &node_ty).add(&root)
+            Set::empty(ctx, &node_ty).add(&base)
         }));
         z3_ancestry = z3_ancestry.store(&nodes[idx], &ancestry_const.into());
         let mut children_const = Set::empty(&ctx, &node_ty);
@@ -133,14 +134,14 @@ pub fn build_visibility_solver<'ast>(
         let parent = if let Some(parent) = ancestry.first() {
             &nodes[Into::<usize>::into(*parent)]
         } else {
-            &root
+            &base
         };
         z3_parents = z3_parents.store(&nodes[idx], parent);
         let grandparent = if let Some(grandparent) = ancestry.iter().skip(1).next() {
             &nodes[Into::<usize>::into(*grandparent)]
         } else {
             // Forest "root"
-            &root
+            &base
         };
         // TODO: once trait items are split into leaves, assert their exports to same as trait
         if matches!(resolution_graph[node], ResolutionNode::Leaf{leaf: Leaf::NamedField(_), ..} | ResolutionNode::Leaf{leaf: Leaf::UnnamedField(_), ..} | ResolutionNode::Branch{branch: Branch::Variant(_), ..})
@@ -172,7 +173,7 @@ pub fn build_visibility_solver<'ast>(
                             if let Some(dest) = dest {
                                 &nodes[Into::<usize>::into(dest)]
                             } else {
-                                &root
+                                &base
                             },
                         );
                     }
@@ -187,7 +188,7 @@ pub fn build_visibility_solver<'ast>(
                 }
             }
         } else {
-            // treated the same as an explicit export to self
+            // treated the same as a pub(self)
             z3_exports = z3_exports.store(&nodes[idx], parent);
         }
     }
@@ -196,7 +197,7 @@ pub fn build_visibility_solver<'ast>(
         ctx,
         solver,
         nodes,
-        root,
+        base,
         ancestry: z3_ancestry,
         parents: z3_parents,
         children: z3_children,
@@ -213,7 +214,6 @@ fn apply_visibility_in<'ast>(
     if let Some(leading_sep) = &r.path.leading_sep {
         return Err(incorrect_visibility_restriction(file, leading_sep.span()));
     }
-    let node_parent = resolution_graph[node].parent().unwrap();
     let ancestry = build_ancestry(resolution_graph, node, true);
 
     let first_segment = r
