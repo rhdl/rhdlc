@@ -18,12 +18,10 @@ jobs:
         run: sudo apt-get install libz3-dev
       - name: Build
         run: cargo build
+      - name: Install cargo-tarpaulin
+        run: "cargo install cargo-tarpaulin -f"
       - name: Run cargo-tarpaulin
-        uses: actions-rs/tarpaulin@v0.1
-        with:
-          version: '0.14.2'
-          args: '--features no-color -- --nocapture --test-threads 1'
-          out-type: Lcov
+        run: "cargo tarpaulin --out Lcov --verbose --features no-color"
       - name: Upload to codecov.io
         uses: codecov/codecov-action@v1
         with:
