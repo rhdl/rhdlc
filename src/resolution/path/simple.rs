@@ -186,10 +186,7 @@ impl<'a, 'ast> PathFinder<'a, 'ast> {
         paths_only: bool,
         glob_only: bool,
     ) -> Vec<ResolutionIndex> {
-        if !self
-            .vis_solver
-            .is_target_visible( ctx.dest, use_index)
-        {
+        if !self.vis_solver.is_target_visible(ctx.dest, use_index) {
             vec![]
         } else if !{
             let mut checker = UseMightMatchChecker {
