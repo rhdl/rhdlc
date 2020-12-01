@@ -404,17 +404,6 @@ pub fn item_visibility(
         )])
 }
 
-pub fn scope_visibility(
-    file_id: FileId,
-    span: Span,
-    item_hint: ItemHint,
-    scope_hint: ItemHint,
-) -> Diagnostic {
-    Diagnostic::error()
-        .with_message(format!("{} is not visible in {}", item_hint, scope_hint))
-        .with_labels(vec![Label::primary(file_id, span)])
-}
-
 pub fn invalid_raw_identifier(file_id: FileId, ident: &Ident) -> Diagnostic {
     Diagnostic::error()
         .with_message("`{}` cannot be a raw identifier")
