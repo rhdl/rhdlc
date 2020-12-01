@@ -1,4 +1,4 @@
-error: incorrect visibility restriction
+error[E0742]: incorrect visibility restriction
   ┌─ ./test/compile-fail/resolution/pub/in-leading-colon/top.rhdl:1:8
   │
 1 │ pub(in ::b) struct a {}

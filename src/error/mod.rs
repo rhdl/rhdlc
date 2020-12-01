@@ -469,6 +469,7 @@ pub fn glob_at_entry(
 
 pub fn incorrect_visibility_restriction(file_id: FileId, span: Span) -> Diagnostic {
     Diagnostic::error()
+        .with_code("E0742")
         .with_message("incorrect visibility restriction")
         .with_labels(vec![Label::primary(file_id, span)
             ])
