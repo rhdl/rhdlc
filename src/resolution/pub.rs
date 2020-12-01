@@ -59,9 +59,8 @@ impl<'ast> VisibilitySolver<'ast> {
 
         use z3::SatResult::*;
         let visible = match self.solver.check() {
-            Unsat => false,
             Sat => true,
-            Unknown => false,
+            Unsat | Unknown => false,
         };
         self.solver.pop(1);
         visible
@@ -74,102 +73,108 @@ pub fn build_visibility_solver<'ast>(
     ctx: &'ast Context,
 ) -> VisibilitySolver<'ast> {
     let node_ty = Sort::int(ctx);
+    let node_set_ty = Sort::set(&ctx, &node_ty);
+    let empty_set = Set::empty(&ctx, &node_ty);
     let solver = Solver::new(&ctx);
 
     // Create nodes
     let base: Dynamic = Int::from_i64(ctx, -1).into();
     let nodes = resolution_graph
         .node_indices()
-        .map(|i| Int::from_u64(&ctx, Into::<usize>::into(i) as u64).into())
+        .map(|i| -> usize { i.into() })
+        .map(|i| Int::from_u64(&ctx, i as u64).into())
         .collect::<Vec<Dynamic>>();
 
     // Store visibility state
     let mut z3_parents = Array::new_const(&ctx, "parents", &node_ty, &node_ty);
-    let mut z3_ancestry = Array::new_const(&ctx, "ancestry", &node_ty, &Sort::set(&ctx, &node_ty))
-        .store(&base, &Set::empty(ctx, &node_ty).into());
-    let mut z3_children = Array::new_const(&ctx, "children", &node_ty, &Sort::set(&ctx, &node_ty))
-        .store(
-            &base,
-            &{
-                let mut base_children = Set::empty(ctx, &node_ty);
-                for root in resolution_graph.roots.iter() {
-                    base_children = base_children.add(&nodes[Into::<usize>::into(*root)]);
-                }
-                base_children
-            }
+    let mut z3_ancestry = Array::new_const(&ctx, "ancestry", &node_ty, &node_set_ty)
+        .store(&base, &empty_set.clone().into());
+    let mut z3_children = Array::new_const(&ctx, "children", &node_ty, &node_set_ty).store(
+        &base,
+        &resolution_graph
+            .roots
+            .iter()
+            .copied()
+            .map(|root| -> usize { root.into() })
+            .map(|root| &nodes[root])
+            .fold(empty_set.clone(), |acc, root| acc.add(root))
             .into(),
-        );
+    );
     let mut z3_exports = Array::new_const(&ctx, "exports", &node_ty, &node_ty);
     for node in resolution_graph.node_indices() {
-        let idx = Into::<usize>::into(node);
-        let ancestry = build_ancestry(resolution_graph, node, false);
+        let z3_node = &nodes[Into::<usize>::into(node)];
 
-        let ancestry_const = Set::new_const(&ctx, format!("x{}_ancestry", idx), &node_ty);
-        solver.assert(&ancestry_const._eq(&if let Some(parent) =
-            ancestry.first().map(|p| Into::<usize>::into(*p))
-        {
-            Set::set_union(
-                ctx,
-                &[
-                    &z3_ancestry
-                        .select(&Int::from_u64(ctx, parent as u64).into())
-                        .as_set()
-                        .unwrap(),
-                    &Set::empty(ctx, &node_ty).add(&nodes[parent]),
-                ],
-            )
-        } else {
-            Set::empty(ctx, &node_ty).add(&base)
-        }));
-        z3_ancestry = z3_ancestry.store(&nodes[idx], &ancestry_const.into());
-        let mut children_const = Set::empty(&ctx, &node_ty);
-        if let Some(children) = resolution_graph[node].children() {
-            for child in children.values().flatten() {
-                children_const = children_const.add(&nodes[Into::<usize>::into(*child)]);
-            }
-        }
-        z3_children = z3_children.store(&nodes[idx], &children_const.into());
+        let ancestry = build_ancestry(resolution_graph, node, false);
+        let ancestry_const = Set::new_const(&ctx, format!("x{}_ancestry", node), &node_ty);
+        let ancestry_val = ancestry
+            .first()
+            .map(|p| -> usize { (*p).into() })
+            .map(|p| &nodes[p])
+            .map(|p| {
+                Set::set_union(
+                    ctx,
+                    &[
+                        &z3_ancestry.select(p).as_set().unwrap(),
+                        &empty_set.clone().add(p),
+                    ],
+                )
+            })
+            .unwrap_or_else(|| empty_set.clone().add(&base));
+        solver.assert(&ancestry_const._eq(&ancestry_val));
+        z3_ancestry = z3_ancestry.store(z3_node, &ancestry_const.into());
+        let children_const = resolution_graph[node]
+            .children()
+            .map(|children| {
+                children
+                    .values()
+                    .flatten()
+                    .map(|c| -> usize { (*c).into() })
+                    .map(|c| &nodes[c])
+                    .fold(empty_set.clone(), |acc, c| acc.add(c))
+            })
+            .unwrap_or_else(|| empty_set.clone());
+        z3_children = z3_children.store(z3_node, &children_const.into());
+
         use Vis::*;
         let file = resolution_graph.file(node);
-        let parent = if let Some(parent) = ancestry.first() {
-            &nodes[Into::<usize>::into(*parent)]
-        } else {
-            &base
-        };
-        z3_parents = z3_parents.store(&nodes[idx], parent);
-        let grandparent = if let Some(grandparent) = ancestry.iter().skip(1).next() {
-            &nodes[Into::<usize>::into(*grandparent)]
-        } else {
-            // Forest "root"
-            &base
-        };
+        let parent = ancestry
+            .first()
+            .map(|g| -> usize { (*g).into() })
+            .map(|g| &nodes[g])
+            .unwrap_or(&base);
+        z3_parents = z3_parents.store(z3_node, parent);
+
+        let grandparent = ancestry
+            .iter()
+            .skip(1)
+            .next()
+            .map(|g| -> usize { (*g).into() })
+            .map(|g| &nodes[g])
+            .unwrap_or(&base);
         // TODO: once trait items are split into leaves, assert their exports to same as trait
-        if matches!(resolution_graph[node], ResolutionNode::Leaf{leaf: Leaf::NamedField(_), ..} | ResolutionNode::Leaf{leaf: Leaf::UnnamedField(_), ..} | ResolutionNode::Branch{branch: Branch::Variant(_), ..})
+        if matches!(resolution_graph[node], ResolutionNode::Branch{branch: Branch::Variant(_), ..})
+            || ancestry.first().map(|p| matches!(resolution_graph[*p], ResolutionNode::Branch{branch: Branch::Variant(_), ..})).unwrap_or_default()
         {
             // bad visibility usage
             if let Some(vis) = resolution_graph[node].visibility() {
                 errors.push(unnecessary_visibility(file, vis));
             }
-            solver.assert(
-                &z3_exports
-                    .select(&nodes[idx])
-                    ._eq(&z3_exports.select(parent)),
-            );
+            solver.assert(&z3_exports.select(z3_node)._eq(&z3_exports.select(parent)));
         } else if let Some(vis) = resolution_graph[node].visibility() {
             match vis {
                 Pub(_) | Super(_) => {
-                    z3_exports = z3_exports.store(&nodes[idx], &grandparent);
+                    z3_exports = z3_exports.store(z3_node, &grandparent);
                 }
                 Crate(_) => {
                     z3_exports = z3_exports.store(
-                        &nodes[idx],
+                        z3_node,
                         &nodes[Into::<usize>::into(*ancestry.last().unwrap())],
                     );
                 }
                 Restricted(r) => match apply_visibility_in(resolution_graph, node, file, r) {
                     Ok(dest) => {
                         z3_exports = z3_exports.store(
-                            &nodes[idx],
+                            z3_node,
                             if let Some(dest) = dest {
                                 &nodes[Into::<usize>::into(dest)]
                             } else {
@@ -179,17 +184,17 @@ pub fn build_visibility_solver<'ast>(
                     }
                     Err(err) => {
                         errors.push(err);
-                        z3_exports = z3_exports.store(&nodes[idx], parent);
+                        z3_exports = z3_exports.store(z3_node, parent);
                     }
                 },
                 // export to parent is an easy way of not making it visible anywhere else
                 Priv(_) | LowerSelf(_) => {
-                    z3_exports = z3_exports.store(&nodes[idx], parent);
+                    z3_exports = z3_exports.store(z3_node, parent);
                 }
             }
         } else {
             // treated the same as a pub(self)
-            z3_exports = z3_exports.store(&nodes[idx], parent);
+            z3_exports = z3_exports.store(z3_node, parent);
         }
     }
 

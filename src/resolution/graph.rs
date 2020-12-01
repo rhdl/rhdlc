@@ -45,10 +45,6 @@ impl<'ast> ResolutionGraph<'ast> {
         (0..self.inner.len()).map(|x| ResolutionIndex(x))
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = &ResolutionNode<'ast>> {
-        self.inner.iter()
-    }
-
     pub fn file(&self, node: ResolutionIndex) -> FileId {
         let mut next_parent = match &self[node] {
             ResolutionNode::Root { .. } => node,
