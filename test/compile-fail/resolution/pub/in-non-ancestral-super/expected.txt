@@ -1,4 +1,4 @@
-error: `c` is not an ancestor of `super`
+error[E0742]: `c` is not an ancestor of `super`
   ┌─ ./test/compile-fail/resolution/pub/in-non-ancestral-super/top.rhdl:2:19
   │
 2 │     pub(in super::c) struct b {}

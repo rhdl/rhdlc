@@ -1,4 +1,4 @@
-error: `self` is not an ancestor of this scope
+error[E0742]: `self` is not an ancestor of this scope
   ┌─ ./test/compile-fail/resolution/pub/in-self/top.rhdl:1:8
   │
 1 │ pub(in self::b) struct a {}

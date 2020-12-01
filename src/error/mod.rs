@@ -499,6 +499,7 @@ pub fn non_ancestral_visibility(
     prev_segment_ident: Option<&Ident>,
 ) -> Diagnostic {
     Diagnostic::error()
+        .with_code("E0742")
         .with_message(format!(
             "`{}` is not an ancestor of {}",
             segment_ident,

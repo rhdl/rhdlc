@@ -1,4 +1,4 @@
-error: `c` is not an ancestor of `crate`
+error[E0742]: `c` is not an ancestor of `crate`
   ┌─ ./test/compile-fail/resolution/pub/in-non-ancestral-crate/top.rhdl:2:19
   │
 2 │     pub(in crate::c) struct b {}
