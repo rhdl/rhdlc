@@ -131,6 +131,7 @@ pub fn multiple_definition(
     hint: DuplicateHint,
 ) -> Diagnostic {
     Diagnostic::error()
+        .with_code("E0428")
         .with_message(&format!(
             "the {} `{}` is {} multiple times",
             hint,

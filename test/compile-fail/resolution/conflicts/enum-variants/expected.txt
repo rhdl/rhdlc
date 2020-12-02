@@ -1,4 +1,4 @@
-error: the variant `b` is defined multiple times
+error[E0428]: the variant `b` is defined multiple times
   ┌─ ./test/compile-fail/resolution/conflicts/enum-variants/top.rhdl:1:10
   │
 1 │ enum a { b, b }

@@ -20,7 +20,7 @@ warning: the type `b` is imported multiple times
 8 │ use a::b;
   │        ^ reimported here
 
-error: the name `b` is defined multiple times
+error[E0428]: the name `b` is defined multiple times
   ┌─ ./test/compile-fail/resolution/conflicts/use/top.rhdl:8:8
   │
 8 │ use a::b;

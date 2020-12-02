@@ -1,4 +1,4 @@
-error: the name `x` is bound multiple times
+error[E0428]: the name `x` is bound multiple times
   ┌─ ./test/compile-fail/resolution/conflicts/bindings/top.rhdl:1:6
   │
 1 │ fn a(x: b, x: c) {}

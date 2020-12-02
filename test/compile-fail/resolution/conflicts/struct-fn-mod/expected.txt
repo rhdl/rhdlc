@@ -1,4 +1,4 @@
-error: the name `b` is defined multiple times
+error[E0428]: the name `b` is defined multiple times
   ┌─ ./test/compile-fail/resolution/conflicts/struct-fn-mod/top.rhdl:1:8
   │
 1 │ struct b {}

@@ -1,4 +1,4 @@
-error: the name `a` is defined multiple times
+error[E0428]: the name `a` is defined multiple times
   ┌─ ./test/compile-fail/resolution/conflicts/mod/top.rhdl:1:5
   │
 1 │ mod a {}

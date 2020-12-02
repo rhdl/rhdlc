@@ -1,4 +1,4 @@
-error: the name `a` is defined multiple times
+error[E0428]: the name `a` is defined multiple times
   ┌─ ./test/compile-fail/resolution/conflicts/many/top.rhdl:1:8
   │
 1 │ struct a {}
@@ -6,7 +6,7 @@ error: the name `a` is defined multiple times
 2 │ enum a {}
   │      ^ `a` redefined here
 
-error: the name `a` is defined multiple times
+error[E0428]: the name `a` is defined multiple times
   ┌─ ./test/compile-fail/resolution/conflicts/many/top.rhdl:2:6
   │
 2 │ enum a {}
@@ -14,7 +14,7 @@ error: the name `a` is defined multiple times
 3 │ entity a {}
   │        ^ `a` redefined here
 
-error: the name `a` is defined multiple times
+error[E0428]: the name `a` is defined multiple times
   ┌─ ./test/compile-fail/resolution/conflicts/many/top.rhdl:3:8
   │
 3 │ entity a {}
@@ -22,7 +22,7 @@ error: the name `a` is defined multiple times
 4 │ const a: b = false;
   │       ^ `a` redefined here
 
-error: the name `a` is defined multiple times
+error[E0428]: the name `a` is defined multiple times
   ┌─ ./test/compile-fail/resolution/conflicts/many/top.rhdl:4:7
   │
 4 │ const a: b = false;

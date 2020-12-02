@@ -1,4 +1,4 @@
-error: the name `b` is defined multiple times
+error[E0428]: the name `b` is defined multiple times
   ┌─ ./test/compile-fail/resolution/type-existence/ambiguous-trait/top.rhdl:2:7
   │
 2 │ trait b {}

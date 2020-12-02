@@ -6,7 +6,7 @@ error: `b` is ambiguous (mod versus other mods found during resolution)
    │
    = rename other mods with the same name
 
-error: the name `b` is defined multiple times
+error[E0428]: the name `b` is defined multiple times
   ┌─ ./test/compile-fail/resolution/use/ambiguous-child/top.rhdl:2:13
   │
 2 │     pub mod b {

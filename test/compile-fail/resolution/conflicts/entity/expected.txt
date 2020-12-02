@@ -1,4 +1,4 @@
-error: the port `clk` is defined multiple times
+error[E0428]: the port `clk` is defined multiple times
   ┌─ ./test/compile-fail/resolution/conflicts/entity/top.rhdl:2:8
   │
 2 │     in clk: x,

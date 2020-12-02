@@ -6,7 +6,7 @@ error: `a` is ambiguous (crate or mod versus other crate or mods found during re
   │
   = rename other crate or mods with the same name
 
-error: the name `a` is defined multiple times
+error[E0428]: the name `a` is defined multiple times
   ┌─ ./test/compile-fail/resolution/use/ambiguous-entry-child/top.rhdl:1:5
   │
 1 │ mod a {
