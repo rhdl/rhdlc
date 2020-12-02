@@ -352,6 +352,10 @@ pub fn unexpected_item(
 
 pub fn self_usage(file_id: FileId, name_ident: &Ident, cause: SelfUsageErrorCause) -> Diagnostic {
     Diagnostic::error()
+        .with_code(match cause {
+            SelfUsageErrorCause::InGroupAtRoot => "E0431",
+            SelfUsageErrorCause::NotInGroup => "E0429",
+        })
         .with_message(match cause {
             SelfUsageErrorCause::InGroupAtRoot => format!(
                 "`{}` imports are only allowed in a braced list with a non-empty prefix",

@@ -1,4 +1,4 @@
-error: `self` imports are only allowed within a braced list
+error[E0429]: `self` imports are only allowed within a braced list
   ┌─ ./test/compile-fail/resolution/use/mod-self/top.rhdl:3:8
   │
 3 │ use a::self;
