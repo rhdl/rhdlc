@@ -36,7 +36,7 @@ impl<'ast> VisibilitySolver<'ast> {
             &[
                 &self
                     .ancestry
-                    .select(&parent)
+                    .select(parent)
                     .as_set()
                     .unwrap()
                     .member(&target_export),
@@ -44,16 +44,16 @@ impl<'ast> VisibilitySolver<'ast> {
                 &target_export._eq(&self.base),
                 &self
                     .ancestry
-                    .select(&dest_node)
+                    .select(dest_node)
                     .as_set()
                     .unwrap()
                     .member(&target_export),
                 &self
                     .ancestry
-                    .select(&target_node)
+                    .select(target_node)
                     .as_set()
                     .unwrap()
-                    .set_subset(&self.ancestry.select(&dest_node).as_set().unwrap()),
+                    .set_subset(&self.ancestry.select(dest_node).as_set().unwrap()),
             ],
         ));
 
@@ -87,8 +87,8 @@ pub fn build_visibility_solver<'ast>(
 
     // Store visibility state
     let mut z3_parents = Array::new_const(&ctx, "parents", &node_ty, &node_ty);
-    let mut z3_ancestry = Array::new_const(&ctx, "ancestry", &node_ty, &node_set_ty)
-        .store(&base, &empty_set.clone().into());
+    let mut z3_ancestry =
+        Array::new_const(&ctx, "ancestry", &node_ty, &node_set_ty).store(&base, &empty_set);
     let mut z3_children = Array::new_const(&ctx, "children", &node_ty, &node_set_ty).store(
         &base,
         &resolution_graph
@@ -97,8 +97,7 @@ pub fn build_visibility_solver<'ast>(
             .copied()
             .map(|root| -> usize { root.into() })
             .map(|root| &nodes[root])
-            .fold(empty_set.clone(), |acc, root| acc.add(root))
-            .into(),
+            .fold(empty_set.clone(), |acc, root| acc.add(root)),
     );
     let mut z3_exports = Array::new_const(&ctx, "exports", &node_ty, &node_ty);
     for node in resolution_graph.node_indices() {
@@ -121,7 +120,7 @@ pub fn build_visibility_solver<'ast>(
             })
             .unwrap_or_else(|| empty_set.clone().add(&base));
         solver.assert(&ancestry_const._eq(&ancestry_val));
-        z3_ancestry = z3_ancestry.store(z3_node, &ancestry_const.into());
+        z3_ancestry = z3_ancestry.store(z3_node, &ancestry_const);
         let children_const = resolution_graph[node]
             .children()
             .map(|children| {
@@ -133,7 +132,7 @@ pub fn build_visibility_solver<'ast>(
                     .fold(empty_set.clone(), |acc, c| acc.add(c))
             })
             .unwrap_or_else(|| empty_set.clone());
-        z3_children = z3_children.store(z3_node, &children_const.into());
+        z3_children = z3_children.store(z3_node, &children_const);
 
         use Vis::*;
         let file = resolution_graph.file(node);
@@ -163,7 +162,7 @@ pub fn build_visibility_solver<'ast>(
         } else if let Some(vis) = resolution_graph[node].visibility() {
             match vis {
                 Pub(_) | Super(_) => {
-                    z3_exports = z3_exports.store(z3_node, &grandparent);
+                    z3_exports = z3_exports.store(z3_node, grandparent);
                 }
                 Crate(_) => {
                     z3_exports = z3_exports.store(
